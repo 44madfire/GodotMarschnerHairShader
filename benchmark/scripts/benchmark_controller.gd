@@ -24,10 +24,11 @@ enum BenchmarkVariant {
 	NO_HAIR,
 	COVERAGE_CONTROL,
 	CURRENT_MARSCHNER_BASELINE,
+	APPROX_KAJIYA_KAY,
 }
 
 const MODE_NAMES := ["NO_HAIR", "INDIVIDUAL_GROOM", "ALL_GROOMS", "REPRESENTATIVE_DEFAULT"]
-const VARIANT_NAMES := ["NO_HAIR", "COVERAGE_CONTROL", "CURRENT_MARSCHNER_BASELINE"]
+const VARIANT_NAMES := ["NO_HAIR", "COVERAGE_CONTROL", "CURRENT_MARSCHNER_BASELINE", "APPROX_KAJIYA_KAY"]
 
 const PREWARM_DEFAULT := 180
 const SETTLE_DEFAULT := 30
@@ -36,6 +37,7 @@ const CAPTURE_DEFAULT := 1
 
 const COVERAGE_CONTROL_SHADER: Shader = preload("res://benchmark/shaders/hair_coverage_control.gdshader")
 const CURRENT_MARSCHNER_SHADER: Shader = preload("res://benchmark/reference/baseline_hair.gdshader")
+const APPROX_KAJIYA_KAY_SHADER: Shader = preload("res://assets/hair/materials/shaders/hair_approx.gdshader")
 
 ## RenderingServer's viewport render-info enum values in Godot 4.7.
 const RENDER_INFO_OBJECTS := 0
@@ -57,7 +59,7 @@ const RENDER_INFO_SHADOW := 1
 @export_category("Smoke Run")
 @export_enum("NO_HAIR", "INDIVIDUAL_GROOM", "ALL_GROOMS", "REPRESENTATIVE_DEFAULT") var benchmark_mode: int = BenchmarkMode.REPRESENTATIVE_DEFAULT
 @export var individual_groom: StringName = &"Blowout"
-@export_enum("NO_HAIR", "COVERAGE_CONTROL", "CURRENT_MARSCHNER_BASELINE") var benchmark_variant: int = BenchmarkVariant.CURRENT_MARSCHNER_BASELINE
+@export_enum("NO_HAIR", "COVERAGE_CONTROL", "CURRENT_MARSCHNER_BASELINE", "APPROX_KAJIYA_KAY") var benchmark_variant: int = BenchmarkVariant.CURRENT_MARSCHNER_BASELINE
 @export var auto_start_smoke: bool = false
 @export_range(0, 100000, 1) var prewarm_frames: int = PREWARM_DEFAULT
 @export_range(0, 100000, 1) var settle_frames: int = SETTLE_DEFAULT
@@ -133,7 +135,7 @@ func start_benchmark(requested_mode: int = -1, requested_variant: int = -1, requ
 	_discover_grooms()
 
 	_active_mode = benchmark_mode if requested_mode < 0 else clampi(requested_mode, 0, BenchmarkMode.REPRESENTATIVE_DEFAULT)
-	_active_variant = benchmark_variant if requested_variant < 0 else clampi(requested_variant, 0, BenchmarkVariant.CURRENT_MARSCHNER_BASELINE)
+	_active_variant = benchmark_variant if requested_variant < 0 else clampi(requested_variant, 0, BenchmarkVariant.APPROX_KAJIYA_KAY)
 	_active_individual_groom = individual_groom if requested_groom == &"" else requested_groom
 	apply_variant(_active_variant)
 	_apply_display_mode(BenchmarkMode.NO_HAIR if _active_variant == BenchmarkVariant.NO_HAIR else _active_mode)
@@ -150,7 +152,7 @@ func start_benchmark(requested_mode: int = -1, requested_variant: int = -1, requ
 func apply_variant(variant_id: int) -> void:
 	if groom_catalog.is_empty():
 		_discover_grooms()
-	var selected_variant := clampi(variant_id, 0, BenchmarkVariant.CURRENT_MARSCHNER_BASELINE)
+	var selected_variant := clampi(variant_id, 0, BenchmarkVariant.APPROX_KAJIYA_KAY)
 	var display_mode := _active_mode
 	_restore_original_surface_state()
 	_active_variant = selected_variant
@@ -163,6 +165,9 @@ func apply_variant(variant_id: int) -> void:
 			_apply_display_mode(display_mode)
 		BenchmarkVariant.CURRENT_MARSCHNER_BASELINE:
 			_apply_shader_variant(CURRENT_MARSCHNER_SHADER)
+			_apply_display_mode(display_mode)
+		BenchmarkVariant.APPROX_KAJIYA_KAY:
+			_apply_shader_variant(APPROX_KAJIYA_KAY_SHADER)
 			_apply_display_mode(display_mode)
 
 

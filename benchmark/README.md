@@ -12,7 +12,7 @@ Each completed run contains `run_manifest.json`, `samples.csv`, `summary.json`, 
 
 ## Scope
 
-This first slice discovers direct `MeshInstance3D` groom children under `Head` at runtime and currently covers the ten fixture grooms. It has no UI, suites, CLI, profiles, masks, multi-light setups, candidate management, or diffing. The harness owns the camera, directional light, and environment; the fixture camera/light/environment are disabled without changing the fixture scene.
+This first slice discovers direct `MeshInstance3D` groom children under `Head` at runtime and currently covers the ten fixture grooms. It has no UI, suites, CLI, profile selection, masks, multi-light setups, candidate management, or diffing. The harness owns the camera, directional light, and environment; the fixture camera/light/environment are disabled without changing the fixture scene.
 
 Modes are exactly:
 
@@ -26,8 +26,9 @@ Variants are exactly:
 - `NO_HAIR`
 - `COVERAGE_CONTROL`
 - `CURRENT_MARSCHNER_BASELINE`
+- `APPROX_KAJIYA_KAY`
 
-The baseline and coverage variants clone each active source `ShaderMaterial` per mesh surface, preserve its parameters and groom textures, replace only the shader resource, and use `set_surface_override_material()`. Mesh material resources are never edited. `benchmark/reference/BASELINE_COMMIT.txt` freezes the source commit, and the reference shader/include are immutable copies of the current source.
+The baseline, coverage, and approximate Kajiya–Kay variants clone each active source `ShaderMaterial` per mesh surface, preserve its parameters and groom textures, replace only the shader resource, and use `set_surface_override_material()`. Mesh material resources are never edited. `benchmark/reference/BASELINE_COMMIT.txt` freezes the source commit, and the reference shader/include are immutable copies of the current source.
 
 ## Measurements and data collection
 
