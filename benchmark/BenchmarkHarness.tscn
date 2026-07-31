@@ -1,0 +1,41 @@
+[gd_scene format=3 uid="uid://dkxyjlc205yr5"]
+
+[ext_resource type="PackedScene" uid="uid://dnhgnfcs1jmu3" path="res://main.tscn" id="1_main"]
+[ext_resource type="Script" path="res://benchmark/scripts/benchmark_controller.gd" id="2_controller"]
+
+[sub_resource type="Environment" id="Environment_benchmark"]
+background_mode = 1
+background_color = Color(0.015, 0.015, 0.02, 1)
+ambient_light_source = 2
+ambient_light_color = Color(0.18, 0.2, 0.24, 1)
+ambient_light_energy = 0.65
+
+[node name="BenchmarkHarness" type="Node3D" unique_id=865813038]
+
+[node name="TestSceneHost" type="Node3D" parent="." unique_id=1156669874]
+
+[node name="Main" parent="TestSceneHost" unique_id=1998048178 instance=ExtResource("1_main")]
+
+[node name="BenchmarkController" type="Node" parent="." unique_id=1082283408]
+script = ExtResource("2_controller")
+
+[node name="BenchmarkCamera" type="Camera3D" parent="." unique_id=1597918418]
+transform = Transform3D(0.9640954, -0.048849408, 0.26102448, 0, 0.98293537, 0.18395133, -0.26555613, -0.17734665, 0.9476434, 0.117, 0.032, 0.427)
+current = true
+fov = 60.0
+near = 0.06
+far = 10.0
+
+[node name="LightingRigHost" type="DirectionalLight3D" parent="." unique_id=105209221]
+transform = Transform3D(0.92718387, 0.07788509, -0.36642054, 0, 0.9781476, 0.2079117, 0.37460658, -0.19277237, 0.9069227, 0, 0, 0)
+light_intensity_lux = 85000.0
+light_specular = 0.6
+shadow_enabled = true
+shadow_bias = 0.005
+shadow_opacity = 0.999
+shadow_blur = 2.0
+directional_shadow_mode = 0
+directional_shadow_max_distance = 2.0
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=1630577377]
+environment = SubResource("Environment_benchmark")

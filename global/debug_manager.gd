@@ -12,23 +12,64 @@ var _lobe_scales := Vector3.ONE
 var _lobe_enabled := Vector3i.ONE
 
 @onready var viewport: Variant = Engine.get_singleton(&'EditorInterface').get_editor_viewport_3d(0) if Engine.is_editor_hint() else get_viewport()
-@onready var camera: Camera3D = viewport.get_camera_3d()
-@onready var light_node: DirectionalLight3D = get_node(^'/root/Main/DirectionalLight3D')
-@onready var head_node: MeshInstance3D = get_node(^'/root/Main/Head')
-@onready var hairstyle_names := head_node.get_children().map(func(x: Node) -> String: return x.name)
-@onready var tris_counts := head_node.get_children().map(func(x: MeshInstance3D) -> String:
+@onready var camera: Camera3D = viewport.get_camera_3d() if viewport else null
+@onready var fixture_main: Node = _resolve_fixture_main()
+@onready var light_node: DirectionalLight3D = fixture_main.get_node_or_null(^'DirectionalLight3D') as DirectionalLight3D if fixture_main else null
+@onready var head_node: MeshInstance3D = fixture_main.get_node_or_null(^'Head') as MeshInstance3D if fixture_main else null
+@onready var hairstyle_names: Array[String] = _get_hairstyle_names()
+@onready var tris_counts: Array[String] = _get_tris_counts()
+
+
+func _resolve_fixture_main() -> Node:
+	var active_scene := get_tree().current_scene
+	if active_scene and active_scene.name == &'Main':
+		return active_scene
+	if active_scene:
+		return active_scene.get_node_or_null(^'TestSceneHost/Main') as Node
+	return null
+
+
+func _get_hairstyle_names() -> Array[String]:
+	var names: Array[String] = []
+	if not head_node:
+		return names
+	for child in head_node.get_children():
+		names.append(String(child.name))
+	return names
+
+
+func _get_tris_counts() -> Array[String]:
+	var counts: Array[String] = []
+	if not head_node or not head_node.mesh:
+		return counts
+
 	# Precompute the amount of loaded triangles since its quite a slow operation.
 	# FIXME: Wouldn't hurt to just use total rendered triangles instead: Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME)
-	var tris := str((x.mesh.surface_get_arrays(0)[Mesh.ARRAY_INDEX].size() + head_node.mesh.surface_get_arrays(0)[Mesh.ARRAY_INDEX].size()) / 3)
-	return '%s,%s tris' % [tris.left(tris.length() - 3), tris.right(3)])
+	for child in head_node.get_children():
+		var hairstyle := child as MeshInstance3D
+		if not hairstyle or not hairstyle.mesh:
+			counts.append('0 tris')
+			continue
+		var tris := str((hairstyle.mesh.surface_get_arrays(0)[Mesh.ARRAY_INDEX].size() + head_node.mesh.surface_get_arrays(0)[Mesh.ARRAY_INDEX].size()) / 3)
+		counts.append('%s,%s tris' % [tris.left(tris.length() - 3), tris.right(3)])
+	return counts
 
 func _ready() -> void:
+	if not fixture_main:
+		fixture_main = _resolve_fixture_main()
+		if fixture_main:
+			light_node = fixture_main.get_node_or_null(^'DirectionalLight3D') as DirectionalLight3D
+			head_node = fixture_main.get_node_or_null(^'Head') as MeshInstance3D
+			hairstyle_names = _get_hairstyle_names()
+			tris_counts = _get_tris_counts()
+
 	_render_scales.resize(len(DenoisingMode))
 	_render_scales.fill(1.0)
 	_render_scales[DenoisingMode.DENOISING_MODE_FSR2] = 0.5
 
 	change_denoising_mode(_denoising_mode, _render_scales[_denoising_mode])
-	change_hairstyle(_current_hairstyle[0])
+	if head_node:
+		change_hairstyle(_current_hairstyle[0])
 
 
 func _process(delta: float) -> void:
@@ -38,17 +79,23 @@ func _process(delta: float) -> void:
 func _input(event: InputEvent) -> void:
 	if event.is_action_pressed(&'toggle_imgui'):
 		should_render_imgui = not should_render_imgui
-		if not should_render_imgui: # Reset camera frustum to center
+		if not should_render_imgui and camera: # Reset camera frustum to center
 			camera.projection = Camera3D.PROJECTION_PERSPECTIVE
 	elif event.is_action_pressed(&'next_hairstyle'):
+		if not head_node or head_node.get_child_count() == 0:
+			return
 		_current_hairstyle[0] = (_current_hairstyle[0] + 1) % head_node.get_child_count()
 		change_hairstyle(_current_hairstyle[0])
 	elif event.is_action_pressed(&'previous_hairstyle'):
+		if not head_node or head_node.get_child_count() == 0:
+			return
 		_current_hairstyle[0] = (_current_hairstyle[0] - 1 + head_node.get_child_count()) % head_node.get_child_count()
 		change_hairstyle(_current_hairstyle[0])
 
 
 func _render_imgui(delta: float) -> void:
+	if not viewport or not camera or not light_node or not head_node:
+		return
 	var fps := Engine.get_frames_per_second()
 	var window := get_window()
 	var render_scale := [_render_scales[_denoising_mode]]
@@ -156,6 +203,8 @@ func _render_imgui(delta: float) -> void:
 
 
 func change_hairstyle(index: int) -> void:
+	if not head_node or head_node.get_child_count() == 0:
+		return
 	for i in head_node.get_child_count():
 		head_node.get_child(i).visible = i == index
 
@@ -169,6 +218,8 @@ func change_hairstyle(index: int) -> void:
 
 
 func change_denoising_mode(mode: DenoisingMode, scale: float) -> void:
+	if not viewport:
+		return
 	viewport.use_taa = mode == DenoisingMode.DENOISING_MODE_TAA
 	viewport.scaling_3d_mode = Viewport.Scaling3DMode.SCALING_3D_MODE_FSR2 if mode == DenoisingMode.DENOISING_MODE_FSR2 else Viewport.Scaling3DMode.SCALING_3D_MODE_BILINEAR
 	viewport.scaling_3d_scale = scale
