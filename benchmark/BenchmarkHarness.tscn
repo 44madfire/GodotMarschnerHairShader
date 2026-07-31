@@ -2,6 +2,7 @@
 
 [ext_resource type="PackedScene" uid="uid://dnhgnfcs1jmu3" path="res://main.tscn" id="1_main"]
 [ext_resource type="Script" path="res://benchmark/scripts/benchmark_controller.gd" id="2_controller"]
+[ext_resource type="Script" path="res://benchmark/scripts/benchmark_cli.gd" id="3_cli"]
 
 [sub_resource type="Environment" id="Environment_benchmark"]
 background_mode = 1
@@ -18,6 +19,9 @@ ambient_light_energy = 0.65
 
 [node name="BenchmarkController" type="Node" parent="." unique_id=1082283408]
 script = ExtResource("2_controller")
+
+[node name="BenchmarkCLI" type="Node" parent="."]
+script = ExtResource("3_cli")
 
 [node name="BenchmarkCamera" type="Camera3D" parent="." unique_id=1597918418]
 transform = Transform3D(0.9640954, -0.048849408, 0.26102448, 0, 0.98293537, 0.18395133, -0.26555613, -0.17734665, 0.9476434, 0.117, 0.032, 0.427)
@@ -36,6 +40,8 @@ shadow_opacity = 0.999
 shadow_blur = 2.0
 directional_shadow_mode = 0
 directional_shadow_max_distance = 2.0
+
+[node name="CaseLightingRigHost" type="Node3D" parent="."]
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=1630577377]
 environment = SubResource("Environment_benchmark")

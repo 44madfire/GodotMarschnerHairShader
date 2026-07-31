@@ -4,6 +4,10 @@ extends Node
 ## The controller never edits a mesh material resource. Variant materials are per-surface
 ## ShaderMaterial clones installed through set_surface_override_material().
 
+signal suite_completed(success: bool, suite_id: StringName)
+signal start_failed(message: String)
+signal persistence_failed(message: String)
+
 enum BenchmarkState {
 	IDLE,
 	PREWARM,
@@ -51,10 +55,12 @@ const RENDER_INFO_SHADOW := 1
 @export var head_path: NodePath = NodePath("../TestSceneHost/Main/Head")
 @export var benchmark_camera_path: NodePath = NodePath("../BenchmarkCamera")
 @export var lighting_rig_path: NodePath = NodePath("../LightingRigHost")
+@export var case_lighting_rig_path: NodePath = NodePath("../CaseLightingRigHost")
 @export var world_environment_path: NodePath = NodePath("../WorldEnvironment")
 @export var fixture_camera_path: NodePath = NodePath("../TestSceneHost/Main/Camera3D")
 @export var fixture_light_path: NodePath = NodePath("../TestSceneHost/Main/DirectionalLight3D")
 @export var fixture_environment_path: NodePath = NodePath("../TestSceneHost/Main/WorldEnvironment")
+@export var legacy_benchmark_light_path: NodePath = NodePath("../LightingRigHost")
 
 @export_category("Smoke Run")
 @export_enum("NO_HAIR", "INDIVIDUAL_GROOM", "ALL_GROOMS", "REPRESENTATIVE_DEFAULT") var benchmark_mode: int = BenchmarkMode.REPRESENTATIVE_DEFAULT
@@ -83,6 +89,11 @@ var _run_directory := ""
 var _run_timestamp := ""
 var _capture_requested := false
 var _run_token := 0
+var _active_prewarm_frames := PREWARM_DEFAULT
+var _active_settle_frames := SETTLE_DEFAULT
+var _active_sample_frames := SAMPLE_DEFAULT
+var _active_capture_frames := CAPTURE_DEFAULT
+var _active_capture_color := true
 var _viewport_quality_saved := false
 var _saved_viewport_use_taa := false
 var _saved_viewport_scaling_3d_mode := Viewport.Scaling3DMode.SCALING_3D_MODE_BILINEAR
@@ -91,11 +102,60 @@ var _debug_manager: Node
 var _debug_manager_overlay_saved := false
 var _debug_manager_overlay_state_saved := false
 var _benchmark_environment_active := false
+var last_start_error := ""
+var last_persistence_error := ""
+var _scene_state_saved := false
+var _saved_benchmark_camera_transform := Transform3D.IDENTITY
+var _saved_benchmark_camera_fov := 60.0
+var _saved_benchmark_camera_near := 0.05
+var _saved_benchmark_camera_far := 100.0
+var _saved_benchmark_camera_current := false
+var _saved_benchmark_camera_process_mode := Node.PROCESS_MODE_INHERIT
+var _saved_benchmark_light_transform := Transform3D.IDENTITY
+var _saved_benchmark_light_visible := true
+var _saved_benchmark_light_process_mode := Node.PROCESS_MODE_INHERIT
+var _saved_fixture_camera_current := false
+var _saved_fixture_camera_process_mode := Node.PROCESS_MODE_INHERIT
+var _saved_fixture_light_visible := true
+var _saved_fixture_light_process_mode := Node.PROCESS_MODE_INHERIT
+var _saved_fixture_environment: Environment
+var _saved_viewport_size := Vector2i.ZERO
+var _saved_window_size := Vector2i.ZERO
+var _window_size_changed := false
+var _active_lighting_rig: Node
+var _active_resource_case := false
+var _active_suite_id: StringName = &""
+var _active_suite_display_name := ""
+var _active_case_id: StringName = &""
+var _active_case_display_name := ""
+var _active_case_camera_id: StringName = &""
+var _active_case_lighting_id: StringName = &""
+var _active_case_lighting_name := ""
+var _active_case_lighting_notes := ""
+var _active_case_viewport_size := Vector2i.ZERO
+var _active_case_repeat := 0
+var _active_case_capture_flags := {
+	"color": true,
+	"depth": false,
+	"tangent": false,
+	"debug": false,
+}
+var _suite_active := false
+var _suite_resource: Resource
+var _suite_cases: Array = []
+var _suite_case_index := 0
+var _suite_repeat_index := 0
+var _suite_repeat_count := 1
+var _suite_timestamp := ""
+var _suite_directory := ""
+var _suite_results: Array[Dictionary] = []
+var _suite_terminal_emitted := false
 
 
 func _ready() -> void:
 	_configure_benchmark_environment()
 	RenderingServer.viewport_set_measure_render_time(get_viewport().get_viewport_rid(), true)
+	_save_scene_state()
 	_disable_fixture_nodes()
 	_discover_grooms()
 	if auto_start_smoke:
@@ -106,14 +166,14 @@ func _process(_delta: float) -> void:
 	_lock_benchmark_environment()
 	match benchmark_state:
 		BenchmarkState.PREWARM:
-			_advance_timing_state(prewarm_frames, BenchmarkState.SETTLE)
+			_advance_timing_state(_active_prewarm_frames, BenchmarkState.SETTLE)
 		BenchmarkState.SETTLE:
-			_advance_timing_state(settle_frames, BenchmarkState.SAMPLE)
+			_advance_timing_state(_active_settle_frames, BenchmarkState.SAMPLE)
 		BenchmarkState.SAMPLE:
 			# RenderingServer returns the completed/previous viewport frame here.
 			_collect_sample()
 			_state_frame += 1
-			if _state_frame >= sample_frames:
+			if _state_frame >= _active_sample_frames:
 				benchmark_state = BenchmarkState.CAPTURE
 				_state_frame = 0
 				_capture_after_frame_post_draw(_run_token)
@@ -128,11 +188,7 @@ func start_smoke() -> void:
 
 ## Starts one run with explicit mode, variant, and optional groom selection.
 func start_benchmark(requested_mode: int = -1, requested_variant: int = -1, requested_groom: StringName = &"") -> void:
-	_configure_benchmark_environment()
-	_run_token += 1
-	_capture_requested = false
-	_restore_original_surface_state()
-	_discover_grooms()
+	_begin_manual_run()
 
 	_active_mode = benchmark_mode if requested_mode < 0 else clampi(requested_mode, 0, BenchmarkMode.REPRESENTATIVE_DEFAULT)
 	_active_variant = benchmark_variant if requested_variant < 0 else clampi(requested_variant, 0, BenchmarkVariant.APPROX_KAJIYA_KAY)
@@ -144,8 +200,75 @@ func start_benchmark(requested_mode: int = -1, requested_variant: int = -1, requ
 	_state_frame = 0
 	_run_timestamp = _make_run_timestamp()
 	_run_directory = output_root.path_join(_run_timestamp)
-	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(_run_directory))
+	if not _ensure_output_directory(_run_directory):
+		benchmark_state = BenchmarkState.IDLE
+		return
 	benchmark_state = BenchmarkState.PREWARM
+
+
+## Starts one validated resource-backed case. Returns false without sampling when validation fails.
+func start_case(case: Resource) -> bool:
+	var validation_errors: PackedStringArray = _resource_validation_errors(case, "Benchmark case")
+	if not validation_errors.is_empty():
+		_log_validation_failure("Benchmark case", validation_errors)
+		return false
+
+	_begin_resource_request()
+	_suite_active = true
+	_suite_resource = null
+	_suite_cases = [case]
+	_suite_case_index = 0
+	_suite_repeat_index = 0
+	_suite_repeat_count = maxi(_resource_int(case, &"repeat_count", 1), 1)
+	_suite_timestamp = _make_run_timestamp()
+	_suite_directory = output_root.path_join(_suite_timestamp)
+	if not _ensure_output_directory(_suite_directory):
+		_restore_failed_resource_start()
+		return false
+	_suite_terminal_emitted = false
+	return _start_next_suite_item_now()
+
+
+## Validates and queues every case before starting the first suite item.
+func start_suite(suite: Resource) -> bool:
+	var validation_errors: PackedStringArray = _resource_validation_errors(suite, "Benchmark suite")
+	if not validation_errors.is_empty():
+		_log_validation_failure("Benchmark suite", validation_errors)
+		return false
+
+	var case_value: Variant = suite.get(&"cases")
+	if not (case_value is Array):
+		_record_start_failure("Benchmark suite rejected: cases must be an Array of Resources.")
+		return false
+	var requested_cases: Array = case_value
+	if requested_cases.is_empty():
+		_record_start_failure("Benchmark suite rejected: cases must not be empty.")
+		return false
+	for case_index in requested_cases.size():
+		var requested_case: Resource = requested_cases[case_index] as Resource
+		var case_errors: PackedStringArray = _resource_validation_errors(requested_case, "Benchmark case %d" % case_index)
+		if not case_errors.is_empty():
+			_log_validation_failure("Benchmark suite case %d" % case_index, case_errors)
+			return false
+
+	_begin_resource_request()
+	_suite_active = true
+	_suite_resource = suite
+	_suite_cases = requested_cases.duplicate()
+	_suite_results.clear()
+	_suite_case_index = 0
+	_suite_repeat_index = 0
+	_suite_repeat_count = 1
+	_suite_timestamp = _make_run_timestamp()
+	_suite_directory = output_root.path_join(_suite_timestamp).path_join(
+		_safe_path_component(_resource_string(suite, &"output_subdirectory", "suite"), "suite")
+	)
+	if not _ensure_output_directory(_suite_directory):
+		_restore_failed_resource_start()
+		return false
+	_suite_terminal_emitted = false
+	call_deferred("_start_next_suite_item", _run_token)
+	return true
 
 
 ## Applies a supported material/display variant without starting a run.
@@ -171,21 +294,389 @@ func apply_variant(variant_id: int) -> void:
 			_apply_display_mode(display_mode)
 
 
+func _start_next_suite_item(expected_token: int) -> void:
+	_start_next_suite_item_now(expected_token)
+
+
+func _start_next_suite_item_now(expected_token: int = -1) -> bool:
+	var token: int = _run_token if expected_token < 0 else expected_token
+	if token != _run_token or not _suite_active:
+		return false
+	if _suite_case_index >= _suite_cases.size():
+		_finish_suite(token)
+		return true
+
+	var next_case: Resource = _suite_cases[_suite_case_index] as Resource
+	_suite_repeat_count = maxi(_resource_int(next_case, &"repeat_count", 1), 1)
+	var started: bool = _start_resource_case(
+		next_case,
+		token,
+		_suite_directory,
+		_suite_repeat_index,
+		_suite_repeat_count
+	)
+	if not started and _suite_active:
+		var failed_suite: bool = _suite_resource != null
+		if failed_suite:
+			_fail_active_suite()
+		else:
+			_suite_active = false
+	return started
+
+
+func _start_resource_case(case: Resource, expected_token: int, output_directory: String, repeat_index: int, repeat_count: int) -> bool:
+	if expected_token != _run_token:
+		return false
+
+	var camera_pose: Resource = _resource_resource(case, &"camera_pose")
+	var lighting_rig: Resource = _resource_resource(case, &"lighting_rig")
+	if not _apply_case_camera(case, camera_pose):
+		_abort_resource_case("camera_pose could not be applied")
+		return false
+
+	_remove_active_lighting_rig()
+	if not _instantiate_case_lighting(lighting_rig):
+		_abort_resource_case("lighting_rig could not be instantiated")
+		return false
+
+	_active_resource_case = true
+	_active_suite_id = _resource_string_name(_suite_resource, &"id", &"") if _suite_active else &""
+	_active_suite_display_name = _resource_string(_suite_resource, &"display_name", "") if _suite_active else ""
+	_active_case_id = _resource_string_name(case, &"id", &"case")
+	_active_case_display_name = _resource_string(case, &"display_name", String(_active_case_id))
+	_active_case_repeat = repeat_index + 1
+	_active_case_camera_id = _resource_string_name(camera_pose, &"id", &"")
+	_active_case_lighting_id = _resource_string_name(lighting_rig, &"id", &"")
+	_active_case_lighting_name = _resource_string(lighting_rig, &"name", "")
+	_active_case_lighting_notes = _resource_string(lighting_rig, &"notes", "")
+	_active_case_viewport_size = _resource_vector2i(case, &"viewport_size", Vector2i.ZERO)
+	_active_case_capture_flags = {
+		"color": _resource_bool(case, &"capture_color", true),
+		"depth": _resource_bool(case, &"capture_depth", false),
+		"tangent": _resource_bool(case, &"capture_tangent", false),
+		"debug": _resource_bool(case, &"capture_debug", false),
+	}
+
+	_active_prewarm_frames = maxi(_resource_int(case, &"warmup_frames", PREWARM_DEFAULT), 0)
+	_active_settle_frames = maxi(_resource_int(case, &"settle_frames", SETTLE_DEFAULT), 0)
+	_active_sample_frames = maxi(_resource_int(case, &"sample_frames", SAMPLE_DEFAULT), 1)
+	_active_capture_frames = maxi(_resource_int(case, &"capture_frames", CAPTURE_DEFAULT), 1)
+	_active_capture_color = bool(_active_case_capture_flags["color"])
+	_suite_repeat_count = maxi(repeat_count, 1)
+	_active_mode = clampi(_resource_int(case, &"mode", BenchmarkMode.REPRESENTATIVE_DEFAULT), 0, BenchmarkMode.REPRESENTATIVE_DEFAULT)
+	_active_variant = clampi(_resource_int(case, &"variant", BenchmarkVariant.CURRENT_MARSCHNER_BASELINE), 0, BenchmarkVariant.APPROX_KAJIYA_KAY)
+	_active_individual_groom = _resource_string_name(case, &"groom_id", &"")
+	apply_variant(_active_variant)
+	_apply_display_mode(BenchmarkMode.NO_HAIR if _active_variant == BenchmarkVariant.NO_HAIR else _active_mode)
+
+	_run_timestamp = _make_run_timestamp()
+	_run_directory = output_directory.path_join(_safe_path_component(String(_active_case_id), "case"))
+	_run_directory = _run_directory.path_join("repeat_%03d" % _active_case_repeat)
+	if not _ensure_output_directory(_run_directory):
+		_abort_resource_case("Unable to prepare run output directory")
+		return false
+	_samples.clear()
+	_state_frame = 0
+	benchmark_state = BenchmarkState.PREWARM
+	return true
+
+
+func _apply_case_camera(case: Resource, camera_pose: Resource) -> bool:
+	var benchmark_camera := get_node_or_null(benchmark_camera_path) as Camera3D
+	if not benchmark_camera or not camera_pose:
+		return false
+
+	var transform_value: Variant = camera_pose.get(&"transform")
+	var fov_value: Variant = camera_pose.get(&"fov")
+	var near_value: Variant = camera_pose.get(&"near")
+	var far_value: Variant = camera_pose.get(&"far")
+	if not (transform_value is Transform3D) or not (fov_value is float or fov_value is int) or not (near_value is float or near_value is int) or not (far_value is float or far_value is int):
+		return false
+	var camera_transform: Transform3D = transform_value
+	benchmark_camera.transform = camera_transform
+	benchmark_camera.fov = float(fov_value)
+	benchmark_camera.near = float(near_value)
+	benchmark_camera.far = float(far_value)
+	benchmark_camera.make_current()
+
+	var viewport: Viewport = get_viewport()
+	var viewport_target := _resource_vector2i(case, &"viewport_size", Vector2i.ZERO)
+	if viewport_target != Vector2i.ZERO:
+		_set_viewport_target(viewport_target)
+	return true
+
+
+func _instantiate_case_lighting(lighting_rig: Resource) -> bool:
+	var host := get_node_or_null(case_lighting_rig_path) as Node
+	if not host or not lighting_rig:
+		return false
+	var packed_scene_value: Variant = lighting_rig.get(&"packed_scene")
+	var packed_scene: PackedScene = packed_scene_value as PackedScene
+	if not packed_scene:
+		return false
+	var rig_instance: Node = packed_scene.instantiate()
+	if not rig_instance:
+		return false
+	host.add_child(rig_instance)
+	_active_lighting_rig = rig_instance
+	_set_legacy_benchmark_light_enabled(false)
+	return true
+
+
+func _abort_resource_case(reason: String) -> void:
+	_record_start_failure("Benchmark case rejected during setup: %s" % reason)
+	_capture_requested = false
+	benchmark_state = BenchmarkState.IDLE
+	_restore_original_surface_state()
+	_restore_scene_state()
+	_restore_benchmark_environment()
+
+
+func _restore_failed_resource_start() -> void:
+	_restore_failed_resource_run()
+	benchmark_state = BenchmarkState.IDLE
+
+
+func _advance_suite_after_output(expected_token: int) -> void:
+	if expected_token != _run_token or not _suite_active:
+		return
+
+	_suite_results.append({
+		"case_id": String(_active_case_id),
+		"case_display_name": _active_case_display_name,
+		"repeat": _active_case_repeat,
+		"directory": _run_directory,
+		"sample_count": _samples.size(),
+	})
+	if _suite_repeat_index + 1 < _suite_repeat_count:
+		_suite_repeat_index += 1
+	else:
+		_suite_case_index += 1
+		_suite_repeat_index = 0
+	call_deferred("_start_next_suite_item", expected_token)
+
+
+func _finish_suite(expected_token: int) -> void:
+	if expected_token != _run_token:
+		return
+	var completed_suite_id: StringName = _resource_string_name(_suite_resource, &"id", &"")
+	var suite_persisted: bool = true
+	if _suite_resource:
+		suite_persisted = _write_suite_manifest()
+	if not suite_persisted:
+		_fail_active_suite()
+		benchmark_state = BenchmarkState.COMPLETE
+		return
+	_restore_original_surface_state()
+	_restore_scene_state()
+	_restore_benchmark_environment()
+	_suite_active = false
+	benchmark_state = BenchmarkState.COMPLETE
+	if _suite_resource:
+		_suite_terminal_emitted = true
+		suite_completed.emit(true, completed_suite_id)
+
+
+func _resource_validation_errors(resource: Resource, label: String) -> PackedStringArray:
+	var errors: PackedStringArray = PackedStringArray()
+	if not resource:
+		errors.append("%s is missing" % label)
+		return errors
+	if not resource.has_method(&"validation_errors"):
+		errors.append("%s must expose validation_errors()" % label)
+		return errors
+	var result: Variant = resource.call(&"validation_errors")
+	if not (result is PackedStringArray):
+		errors.append("%s validation_errors() must return PackedStringArray" % label)
+		return errors
+	var nested_errors: PackedStringArray = result
+	for error_index in nested_errors.size():
+		var error_message: String = nested_errors[error_index]
+		errors.append(error_message)
+	return errors
+
+
+func _log_validation_failure(label: String, errors: PackedStringArray) -> void:
+	var message_text := ""
+	for error_index in errors.size():
+		var error_message: String = errors[error_index]
+		if not message_text.is_empty():
+			message_text += "; "
+		message_text += error_message
+	_record_start_failure("%s: %s" % [label, message_text])
+
+
+func _record_start_failure(message: String) -> void:
+	last_start_error = message
+	push_warning(message)
+	start_failed.emit(message)
+
+
+func _resource_int(resource: Resource, property_name: StringName, fallback: int) -> int:
+	if not resource:
+		return fallback
+	var value: Variant = resource.get(property_name)
+	if value is int or value is float:
+		return int(value)
+	return fallback
+
+
+func _resource_bool(resource: Resource, property_name: StringName, fallback: bool) -> bool:
+	if not resource:
+		return fallback
+	var value: Variant = resource.get(property_name)
+	if value is bool:
+		return bool(value)
+	return fallback
+
+
+func _resource_string(resource: Resource, property_name: StringName, fallback: String) -> String:
+	if not resource:
+		return fallback
+	var value: Variant = resource.get(property_name)
+	if value is String:
+		return String(value)
+	if value is StringName:
+		return String(value)
+	return fallback
+
+
+func _resource_string_name(resource: Resource, property_name: StringName, fallback: StringName) -> StringName:
+	if not resource:
+		return fallback
+	var value: Variant = resource.get(property_name)
+	if value is StringName:
+		return StringName(value)
+	if value is String:
+		return StringName(value)
+	return fallback
+
+
+func _resource_resource(resource: Resource, property_name: StringName) -> Resource:
+	if not resource:
+		return null
+	var value: Variant = resource.get(property_name)
+	return value as Resource
+
+
+func _resource_vector2i(resource: Resource, property_name: StringName, fallback: Vector2i) -> Vector2i:
+	if not resource:
+		return fallback
+	var value: Variant = resource.get(property_name)
+	if value is Vector2i:
+		return Vector2i(value)
+	return fallback
+
+
+func _safe_path_component(value: String, fallback: String) -> String:
+	var component := value.strip_edges()
+	component = component.replace("..", "_").replace("/", "_").replace("\\", "_").replace(":", "_")
+	return component if not component.is_empty() else fallback
+
+
+func _set_viewport_target(target: Vector2i) -> void:
+	var viewport: Viewport = get_viewport()
+	if not viewport or target == Vector2i.ZERO:
+		return
+	if viewport == get_tree().root:
+		# The root viewport size is window-owned. Embedded editor windows must not
+		# be resized by smoke cases; they still record requested and actual sizes.
+		if _is_embedded_editor_window():
+			return
+		var window: Window = get_window()
+		if window and window.size != target:
+			window.size = target
+			_window_size_changed = true
+		return
+	if viewport.size != target:
+		viewport.size = target
+
+
 ## Restores original visibility and every saved surface override, then stops any run.
 func reset_benchmark() -> void:
+	_fail_active_suite()
 	_run_token += 1
 	_capture_requested = false
+	_suite_active = false
+	_suite_resource = null
+	_suite_cases.clear()
+	_suite_results.clear()
 	benchmark_state = BenchmarkState.IDLE
 	_state_frame = 0
 	_restore_original_surface_state()
+	_restore_scene_state()
 	_restore_benchmark_environment()
 
 
 func _exit_tree() -> void:
+	_fail_active_suite()
 	_run_token += 1
 	_capture_requested = false
+	_suite_active = false
+	_suite_resource = null
+	_suite_results.clear()
 	_restore_original_surface_state()
+	_restore_scene_state()
 	_restore_benchmark_environment()
+
+
+func _begin_manual_run() -> void:
+	_cancel_current_request()
+	_configure_benchmark_environment()
+	_disable_fixture_nodes()
+	_discover_grooms()
+	_active_prewarm_frames = prewarm_frames
+	_active_settle_frames = settle_frames
+	_active_sample_frames = sample_frames
+	_active_capture_frames = capture_frames
+	_active_capture_color = true
+	last_start_error = ""
+	last_persistence_error = ""
+	_reset_case_metadata()
+
+
+func _begin_resource_request() -> void:
+	_cancel_current_request()
+	_configure_benchmark_environment()
+	_disable_fixture_nodes()
+	_discover_grooms()
+	last_start_error = ""
+	last_persistence_error = ""
+
+
+func _cancel_current_request() -> void:
+	_fail_active_suite()
+	_run_token += 1
+	_capture_requested = false
+	benchmark_state = BenchmarkState.IDLE
+	_state_frame = 0
+	_suite_active = false
+	_suite_resource = null
+	_suite_cases.clear()
+	_suite_results.clear()
+	_restore_original_surface_state()
+	_restore_scene_state()
+	_reset_case_metadata()
+
+
+func _reset_case_metadata() -> void:
+	_active_resource_case = false
+	_active_suite_id = &""
+	_active_suite_display_name = ""
+	_active_case_id = &""
+	_active_case_display_name = ""
+	_active_case_camera_id = &""
+	_active_case_lighting_id = &""
+	_active_case_lighting_name = ""
+	_active_case_lighting_notes = ""
+	_active_case_viewport_size = Vector2i.ZERO
+	_active_case_repeat = 0
+	_active_case_capture_flags = {
+		"color": true,
+		"depth": false,
+		"tangent": false,
+		"debug": false,
+	}
 
 
 func _configure_benchmark_environment() -> void:
@@ -193,7 +684,7 @@ func _configure_benchmark_environment() -> void:
 		_lock_benchmark_environment()
 		return
 
-	var viewport := get_viewport()
+	var viewport: Viewport = get_viewport()
 	if viewport:
 		_saved_viewport_use_taa = viewport.use_taa
 		_saved_viewport_scaling_3d_mode = viewport.scaling_3d_mode
@@ -212,7 +703,7 @@ func _configure_benchmark_environment() -> void:
 func _lock_benchmark_environment() -> void:
 	if not _benchmark_environment_active:
 		return
-	var viewport := get_viewport()
+	var viewport: Viewport = get_viewport()
 	if viewport:
 		viewport.use_taa = false
 		viewport.scaling_3d_mode = Viewport.Scaling3DMode.SCALING_3D_MODE_BILINEAR
@@ -223,7 +714,7 @@ func _lock_benchmark_environment() -> void:
 
 func _restore_benchmark_environment() -> void:
 	_benchmark_environment_active = false
-	var viewport := get_viewport()
+	var viewport: Viewport = get_viewport()
 	if _viewport_quality_saved and viewport:
 		viewport.use_taa = _saved_viewport_use_taa
 		viewport.scaling_3d_mode = _saved_viewport_scaling_3d_mode
@@ -233,6 +724,126 @@ func _restore_benchmark_environment() -> void:
 	if _debug_manager_overlay_state_saved and is_instance_valid(_debug_manager):
 		_debug_manager.set(&'should_render_imgui', _debug_manager_overlay_saved)
 	_debug_manager_overlay_state_saved = false
+
+
+func _save_scene_state() -> void:
+	if _scene_state_saved:
+		return
+	_window_size_changed = false
+
+	var viewport: Viewport = get_viewport()
+	if viewport:
+		_saved_viewport_size = viewport.size
+		if viewport == get_tree().root and not _is_embedded_editor_window():
+			var window: Window = get_window()
+			if window:
+				_saved_window_size = window.size
+
+	var benchmark_camera := get_node_or_null(benchmark_camera_path) as Camera3D
+	if benchmark_camera:
+		_saved_benchmark_camera_transform = benchmark_camera.transform
+		_saved_benchmark_camera_fov = benchmark_camera.fov
+		_saved_benchmark_camera_near = benchmark_camera.near
+		_saved_benchmark_camera_far = benchmark_camera.far
+		_saved_benchmark_camera_current = benchmark_camera.current
+		_saved_benchmark_camera_process_mode = benchmark_camera.process_mode
+
+	var benchmark_light := _get_legacy_benchmark_light()
+	if benchmark_light:
+		_saved_benchmark_light_transform = benchmark_light.transform
+		_saved_benchmark_light_visible = benchmark_light.visible
+		_saved_benchmark_light_process_mode = benchmark_light.process_mode
+
+	var fixture_camera := get_node_or_null(fixture_camera_path) as Camera3D
+	if fixture_camera:
+		_saved_fixture_camera_current = fixture_camera.current
+		_saved_fixture_camera_process_mode = fixture_camera.process_mode
+
+	var fixture_light := get_node_or_null(fixture_light_path) as DirectionalLight3D
+	if fixture_light:
+		_saved_fixture_light_visible = fixture_light.visible
+		_saved_fixture_light_process_mode = fixture_light.process_mode
+
+	var fixture_environment := get_node_or_null(fixture_environment_path) as WorldEnvironment
+	if fixture_environment:
+		_saved_fixture_environment = fixture_environment.environment
+
+	_scene_state_saved = true
+
+
+func _restore_scene_state() -> void:
+	_remove_active_lighting_rig()
+	if not _scene_state_saved:
+		return
+
+	if _window_size_changed and _saved_window_size != Vector2i.ZERO and not _is_embedded_editor_window():
+		var window: Window = get_window()
+		if window and window.size != _saved_window_size:
+			window.size = _saved_window_size
+		_window_size_changed = false
+	else:
+		var viewport: Viewport = get_viewport()
+		if viewport and viewport != get_tree().root and _saved_viewport_size != Vector2i.ZERO:
+			viewport.size = _saved_viewport_size
+	_window_size_changed = false
+
+	var benchmark_camera := get_node_or_null(benchmark_camera_path) as Camera3D
+	if benchmark_camera:
+		benchmark_camera.transform = _saved_benchmark_camera_transform
+		benchmark_camera.fov = _saved_benchmark_camera_fov
+		benchmark_camera.near = _saved_benchmark_camera_near
+		benchmark_camera.far = _saved_benchmark_camera_far
+		benchmark_camera.current = _saved_benchmark_camera_current
+		benchmark_camera.process_mode = _saved_benchmark_camera_process_mode
+
+	var benchmark_light := _get_legacy_benchmark_light()
+	if benchmark_light:
+		benchmark_light.transform = _saved_benchmark_light_transform
+		benchmark_light.visible = _saved_benchmark_light_visible
+		benchmark_light.process_mode = _saved_benchmark_light_process_mode
+
+	var fixture_camera := get_node_or_null(fixture_camera_path) as Camera3D
+	if fixture_camera:
+		fixture_camera.current = _saved_fixture_camera_current
+		fixture_camera.process_mode = _saved_fixture_camera_process_mode
+
+	var fixture_light := get_node_or_null(fixture_light_path) as DirectionalLight3D
+	if fixture_light:
+		fixture_light.visible = _saved_fixture_light_visible
+		fixture_light.process_mode = _saved_fixture_light_process_mode
+
+	var fixture_environment := get_node_or_null(fixture_environment_path) as WorldEnvironment
+	if fixture_environment:
+		fixture_environment.environment = _saved_fixture_environment
+	_active_resource_case = false
+
+
+func _is_embedded_editor_window() -> bool:
+	if Engine.is_embedded_in_editor():
+		return true
+	var window: Window = get_window()
+	return window != null and window.is_embedded()
+
+
+func _get_legacy_benchmark_light() -> DirectionalLight3D:
+	var configured_light := get_node_or_null(legacy_benchmark_light_path) as DirectionalLight3D
+	if configured_light:
+		return configured_light
+	return get_node_or_null(lighting_rig_path) as DirectionalLight3D
+
+
+func _set_legacy_benchmark_light_enabled(enabled: bool) -> void:
+	var benchmark_light := _get_legacy_benchmark_light()
+	if not benchmark_light:
+		return
+	benchmark_light.visible = enabled
+	benchmark_light.process_mode = Node.PROCESS_MODE_INHERIT if enabled else Node.PROCESS_MODE_DISABLED
+
+
+func _remove_active_lighting_rig() -> void:
+	if is_instance_valid(_active_lighting_rig):
+		_active_lighting_rig.free()
+	_active_lighting_rig = null
 
 
 func _disable_fixture_nodes() -> void:
@@ -253,6 +864,7 @@ func _disable_fixture_nodes() -> void:
 	var benchmark_camera := get_node_or_null(benchmark_camera_path) as Camera3D
 	if benchmark_camera:
 		benchmark_camera.make_current()
+	_set_legacy_benchmark_light_enabled(true)
 
 
 func _discover_grooms() -> void:
@@ -349,7 +961,7 @@ func _advance_timing_state(frame_limit: int, next_state: int) -> void:
 
 
 func _collect_sample() -> void:
-	var viewport_rid := get_viewport().get_viewport_rid()
+	var viewport_rid: RID = get_viewport().get_viewport_rid()
 	# These values are the previous completed frame's viewport measurements.
 	var sample := {
 		"sample_index": _samples.size(),
@@ -374,28 +986,51 @@ func _capture_after_frame_post_draw(run_token: int) -> void:
 	if _capture_requested:
 		return
 	_capture_requested = true
+	var capture_succeeded := true
 	# Capture is intentionally outside SAMPLE and waits for the rendered frame.
-	var capture_count := maxi(capture_frames, 1)
+	var capture_count := maxi(_active_capture_frames, 1)
 	for capture_index in capture_count:
 		await RenderingServer.frame_post_draw
 		if run_token != _run_token or not is_inside_tree():
+			_capture_requested = false
 			return
 		if capture_index == capture_count - 1:
-			var viewport_texture := get_viewport().get_texture()
-			if viewport_texture:
-				var image := viewport_texture.get_image()
-				if image:
-					image.save_png(_run_directory.path_join("color.png"))
+			if _active_capture_color:
+				var viewport_texture: Texture2D = get_viewport().get_texture()
+				if viewport_texture:
+					var image: Image = viewport_texture.get_image()
+					if image:
+						var image_error: Error = image.save_png(_run_directory.path_join("color.png"))
+						if image_error != OK:
+							_record_persistence_failure("Unable to save color.png: %s" % image_error)
+							capture_succeeded = false
+					else:
+						_record_persistence_failure("Unable to capture the viewport image")
+						capture_succeeded = false
+				else:
+					_record_persistence_failure("Unable to access the viewport texture")
+					capture_succeeded = false
 
-	_write_run_outputs()
+	if not capture_succeeded:
+		_handle_run_persistence_failure(run_token)
+		return
+	if not _write_run_outputs():
+		_handle_run_persistence_failure(run_token)
+		return
 	benchmark_state = BenchmarkState.COMPLETE
 	_capture_requested = false
+	if _suite_active:
+		call_deferred("_advance_suite_after_output", run_token)
 
 
-func _write_run_outputs() -> void:
+func _write_run_outputs() -> bool:
 	var mode_name := _mode_name(_active_mode)
 	var variant_name := _variant_name(_active_variant)
 	var baseline_commit := FileAccess.get_file_as_string("res://benchmark/reference/BASELINE_COMMIT.txt").strip_edges()
+	var actual_viewport: Vector2i = get_viewport().size
+	var output_files: Array[String] = ["run_manifest.json", "samples.csv", "summary.json"]
+	if _active_capture_color:
+		output_files.append("color.png")
 	var catalog_manifest: Array = []
 	for groom_data in groom_catalog:
 		var surface_indices: Array = []
@@ -409,22 +1044,36 @@ func _write_run_outputs() -> void:
 	var manifest := {
 		"schema_version": 1,
 		"timestamp": _run_timestamp,
+		"suite_id": String(_active_suite_id),
+		"suite_display_name": _active_suite_display_name,
+		"case_id": String(_active_case_id),
+		"case_display_name": _active_case_display_name,
+		"repeat": _active_case_repeat,
 		"mode": mode_name,
+		"mode_value": _active_mode,
 		"variant": variant_name,
+		"variant_value": _active_variant,
 		"individual_groom": String(_active_individual_groom),
 		"state_sequence": ["PREWARM", "SETTLE", "SAMPLE", "CAPTURE", "COMPLETE"],
-		"prewarm_frames": prewarm_frames,
-		"settle_frames": settle_frames,
-		"sample_frames": sample_frames,
-		"capture_frames": capture_frames,
+		"prewarm_frames": _active_prewarm_frames,
+		"warmup_frames": _active_prewarm_frames,
+		"settle_frames": _active_settle_frames,
+		"sample_frames": _active_sample_frames,
+		"capture_frames": _active_capture_frames,
 		"sample_count": _samples.size(),
 		"baseline_commit": baseline_commit,
 		"grooms": catalog_manifest,
-		"viewport_size": [get_viewport().size.x, get_viewport().size.y],
-		"files": ["run_manifest.json", "samples.csv", "summary.json", "color.png"],
+		"viewport_size": [actual_viewport.x, actual_viewport.y],
+		"viewport_target": [_active_case_viewport_size.x, _active_case_viewport_size.y],
+		"camera_pose": _camera_manifest(),
+		"lighting_rig": _lighting_manifest(),
+		"capture_flags": _active_case_capture_flags,
+		"runtime": _runtime_manifest(),
+		"files": output_files,
 		"material_state": "Source ShaderMaterials are cloned per surface; only surface overrides are replaced and restored.",
 	}
-	_write_text(_run_directory.path_join("run_manifest.json"), JSON.stringify(manifest, "\t"))
+	if not _write_text(_run_directory.path_join("run_manifest.json"), JSON.stringify(manifest, "\t")):
+		return false
 
 	var csv := "sample_index,frame,cpu_ms,gpu_ms,visible_objects,visible_primitives,visible_draw_calls,shadow_objects,shadow_primitives,shadow_draw_calls\n"
 	for sample in _samples:
@@ -440,7 +1089,8 @@ func _write_run_outputs() -> void:
 			int(sample["shadow_primitives"]),
 			int(sample["shadow_draw_calls"]),
 		]
-	_write_text(_run_directory.path_join("samples.csv"), csv)
+	if not _write_text(_run_directory.path_join("samples.csv"), csv):
+		return false
 
 	var metric_names := [
 		"cpu_ms",
@@ -465,18 +1115,147 @@ func _write_run_outputs() -> void:
 	var summary := {
 		"schema_version": 1,
 		"timestamp": _run_timestamp,
+		"suite_id": String(_active_suite_id),
+		"case_id": String(_active_case_id),
+		"repeat": _active_case_repeat,
 		"mode": mode_name,
 		"variant": variant_name,
 		"sample_count": _samples.size(),
 		"statistics": statistics,
 	}
-	_write_text(_run_directory.path_join("summary.json"), JSON.stringify(summary, "\t"))
+	if not _write_text(_run_directory.path_join("summary.json"), JSON.stringify(summary, "\t")):
+		return false
+	return true
 
 
-func _write_text(path: String, contents: String) -> void:
-	var file := FileAccess.open(path, FileAccess.WRITE)
-	if file:
-		file.store_string(contents)
+func _write_suite_manifest() -> bool:
+	var manifest := {
+		"schema_version": 1,
+		"timestamp": _suite_timestamp,
+		"suite_id": String(_resource_string_name(_suite_resource, &"id", &"")),
+		"display_name": _resource_string(_suite_resource, &"display_name", ""),
+		"output_subdirectory": _resource_string(_suite_resource, &"output_subdirectory", ""),
+		"case_count": _suite_cases.size(),
+		"completed_runs": _suite_results.size(),
+		"cases": _suite_results,
+		"runtime": _runtime_manifest(),
+		"files": ["suite_manifest.json"],
+	}
+	return _write_text(_suite_directory.path_join("suite_manifest.json"), JSON.stringify(manifest, "\t"))
+
+
+func _camera_manifest() -> Dictionary:
+	var benchmark_camera := get_node_or_null(benchmark_camera_path) as Camera3D
+	if not benchmark_camera:
+		return {
+			"id": String(_active_case_camera_id),
+		}
+	return {
+		"id": String(_active_case_camera_id),
+		"transform": _transform_manifest(benchmark_camera.transform),
+		"fov": benchmark_camera.fov,
+		"near": benchmark_camera.near,
+		"far": benchmark_camera.far,
+	}
+
+
+func _lighting_manifest() -> Dictionary:
+	return {
+		"id": String(_active_case_lighting_id),
+		"name": _active_case_lighting_name,
+		"notes": _active_case_lighting_notes,
+		"instantiated": is_instance_valid(_active_lighting_rig),
+	}
+
+
+func _transform_manifest(value: Transform3D) -> Dictionary:
+	return {
+		"basis": [
+			[value.basis.x.x, value.basis.x.y, value.basis.x.z],
+			[value.basis.y.x, value.basis.y.y, value.basis.y.z],
+			[value.basis.z.x, value.basis.z.y, value.basis.z.z],
+		],
+		"origin": [value.origin.x, value.origin.y, value.origin.z],
+	}
+
+
+func _runtime_manifest() -> Dictionary:
+	var version_info: Dictionary = Engine.get_version_info()
+	return {
+		"godot_version": String(version_info.get("string", "unknown")),
+		"render_method": String(ProjectSettings.get_setting("rendering/renderer/rendering_method", "unknown")),
+		"gpu_adapter": RenderingServer.get_video_adapter_name(),
+		"gpu_api": RenderingServer.get_video_adapter_api_version(),
+		"driver": String(ProjectSettings.get_setting("rendering/driver/driver_name", "unknown")),
+		"os": OS.get_name(),
+	}
+
+
+func _ensure_output_directory(path: String) -> bool:
+	var directory_error: Error = DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(path))
+	if directory_error == OK or directory_error == ERR_ALREADY_EXISTS:
+		return true
+	_record_persistence_failure("Unable to create output directory '%s': %s" % [path, directory_error])
+	return false
+
+
+func _write_text(path: String, contents: String) -> bool:
+	var file: FileAccess = FileAccess.open(path, FileAccess.WRITE)
+	if file == null:
+		_record_persistence_failure("Unable to open output file '%s': %s" % [path, FileAccess.get_open_error()])
+		return false
+	file.store_string(contents)
+	var write_error: Error = file.get_error()
+	file.close()
+	if write_error != OK:
+		_record_persistence_failure("Unable to write output file '%s': %s" % [path, write_error])
+		return false
+	return true
+
+
+func _record_persistence_failure(message: String) -> void:
+	last_persistence_error = message
+	push_warning(message)
+	persistence_failed.emit(message)
+
+
+func _handle_run_persistence_failure(run_token: int) -> void:
+	if run_token != _run_token:
+		return
+	_capture_requested = false
+	if _suite_resource and _suite_active:
+		_fail_active_suite()
+	else:
+		_restore_failed_resource_run()
+	benchmark_state = BenchmarkState.COMPLETE
+
+
+func _restore_failed_resource_run() -> void:
+	_capture_requested = false
+	_restore_original_surface_state()
+	_restore_scene_state()
+	_restore_benchmark_environment()
+	_suite_active = false
+	_suite_resource = null
+	_suite_cases.clear()
+	_suite_results.clear()
+	_reset_case_metadata()
+
+
+func _fail_active_suite() -> void:
+	if not _suite_active or _suite_resource == null or _suite_terminal_emitted:
+		return
+	var failed_suite_id: StringName = _resource_string_name(_suite_resource, &"id", &"")
+	_suite_terminal_emitted = true
+	_restore_original_surface_state()
+	_restore_scene_state()
+	_restore_benchmark_environment()
+	suite_completed.emit(false, failed_suite_id)
+	_suite_active = false
+	_suite_resource = null
+	_suite_cases.clear()
+	_suite_results.clear()
+	_reset_case_metadata()
 
 
 func _percentile(values: Array, percentile: float) -> float:

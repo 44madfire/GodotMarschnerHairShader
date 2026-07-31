@@ -12,7 +12,7 @@ Each completed run contains `run_manifest.json`, `samples.csv`, `summary.json`, 
 
 ## Scope
 
-This first slice discovers direct `MeshInstance3D` groom children under `Head` at runtime and currently covers the ten fixture grooms. It has no UI, suites, CLI, profile selection, masks, multi-light setups, candidate management, or diffing. The harness owns the camera, directional light, and environment; the fixture camera/light/environment are disabled without changing the fixture scene.
+The harness discovers direct `MeshInstance3D` groom children under `Head` at runtime and currently covers the ten fixture grooms. Resource-backed cases and suites own their camera pose, lighting PackedScene, viewport target, timing, repeats, and capture flags; the controller still preserves the manual API. The harness owns the camera, directional-light fallback, and environment; fixture camera/light/environment state is restored on reset or exit without changing the fixture scene.
 
 Modes are exactly:
 
@@ -29,6 +29,26 @@ Variants are exactly:
 - `APPROX_KAJIYA_KAY`
 
 The baseline, coverage, and approximate Kajiya–Kay variants clone each active source `ShaderMaterial` per mesh surface, preserve its parameters and groom textures, replace only the shader resource, and use `set_surface_override_material()`. Mesh material resources are never edited. `benchmark/reference/BASELINE_COMMIT.txt` freezes the source commit, and the reference shader/include are immutable copies of the current source.
+
+## Resource-backed suites
+
+Phase 2 resources live under `benchmark/cases/`, `benchmark/cameras/`, and `benchmark/lighting/`. A case is started with `BenchmarkController.start_case(case_resource)`. A suite validates all of its cases before queueing them and can be started with `BenchmarkController.start_suite(suite_resource)`. Cases and repeats run sequentially; output uses:
+
+```text
+user://hair_benchmarks/<timestamp>/<suite>/<case>/repeat_001/
+```
+
+Each case directory contains the normal run artifacts plus resource metadata in `run_manifest.json`. The suite directory contains `suite_manifest.json` after every case and repeat has completed. Manual `start_benchmark()` calls retain the existing `user://hair_benchmarks/<timestamp>/` layout.
+
+## Command line
+
+User arguments are read after `--`. To run the checked-in smoke suite and exit only after all output has been written:
+
+```text
+godot --path . res://benchmark/BenchmarkHarness.tscn -- --suite=res://benchmark/cases/smoke_suite.tres --quit-on-complete
+```
+
+The explicit `res://benchmark/BenchmarkHarness.tscn` scene path is required so the harness controller and CLI node run instead of the project main scene. `--suite=<res path>` selects the suite resource; `--quit-on-complete` requests exit code 0 only after the suite manifest and all case outputs are written (or exit code 1 after a failure). Manual/editor runs do not quit automatically.
 
 ## Measurements and data collection
 

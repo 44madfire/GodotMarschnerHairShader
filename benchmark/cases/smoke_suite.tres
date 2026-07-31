@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="BenchmarkSuite" load_steps=6 format=3]
+
+[ext_resource type="Script" path="res://benchmark/resources/benchmark_suite.gd" id="1_benchmark_suite"]
+[ext_resource type="Resource" path="res://benchmark/cases/blowout_coverage_control.tres" id="2_coverage_control"]
+[ext_resource type="Resource" path="res://benchmark/cases/blowout_frozen_baseline.tres" id="3_frozen_baseline"]
+[ext_resource type="Resource" path="res://benchmark/cases/blowout_approximate_kajiya_kay.tres" id="4_approximate_kajiya_kay"]
+[ext_resource type="Script" path="res://benchmark/resources/benchmark_case.gd" id="5_benchmark_case"]
+
+[resource]
+resource_name = "Benchmark smoke suite"
+script = ExtResource("1_benchmark_suite")
+id = &"smoke_suite"
+display_name = "Benchmark smoke suite"
+cases = Array[ExtResource("5_benchmark_case")]([ExtResource("2_coverage_control"), ExtResource("3_frozen_baseline"), ExtResource("4_approximate_kajiya_kay")])
+output_subdirectory = "smoke_suite"
