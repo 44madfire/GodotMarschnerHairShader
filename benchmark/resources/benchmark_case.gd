@@ -33,6 +33,8 @@ class_name BenchmarkCase
 @export_category("Capture")
 ## These flags describe future capture work; this resource does not implement it.
 @export var capture_color: bool = true
+## Coverage capture is opt-in so existing performance cases retain their defaults.
+@export var capture_coverage: bool = false
 @export var capture_depth: bool = false
 @export var capture_tangent: bool = false
 @export var capture_debug: bool = false

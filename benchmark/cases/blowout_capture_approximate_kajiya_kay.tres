@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="BenchmarkCase" load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://benchmark/resources/benchmark_case.gd" id="1_benchmark_case"]
+[ext_resource type="Resource" path="res://benchmark/cameras/three_quarter.tres" id="2_camera_pose"]
+[ext_resource type="Resource" path="res://benchmark/lighting/single_directional_key.tres" id="3_lighting_rig"]
+
+[resource]
+resource_name = "Blowout capture - approximate Kajiya-Kay"
+script = ExtResource("1_benchmark_case")
+id = &"blowout_capture_approximate_kajiya_kay"
+display_name = "Blowout capture / approximate Kajiya-Kay"
+mode = 1
+groom_id = &"Blowout"
+variant = 3
+camera_pose = ExtResource("2_camera_pose")
+lighting_rig = ExtResource("3_lighting_rig")
+capture_color = true
+capture_coverage = true
+capture_tangent = true
+capture_debug = false

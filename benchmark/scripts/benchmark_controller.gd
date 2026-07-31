@@ -38,10 +38,15 @@ const PREWARM_DEFAULT := 180
 const SETTLE_DEFAULT := 30
 const SAMPLE_DEFAULT := 300
 const CAPTURE_DEFAULT := 1
+const COMPARISON_VALIDITY_SCHEMA := 1
+const COMPARISON_VALIDITY_MARKER := "material_override_precedence_repair_v1"
 
 const COVERAGE_CONTROL_SHADER: Shader = preload("res://benchmark/shaders/hair_coverage_control.gdshader")
+const COVERAGE_MASK_SHADER: Shader = preload("res://benchmark/shaders/hair_coverage_mask.gdshader")
+const DEBUG_TANGENT_SHADER: Shader = preload("res://benchmark/shaders/hair_debug_tangent.gdshader")
 const CURRENT_MARSCHNER_SHADER: Shader = preload("res://benchmark/reference/baseline_hair.gdshader")
 const APPROX_KAJIYA_KAY_SHADER: Shader = preload("res://assets/hair/materials/shaders/hair_approx.gdshader")
+const COVERAGE_WHITE_THRESHOLD: float = 0.95
 
 ## RenderingServer's viewport render-info enum values in Godot 4.7.
 const RENDER_INFO_OBJECTS := 0
@@ -94,6 +99,9 @@ var _active_settle_frames := SETTLE_DEFAULT
 var _active_sample_frames := SAMPLE_DEFAULT
 var _active_capture_frames := CAPTURE_DEFAULT
 var _active_capture_color := true
+var _active_capture_coverage := false
+var _active_capture_records: Array[Dictionary] = []
+var _active_coverage_metrics: Dictionary = {}
 var _viewport_quality_saved := false
 var _saved_viewport_use_taa := false
 var _saved_viewport_scaling_3d_mode := Viewport.Scaling3DMode.SCALING_3D_MODE_BILINEAR
@@ -123,6 +131,11 @@ var _saved_viewport_size := Vector2i.ZERO
 var _saved_window_size := Vector2i.ZERO
 var _window_size_changed := false
 var _active_lighting_rig: Node
+var _diagnostic_saved_overrides: Array[Dictionary] = []
+var _diagnostic_saved_groom_overrides: Array[Dictionary] = []
+var _diagnostic_saved_head_material: Material
+var _diagnostic_head_material_saved := false
+var _diagnostic_capture_active := false
 var _active_resource_case := false
 var _active_suite_id: StringName = &""
 var _active_suite_display_name := ""
@@ -352,6 +365,7 @@ func _start_resource_case(case: Resource, expected_token: int, output_directory:
 	_active_case_viewport_size = _resource_vector2i(case, &"viewport_size", Vector2i.ZERO)
 	_active_case_capture_flags = {
 		"color": _resource_bool(case, &"capture_color", true),
+		"coverage": _resource_bool(case, &"capture_coverage", false),
 		"depth": _resource_bool(case, &"capture_depth", false),
 		"tangent": _resource_bool(case, &"capture_tangent", false),
 		"debug": _resource_bool(case, &"capture_debug", false),
@@ -362,6 +376,9 @@ func _start_resource_case(case: Resource, expected_token: int, output_directory:
 	_active_sample_frames = maxi(_resource_int(case, &"sample_frames", SAMPLE_DEFAULT), 1)
 	_active_capture_frames = maxi(_resource_int(case, &"capture_frames", CAPTURE_DEFAULT), 1)
 	_active_capture_color = bool(_active_case_capture_flags["color"])
+	_active_capture_coverage = bool(_active_case_capture_flags["coverage"])
+	_active_capture_records.clear()
+	_active_coverage_metrics = {}
 	_suite_repeat_count = maxi(repeat_count, 1)
 	_active_mode = clampi(_resource_int(case, &"mode", BenchmarkMode.REPRESENTATIVE_DEFAULT), 0, BenchmarkMode.REPRESENTATIVE_DEFAULT)
 	_active_variant = clampi(_resource_int(case, &"variant", BenchmarkVariant.CURRENT_MARSCHNER_BASELINE), 0, BenchmarkVariant.APPROX_KAJIYA_KAY)
@@ -630,6 +647,7 @@ func _begin_manual_run() -> void:
 	_active_sample_frames = sample_frames
 	_active_capture_frames = capture_frames
 	_active_capture_color = true
+	_active_capture_coverage = false
 	last_start_error = ""
 	last_persistence_error = ""
 	_reset_case_metadata()
@@ -673,10 +691,13 @@ func _reset_case_metadata() -> void:
 	_active_case_repeat = 0
 	_active_case_capture_flags = {
 		"color": true,
+		"coverage": false,
 		"depth": false,
 		"tangent": false,
 		"debug": false,
 	}
+	_active_capture_records.clear()
+	_active_coverage_metrics = {}
 
 
 func _configure_benchmark_environment() -> void:
@@ -772,6 +793,7 @@ func _save_scene_state() -> void:
 
 
 func _restore_scene_state() -> void:
+	_restore_diagnostic_state()
 	_remove_active_lighting_rig()
 	if not _scene_state_saved:
 		return
@@ -846,6 +868,81 @@ func _remove_active_lighting_rig() -> void:
 	_active_lighting_rig = null
 
 
+func _begin_diagnostic_capture(shader: Shader, replace_head_material: bool) -> bool:
+	_restore_diagnostic_state()
+	if not _head or groom_catalog.is_empty():
+		_record_persistence_failure("Unable to prepare diagnostic capture: no hair head was discovered")
+		return false
+
+	_diagnostic_capture_active = true
+	for groom_data in groom_catalog:
+		var groom: MeshInstance3D = groom_data["node"] as MeshInstance3D
+		if not is_instance_valid(groom):
+			continue
+		_diagnostic_saved_groom_overrides.append({
+			"groom": groom,
+			"override": groom.material_override,
+		})
+		var diagnostic_surfaces: Array[Dictionary] = []
+		for surface_data in groom_data["surfaces"]:
+			var surface_index: int = int(surface_data["surface_index"])
+			var current_override: Material = groom.get_surface_override_material(surface_index)
+			var active_material: ShaderMaterial = groom.get_active_material(surface_index) as ShaderMaterial
+			if not active_material:
+				_restore_diagnostic_state()
+				_record_persistence_failure("Unable to prepare diagnostic capture: hair surface has no ShaderMaterial")
+				return false
+			diagnostic_surfaces.append({
+				"groom": groom,
+				"surface_index": surface_index,
+				"override": current_override,
+				"source_material": active_material,
+			})
+
+		groom.material_override = null
+		for diagnostic_surface in diagnostic_surfaces:
+			_diagnostic_saved_overrides.append(diagnostic_surface)
+			var source_material: ShaderMaterial = diagnostic_surface["source_material"] as ShaderMaterial
+			var diagnostic_material: ShaderMaterial = source_material.duplicate() as ShaderMaterial
+			if not diagnostic_material:
+				_restore_diagnostic_state()
+				_record_persistence_failure("Unable to prepare diagnostic capture: material clone failed")
+				return false
+			diagnostic_material.shader = shader
+			groom.set_surface_override_material(int(diagnostic_surface["surface_index"]), diagnostic_material)
+
+	if replace_head_material:
+		_diagnostic_saved_head_material = _head.material_override
+		_diagnostic_head_material_saved = true
+		var black_head_material: StandardMaterial3D = StandardMaterial3D.new()
+		black_head_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		black_head_material.albedo_color = Color.BLACK
+		_head.material_override = black_head_material
+	return true
+
+
+func _restore_diagnostic_state() -> void:
+	if not _diagnostic_capture_active and _diagnostic_saved_overrides.is_empty() and not _diagnostic_head_material_saved:
+		return
+	for saved_surface in _diagnostic_saved_overrides:
+		var groom: MeshInstance3D = saved_surface["groom"] as MeshInstance3D
+		if is_instance_valid(groom):
+			var surface_index: int = int(saved_surface["surface_index"])
+			var original_override: Material = saved_surface["override"] as Material
+			groom.set_surface_override_material(surface_index, original_override)
+	for saved_groom in _diagnostic_saved_groom_overrides:
+		var groom: MeshInstance3D = saved_groom["groom"] as MeshInstance3D
+		if is_instance_valid(groom):
+			groom.material_override = saved_groom["override"] as Material
+	if _diagnostic_head_material_saved and is_instance_valid(_head):
+		_head.material_override = _diagnostic_saved_head_material
+	_diagnostic_saved_overrides.clear()
+	_diagnostic_saved_groom_overrides.clear()
+	_diagnostic_saved_head_material = null
+	_diagnostic_head_material_saved = false
+	_diagnostic_capture_active = false
+
+
 func _disable_fixture_nodes() -> void:
 	var fixture_camera := get_node_or_null(fixture_camera_path) as Camera3D
 	if fixture_camera:
@@ -893,6 +990,7 @@ func _discover_grooms() -> void:
 			"id": groom.get_instance_id(),
 			"name": StringName(groom.name),
 			"node": groom,
+			"original_material_override": groom.material_override,
 			"original_visible": groom.visible,
 			"surfaces": surfaces,
 		})
@@ -905,6 +1003,10 @@ func _apply_shader_variant(shader: Shader) -> void:
 		var groom := groom_data["node"] as MeshInstance3D
 		if not is_instance_valid(groom):
 			continue
+		# GeometryInstance3D.material_override wins over every surface override.
+		# Clear only the instance override; all source materials are the copies
+		# captured during discovery, so mesh/source resources remain untouched.
+		groom.material_override = null
 		for surface_data in groom_data["surfaces"]:
 			var source_material := surface_data["source_active_material"] as Material
 			if not source_material:
@@ -938,6 +1040,7 @@ func _apply_display_mode(mode: int) -> void:
 
 
 func _restore_original_surface_state() -> void:
+	_restore_diagnostic_state()
 	if not _original_state_saved:
 		return
 	for groom_data in groom_catalog:
@@ -951,6 +1054,7 @@ func _restore_original_surface_state() -> void:
 				int(surface_data["surface_index"]),
 				surface_data["original_override"] as Material
 			)
+		groom.material_override = groom_data["original_material_override"] as Material
 
 
 func _advance_timing_state(frame_limit: int, next_state: int) -> void:
@@ -982,6 +1086,87 @@ func _viewport_counter(viewport_rid: RID, render_info_type: int, render_info: in
 	return int(RenderingServer.viewport_get_render_info(viewport_rid, render_info_type, render_info))
 
 
+func _record_capture_provenance(pass_name: String, file_name: String) -> void:
+	_active_capture_records.append({
+		"pass": pass_name,
+		"file": file_name,
+		"process_frame": Engine.get_process_frames(),
+		"monotonic_timestamp_usec": Time.get_ticks_usec(),
+		"time_hash_provenance": "Production TIME-driven Bayer/hash path; temporal hash is recorded, not frozen.",
+	})
+
+
+func _capture_diagnostic_pass(shader: Shader, pass_name: String, file_name: String, replace_head_material: bool, run_token: int) -> bool:
+	if not _begin_diagnostic_capture(shader, replace_head_material):
+		return false
+	# Give the swapped diagnostic materials one completed frame to reach the
+	# renderer before reading the actual capture frame. This is outside SAMPLE.
+	await RenderingServer.frame_post_draw
+	if run_token != _run_token or not is_inside_tree():
+		_restore_diagnostic_state()
+		return false
+
+	await RenderingServer.frame_post_draw
+	if run_token != _run_token or not is_inside_tree():
+		_restore_diagnostic_state()
+		return false
+
+	_record_capture_provenance(pass_name, file_name)
+	var viewport_texture: Texture2D = get_viewport().get_texture()
+	if not viewport_texture:
+		_restore_diagnostic_state()
+		_record_persistence_failure("Unable to access the viewport texture for %s capture" % pass_name)
+		return false
+	var image: Image = viewport_texture.get_image()
+	if not image:
+		_restore_diagnostic_state()
+		_record_persistence_failure("Unable to read the viewport image for %s capture" % pass_name)
+		return false
+	var image_error: Error = image.save_png(_run_directory.path_join(file_name))
+	if image_error != OK:
+		_restore_diagnostic_state()
+		_record_persistence_failure("Unable to save %s: %s" % [file_name, image_error])
+		return false
+	if pass_name == "coverage":
+		_active_coverage_metrics = _compute_coverage_metrics(image)
+	_restore_diagnostic_state()
+	return true
+
+
+func _compute_coverage_metrics(image: Image) -> Dictionary:
+	var image_width: int = image.get_width()
+	var image_height: int = image.get_height()
+	var total_pixels: int = image_width * image_height
+	var white_pixels: int = 0
+	var min_x: int = image_width
+	var min_y: int = image_height
+	var max_x: int = -1
+	var max_y: int = -1
+	for y in image_height:
+		for x in image_width:
+			var pixel: Color = image.get_pixel(x, y)
+			if pixel.r < COVERAGE_WHITE_THRESHOLD or pixel.g < COVERAGE_WHITE_THRESHOLD or pixel.b < COVERAGE_WHITE_THRESHOLD:
+				continue
+			white_pixels += 1
+			min_x = mini(min_x, x)
+			min_y = mini(min_y, y)
+			max_x = maxi(max_x, x)
+			max_y = maxi(max_y, y)
+
+	var bounding_rect: Array[int] = [0, 0, 0, 0]
+	if white_pixels > 0:
+		bounding_rect = [min_x, min_y, max_x - min_x + 1, max_y - min_y + 1]
+	var white_percentage: float = 0.0 if total_pixels == 0 else float(white_pixels) / float(total_pixels) * 100.0
+	return {
+		"white_threshold": COVERAGE_WHITE_THRESHOLD,
+		"white_threshold_definition": "A pixel qualifies when R, G, and B are each >= 0.95.",
+		"white_pixel_count": white_pixels,
+		"total_frame_pixels": total_pixels,
+		"white_pixel_percentage": white_percentage,
+		"bounding_rect": bounding_rect,
+	}
+
+
 func _capture_after_frame_post_draw(run_token: int) -> void:
 	if _capture_requested:
 		return
@@ -996,6 +1181,7 @@ func _capture_after_frame_post_draw(run_token: int) -> void:
 			return
 		if capture_index == capture_count - 1:
 			if _active_capture_color:
+				_record_capture_provenance("color", "color.png")
 				var viewport_texture: Texture2D = get_viewport().get_texture()
 				if viewport_texture:
 					var image: Image = viewport_texture.get_image()
@@ -1014,6 +1200,16 @@ func _capture_after_frame_post_draw(run_token: int) -> void:
 	if not capture_succeeded:
 		_handle_run_persistence_failure(run_token)
 		return
+	if _active_capture_coverage:
+		var coverage_captured: bool = await _capture_diagnostic_pass(COVERAGE_MASK_SHADER, "coverage", "coverage.png", true, run_token)
+		if not coverage_captured:
+			_handle_run_persistence_failure(run_token)
+			return
+	if bool(_active_case_capture_flags["tangent"]):
+		var tangent_captured: bool = await _capture_diagnostic_pass(DEBUG_TANGENT_SHADER, "tangent", "tangent.png", false, run_token)
+		if not tangent_captured:
+			_handle_run_persistence_failure(run_token)
+			return
 	if not _write_run_outputs():
 		_handle_run_persistence_failure(run_token)
 		return
@@ -1031,6 +1227,10 @@ func _write_run_outputs() -> bool:
 	var output_files: Array[String] = ["run_manifest.json", "samples.csv", "summary.json"]
 	if _active_capture_color:
 		output_files.append("color.png")
+	if _active_capture_coverage:
+		output_files.append("coverage.png")
+	if bool(_active_case_capture_flags["tangent"]):
+		output_files.append("tangent.png")
 	var catalog_manifest: Array = []
 	for groom_data in groom_catalog:
 		var surface_indices: Array = []
@@ -1068,9 +1268,12 @@ func _write_run_outputs() -> bool:
 		"camera_pose": _camera_manifest(),
 		"lighting_rig": _lighting_manifest(),
 		"capture_flags": _active_case_capture_flags,
+		"captures": _active_capture_records,
+		"coverage_metrics": _active_coverage_metrics,
 		"runtime": _runtime_manifest(),
 		"files": output_files,
-		"material_state": "Source ShaderMaterials are cloned per surface; only surface overrides are replaced and restored.",
+		"material_state": "Source ShaderMaterials are cloned per surface; selected groom-level material_override values are temporarily cleared so per-surface variant/diagnostic overrides take precedence, then restored alongside surface overrides. Mesh and source material resources are never edited.",
+		"comparison_validity": _comparison_validity_manifest(),
 	}
 	if not _write_text(_run_directory.path_join("run_manifest.json"), JSON.stringify(manifest, "\t")):
 		return false
@@ -1121,6 +1324,9 @@ func _write_run_outputs() -> bool:
 		"mode": mode_name,
 		"variant": variant_name,
 		"sample_count": _samples.size(),
+		"captures": _active_capture_records,
+		"coverage_metrics": _active_coverage_metrics,
+		"comparison_validity": _comparison_validity_manifest(),
 		"statistics": statistics,
 	}
 	if not _write_text(_run_directory.path_join("summary.json"), JSON.stringify(summary, "\t")):
@@ -1139,6 +1345,7 @@ func _write_suite_manifest() -> bool:
 		"completed_runs": _suite_results.size(),
 		"cases": _suite_results,
 		"runtime": _runtime_manifest(),
+		"comparison_validity": _comparison_validity_manifest(),
 		"files": ["suite_manifest.json"],
 	}
 	return _write_text(_suite_directory.path_join("suite_manifest.json"), JSON.stringify(manifest, "\t"))
@@ -1188,6 +1395,15 @@ func _runtime_manifest() -> Dictionary:
 		"gpu_api": RenderingServer.get_video_adapter_api_version(),
 		"driver": String(ProjectSettings.get_setting("rendering/driver/driver_name", "unknown")),
 		"os": OS.get_name(),
+	}
+
+
+func _comparison_validity_manifest() -> Dictionary:
+	return {
+		"schema": COMPARISON_VALIDITY_SCHEMA,
+		"marker": COMPARISON_VALIDITY_MARKER,
+		"status": "valid_for_variant_comparison",
+		"material_override_precedence_repaired": true,
 	}
 
 

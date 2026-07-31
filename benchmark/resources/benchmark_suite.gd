@@ -42,7 +42,7 @@ func validation_errors() -> PackedStringArray:
 			&"camera_pose", &"lighting_rig", &"viewport_size",
 			&"warmup_frames", &"settle_frames", &"sample_frames",
 			&"capture_frames", &"repeat_count", &"capture_color",
-			&"capture_depth", &"capture_tangent", &"capture_debug"
+			&"capture_coverage", &"capture_depth", &"capture_tangent", &"capture_debug"
 		]
 		var case_errors: PackedStringArray = _validate_case_resource(benchmark_case, case_properties)
 		for message_index in case_errors.size():

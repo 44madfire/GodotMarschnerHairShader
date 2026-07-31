@@ -38,7 +38,11 @@ Phase 2 resources live under `benchmark/cases/`, `benchmark/cameras/`, and `benc
 user://hair_benchmarks/<timestamp>/<suite>/<case>/repeat_001/
 ```
 
-Each case directory contains the normal run artifacts plus resource metadata in `run_manifest.json`. The suite directory contains `suite_manifest.json` after every case and repeat has completed. Manual `start_benchmark()` calls retain the existing `user://hair_benchmarks/<timestamp>/` layout.
+Each case directory contains the normal run artifacts plus resource metadata in `run_manifest.json`. The suite directory contains `suite_manifest.json` after every case and repeat has completed. Newly written run, summary, and suite manifests include `comparison_validity.marker = "material_override_precedence_repair_v1"`; analysis should reject artifacts that lack this marker. Manual `start_benchmark()` calls retain the existing `user://hair_benchmarks/<timestamp>/` layout.
+
+Diagnostic suite cases can additionally request `coverage.png` and `tangent.png` through their capture flags. Coverage metrics are computed only from `coverage.png`: a pixel qualifies as white when R, G, and B are each at least `0.95`; the manifest and summary record the white-pixel count, percentage of total frame pixels, and the inclusive white-pixel bounding rectangle. Each capture record includes the process frame and monotonic timestamp immediately after its post-draw frame. The production `TIME`-driven Bayer/hash sequence is recorded, not frozen, so diagnostic captures remain temporally hash-dependent.
+
+Variant artifacts generated before the material-override precedence repair are invalid for comparison because groom-level overrides could hide the intended per-surface shader variants. Rerun the replacement smoke suite; those post-marker results are the first trustworthy baseline/control/Kajiya comparisons.
 
 ## Command line
 
