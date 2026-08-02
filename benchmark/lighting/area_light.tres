@@ -1,0 +1,12 @@
+[gd_resource type="Resource" script_class="BenchmarkLightingRig" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://benchmark/resources/benchmark_lighting_rig.gd" id="1_lighting_rig"]
+[ext_resource type="PackedScene" path="res://benchmark/lighting/area_light.tscn" id="2_rig_scene"]
+
+[resource]
+resource_name = "Area light"
+script = ExtResource("1_lighting_rig")
+id = &"area_light"
+name = "Area light"
+notes = "One 0.6x0.4 m rectangle AreaLight3D softbox above-front of the fixture, shadow-casting. Godot 4.7 AreaLight3D (forward+ renderer)."
+packed_scene = ExtResource("2_rig_scene")

@@ -2,16 +2,16 @@
 
 [ext_resource type="Script" path="res://benchmark/resources/benchmark_case.gd" id="1_benchmark_case"]
 [ext_resource type="Resource" path="res://benchmark/cameras/three_quarter.tres" id="2_camera_pose"]
-[ext_resource type="Resource" path="res://benchmark/lighting/single_directional_key.tres" id="3_lighting_rig"]
+[ext_resource type="Resource" path="res://benchmark/lighting/rear_spot.tres" id="3_lighting_rig"]
 
 [resource]
-resource_name = "Blowout - coverage control"
+resource_name = "Light scaling / Blowout / frozen baseline / three quarter"
 script = ExtResource("1_benchmark_case")
-id = &"blowout_coverage_control"
-display_name = "Blowout / coverage control"
+id = &"light_blowout_baseline_rear_spot"
+display_name = "Light scaling / Blowout / frozen baseline / three quarter"
 mode = 1
 groom_id = &"Blowout"
-variant = 1
+variant = 2
 camera_pose = ExtResource("2_camera_pose")
 lighting_rig = ExtResource("3_lighting_rig")
 viewport_size = Vector2i(1920, 1080)

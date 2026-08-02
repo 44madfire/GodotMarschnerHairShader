@@ -5,13 +5,13 @@
 [ext_resource type="Resource" path="res://benchmark/lighting/single_directional_key.tres" id="3_lighting_rig"]
 
 [resource]
-resource_name = "Blowout - coverage control"
+resource_name = "Performance / Blowout / approximate Kajiya-Kay / three quarter"
 script = ExtResource("1_benchmark_case")
-id = &"blowout_coverage_control"
-display_name = "Blowout / coverage control"
+id = &"perf_blowout_approximate_kajiya_kay"
+display_name = "Performance / Blowout / approximate Kajiya-Kay / three quarter"
 mode = 1
 groom_id = &"Blowout"
-variant = 1
+variant = 3
 camera_pose = ExtResource("2_camera_pose")
 lighting_rig = ExtResource("3_lighting_rig")
 viewport_size = Vector2i(1920, 1080)

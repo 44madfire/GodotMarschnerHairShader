@@ -1,0 +1,77 @@
+[gd_scene format=3]
+
+[node name="EightLightStress" type="Node3D"]
+
+[node name="Key" type="DirectionalLight3D" parent="."]
+transform = Transform3D(0.92718387, 0.07788509, -0.36642054, 0, 0.9781476, 0.2079117, 0.37460658, -0.19277237, 0.9069227, 0, 0, 0)
+light_intensity_lux = 85000.0
+light_specular = 0.6
+shadow_enabled = true
+shadow_bias = 0.005
+shadow_opacity = 0.999
+shadow_blur = 2.0
+directional_shadow_mode = 0
+directional_shadow_max_distance = 2.0
+
+[node name="Back" type="DirectionalLight3D" parent="."]
+rotation_degrees = Vector3(12, 180, 0)
+light_color = Color(0.72, 0.84, 1, 1)
+light_intensity_lux = 30000.0
+light_specular = 0.5
+shadow_enabled = true
+shadow_bias = 0.005
+directional_shadow_max_distance = 2.0
+
+[node name="Left" type="DirectionalLight3D" parent="."]
+rotation_degrees = Vector3(10, -90, 0)
+light_color = Color(1, 0.9, 0.8, 1)
+light_intensity_lux = 20000.0
+light_specular = 0.4
+shadow_enabled = true
+shadow_bias = 0.005
+directional_shadow_max_distance = 2.0
+
+[node name="Right" type="DirectionalLight3D" parent="."]
+rotation_degrees = Vector3(10, 90, 0)
+light_color = Color(0.85, 0.9, 1, 1)
+light_intensity_lux = 20000.0
+light_specular = 0.4
+shadow_enabled = true
+shadow_bias = 0.005
+directional_shadow_max_distance = 2.0
+
+[node name="OmniFrontRight" type="OmniLight3D" parent="."]
+position = Vector3(0.4, 0.6, 0.4)
+light_color = Color(1, 0.95, 0.85, 1)
+light_energy = 1.5
+light_specular = 0.3
+shadow_enabled = true
+shadow_bias = 0.02
+omni_range = 1.5
+
+[node name="OmniFrontLeft" type="OmniLight3D" parent="."]
+position = Vector3(-0.4, 0.6, 0.4)
+light_color = Color(0.85, 0.9, 1, 1)
+light_energy = 1.5
+light_specular = 0.3
+shadow_enabled = true
+shadow_bias = 0.02
+omni_range = 1.5
+
+[node name="OmniRearRight" type="OmniLight3D" parent="."]
+position = Vector3(0.4, 0.3, -0.4)
+light_color = Color(0.75, 0.85, 1, 1)
+light_energy = 1.2
+light_specular = 0.5
+shadow_enabled = true
+shadow_bias = 0.02
+omni_range = 1.5
+
+[node name="OmniRearLeft" type="OmniLight3D" parent="."]
+position = Vector3(-0.4, 0.3, -0.4)
+light_color = Color(1, 0.8, 0.75, 1)
+light_energy = 1.2
+light_specular = 0.5
+shadow_enabled = true
+shadow_bias = 0.02
+omni_range = 1.5

@@ -14,3 +14,4 @@ groom_id = &"Blowout"
 variant = 2
 camera_pose = ExtResource("2_camera_pose")
 lighting_rig = ExtResource("3_lighting_rig")
+viewport_size = Vector2i(1920, 1080)

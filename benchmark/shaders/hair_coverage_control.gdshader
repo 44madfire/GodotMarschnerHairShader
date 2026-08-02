@@ -1,9 +1,13 @@
 shader_type spatial;
-render_mode cull_disabled, world_vertex_coords;
+render_mode unshaded, cull_disabled, world_vertex_coords;
 
 // This variant intentionally keeps the source shader's material interface. The controller
 // clones each source ShaderMaterial, so groom-specific textures and parameter values remain
 // available when only the shader resource is replaced.
+// Unshaded lower-bound control: the custom Lambert light() work is removed so the measured
+// cost is the shared coverage/discard path plus a flat ALBEDO write. The shadow pass still
+// runs this fragment() body, so shadow casting keeps the source coverage pattern; an
+// unshaded material cannot receive light or shadows in the color pass.
 uniform vec3 albedo : source_color = vec3(0.1);
 uniform float longitudinal_roughness : hint_range(0.0, 1.0) = 0.3;
 uniform float azimuthal_roughness : hint_range(0.0, 1.0) = 0.8;
@@ -68,10 +72,6 @@ void fragment() {
 	ALBEDO = show_hashed_strands ? hash : albedo * smoothstep(-0.2, 0.2, u*(1.0 - coverage));
 	SPECULAR = 0.0;
 	ROUGHNESS = 1.0;
-}
-
-void light() {
-	// Stable, inexpensive diffuse lighting. ATTENUATION retains light and shadow influence.
-	float diffuse = max(dot(NORMAL, LIGHT), 0.0);
-	DIFFUSE_LIGHT += ALBEDO * LIGHT_COLOR * ATTENUATION * diffuse / PI;
+	// No light() function: the custom Lambert work was removed so this variant is the
+	// cheap lower-bound control. SPECULAR/ROUGHNESS above are inert under unshaded.
 }

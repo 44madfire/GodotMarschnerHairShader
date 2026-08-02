@@ -15,6 +15,10 @@ class_name BenchmarkCase
 ## Defaults match the current controller's CURRENT_MARSCHNER_BASELINE value.
 @export var variant: int = 2
 @export var groom_id: StringName = &"Blowout"
+## Canonical material profile for this case. Matches the profile_id of a
+## HairBenchmarkProfile resource; defaults to the current source profile
+## (res://benchmark/resources/profiles/source_current.tres).
+@export var profile_id: StringName = &"source_current"
 
 @export_category("Fixture")
 ## Resource is intentional here: typed class_name references can fail during
@@ -50,6 +54,8 @@ func validation_errors() -> PackedStringArray:
 		errors.append("mode must be a non-negative controller integer")
 	if variant < 0:
 		errors.append("variant must be a non-negative controller integer")
+	if String(profile_id).strip_edges().is_empty():
+		errors.append("profile_id must not be empty")
 	if viewport_size.x <= 0 or viewport_size.y <= 0:
 		errors.append("viewport_size dimensions must be greater than 0")
 	if warmup_frames < 0:

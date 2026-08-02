@@ -1,14 +1,14 @@
 [gd_resource type="Resource" script_class="BenchmarkCase" load_steps=4 format=3]
 
 [ext_resource type="Script" path="res://benchmark/resources/benchmark_case.gd" id="1_benchmark_case"]
-[ext_resource type="Resource" path="res://benchmark/cameras/three_quarter.tres" id="2_camera_pose"]
-[ext_resource type="Resource" path="res://benchmark/lighting/single_directional_key.tres" id="3_lighting_rig"]
+[ext_resource type="Resource" path="res://benchmark/cameras/close_up.tres" id="2_camera_pose"]
+[ext_resource type="Resource" path="res://benchmark/lighting/area_light.tres" id="3_lighting_rig"]
 
 [resource]
-resource_name = "Blowout - approximate Kajiya-Kay"
+resource_name = "Visual / Blowout / approximate Kajiya-Kay / close up"
 script = ExtResource("1_benchmark_case")
-id = &"blowout_approximate_kajiya_kay"
-display_name = "Blowout / approximate Kajiya-Kay"
+id = &"visual_blowout_approximate_kajiya_kay_close_up"
+display_name = "Visual / Blowout / approximate Kajiya-Kay / close up"
 mode = 1
 groom_id = &"Blowout"
 variant = 3

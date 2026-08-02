@@ -29,10 +29,11 @@ enum BenchmarkVariant {
 	COVERAGE_CONTROL,
 	CURRENT_MARSCHNER_BASELINE,
 	APPROX_KAJIYA_KAY,
+	BUILTIN_ALPHA_HASH_CONTROL,
 }
 
 const MODE_NAMES := ["NO_HAIR", "INDIVIDUAL_GROOM", "ALL_GROOMS", "REPRESENTATIVE_DEFAULT"]
-const VARIANT_NAMES := ["NO_HAIR", "COVERAGE_CONTROL", "CURRENT_MARSCHNER_BASELINE", "APPROX_KAJIYA_KAY"]
+const VARIANT_NAMES := ["NO_HAIR", "COVERAGE_CONTROL", "CURRENT_MARSCHNER_BASELINE", "APPROX_KAJIYA_KAY", "BUILTIN_ALPHA_HASH_CONTROL"]
 
 const PREWARM_DEFAULT := 180
 const SETTLE_DEFAULT := 30
@@ -47,6 +48,32 @@ const DEBUG_TANGENT_SHADER: Shader = preload("res://benchmark/shaders/hair_debug
 const CURRENT_MARSCHNER_SHADER: Shader = preload("res://benchmark/reference/baseline_hair.gdshader")
 const APPROX_KAJIYA_KAY_SHADER: Shader = preload("res://assets/hair/materials/shaders/hair_approx.gdshader")
 const COVERAGE_WHITE_THRESHOLD: float = 0.95
+
+## Benchmark time scale during runs. A tiny positive scale keeps Godot shader TIME
+## effectively frozen while the engine frame delta stays positive: with an exact
+## zero scale the imgui-godot addon's NewFrame delta is 0 and it logs an IM_ASSERT
+## error every frame. At this scale the production TIME*500 Bayer coordinate offset
+## only advances one integer texel every ~33 minutes of real time, so the hash
+## pattern is constant for normal benchmark durations.
+const BENCHMARK_TIME_SCALE: float = 1e-6
+## The production hash shaders offset their Bayer pattern by TIME * 500 texels
+## (see hair.gdshader / hair_coverage_control.gdshader discard id).
+const HASH_BAYER_TIME_FACTOR: float = 500.0
+## Scene-counter metrics whose stability across the sample window gates run
+## validity: the scene is static and TIME is effectively frozen, so any variance
+## in these counters indicates an unstable or mismatched run.
+const STABILITY_METRIC_NAMES := [
+	"visible_objects",
+	"visible_primitives",
+	"visible_draw_calls",
+	"shadow_objects",
+	"shadow_primitives",
+	"shadow_draw_calls",
+]
+const WINDOW_MODE_NAMES := ["windowed", "minimized", "maximized", "fullscreen", "exclusive_fullscreen"]
+const VSYNC_MODE_NAMES := ["disabled", "enabled", "adaptive", "mailbox"]
+## Resource-backed catalog of stable groom definitions (display metadata source).
+const GROOM_CATALOG_RESOURCE_PATH := "res://benchmark/resources/grooms/hair_groom_catalog.tres"
 
 ## RenderingServer's viewport render-info enum values in Godot 4.7.
 const RENDER_INFO_OBJECTS := 0
@@ -70,7 +97,7 @@ const RENDER_INFO_SHADOW := 1
 @export_category("Smoke Run")
 @export_enum("NO_HAIR", "INDIVIDUAL_GROOM", "ALL_GROOMS", "REPRESENTATIVE_DEFAULT") var benchmark_mode: int = BenchmarkMode.REPRESENTATIVE_DEFAULT
 @export var individual_groom: StringName = &"Blowout"
-@export_enum("NO_HAIR", "COVERAGE_CONTROL", "CURRENT_MARSCHNER_BASELINE", "APPROX_KAJIYA_KAY") var benchmark_variant: int = BenchmarkVariant.CURRENT_MARSCHNER_BASELINE
+@export_enum("NO_HAIR", "COVERAGE_CONTROL", "CURRENT_MARSCHNER_BASELINE", "APPROX_KAJIYA_KAY", "BUILTIN_ALPHA_HASH_CONTROL") var benchmark_variant: int = BenchmarkVariant.CURRENT_MARSCHNER_BASELINE
 @export var auto_start_smoke: bool = false
 @export_range(0, 100000, 1) var prewarm_frames: int = PREWARM_DEFAULT
 @export_range(0, 100000, 1) var settle_frames: int = SETTLE_DEFAULT
@@ -79,7 +106,8 @@ const RENDER_INFO_SHADOW := 1
 @export_dir var output_root: String = "user://hair_benchmarks"
 
 ## Public catalog: one dictionary per direct MeshInstance3D child of Head.
-## Each dictionary contains id, name, node, original_visible, and surfaces.
+## Each dictionary contains the transient instance id, stable groom_id/name,
+## display metadata, node, original_visible, and surfaces.
 var groom_catalog: Array[Dictionary] = []
 var benchmark_state: int = BenchmarkState.IDLE
 
@@ -88,6 +116,11 @@ var _original_state_saved := false
 var _active_mode := BenchmarkMode.REPRESENTATIVE_DEFAULT
 var _active_variant := BenchmarkVariant.CURRENT_MARSCHNER_BASELINE
 var _active_individual_groom: StringName = &"Blowout"
+var _active_case_profile_id: StringName = &"source_current"
+var _groom_metadata_cache: Dictionary = {}
+var _alpha_hash_texture_cache: Dictionary = {}
+var _time_scale_saved := false
+var _saved_time_scale := 1.0
 var _state_frame := 0
 var _samples: Array[Dictionary] = []
 var _run_directory := ""
@@ -204,9 +237,13 @@ func start_benchmark(requested_mode: int = -1, requested_variant: int = -1, requ
 	_begin_manual_run()
 
 	_active_mode = benchmark_mode if requested_mode < 0 else clampi(requested_mode, 0, BenchmarkMode.REPRESENTATIVE_DEFAULT)
-	_active_variant = benchmark_variant if requested_variant < 0 else clampi(requested_variant, 0, BenchmarkVariant.APPROX_KAJIYA_KAY)
+	_active_variant = benchmark_variant if requested_variant < 0 else clampi(requested_variant, 0, BenchmarkVariant.BUILTIN_ALPHA_HASH_CONTROL)
 	_active_individual_groom = individual_groom if requested_groom == &"" else requested_groom
-	apply_variant(_active_variant)
+	if not apply_variant(_active_variant):
+		benchmark_state = BenchmarkState.IDLE
+		_record_start_failure("Unable to start benchmark: variant %s could not be applied." % _variant_name(_active_variant))
+		_restore_benchmark_environment()
+		return
 	_apply_display_mode(BenchmarkMode.NO_HAIR if _active_variant == BenchmarkVariant.NO_HAIR else _active_mode)
 
 	_samples.clear()
@@ -215,6 +252,7 @@ func start_benchmark(requested_mode: int = -1, requested_variant: int = -1, requ
 	_run_directory = output_root.path_join(_run_timestamp)
 	if not _ensure_output_directory(_run_directory):
 		benchmark_state = BenchmarkState.IDLE
+		_restore_benchmark_environment()
 		return
 	benchmark_state = BenchmarkState.PREWARM
 
@@ -285,13 +323,16 @@ func start_suite(suite: Resource) -> bool:
 
 
 ## Applies a supported material/display variant without starting a run.
-func apply_variant(variant_id: int) -> void:
+## Returns false (and restores the original surface state) when a variant
+## cannot be applied, for example when a source attributes texture is missing.
+func apply_variant(variant_id: int) -> bool:
 	if groom_catalog.is_empty():
 		_discover_grooms()
-	var selected_variant := clampi(variant_id, 0, BenchmarkVariant.APPROX_KAJIYA_KAY)
+	var selected_variant := clampi(variant_id, 0, BenchmarkVariant.BUILTIN_ALPHA_HASH_CONTROL)
 	var display_mode := _active_mode
 	_restore_original_surface_state()
 	_active_variant = selected_variant
+	var applied := true
 
 	match selected_variant:
 		BenchmarkVariant.NO_HAIR:
@@ -305,6 +346,12 @@ func apply_variant(variant_id: int) -> void:
 		BenchmarkVariant.APPROX_KAJIYA_KAY:
 			_apply_shader_variant(APPROX_KAJIYA_KAY_SHADER)
 			_apply_display_mode(display_mode)
+		BenchmarkVariant.BUILTIN_ALPHA_HASH_CONTROL:
+			applied = _apply_builtin_alpha_hash_variant()
+			_apply_display_mode(display_mode)
+	if not applied:
+		_restore_original_surface_state()
+	return applied
 
 
 func _start_next_suite_item(expected_token: int) -> void:
@@ -381,9 +428,12 @@ func _start_resource_case(case: Resource, expected_token: int, output_directory:
 	_active_coverage_metrics = {}
 	_suite_repeat_count = maxi(repeat_count, 1)
 	_active_mode = clampi(_resource_int(case, &"mode", BenchmarkMode.REPRESENTATIVE_DEFAULT), 0, BenchmarkMode.REPRESENTATIVE_DEFAULT)
-	_active_variant = clampi(_resource_int(case, &"variant", BenchmarkVariant.CURRENT_MARSCHNER_BASELINE), 0, BenchmarkVariant.APPROX_KAJIYA_KAY)
+	_active_variant = clampi(_resource_int(case, &"variant", BenchmarkVariant.CURRENT_MARSCHNER_BASELINE), 0, BenchmarkVariant.BUILTIN_ALPHA_HASH_CONTROL)
 	_active_individual_groom = _resource_string_name(case, &"groom_id", &"")
-	apply_variant(_active_variant)
+	_active_case_profile_id = _resource_string_name(case, &"profile_id", &"source_current")
+	if not apply_variant(_active_variant):
+		_abort_resource_case("variant %s could not be applied" % _variant_name(_active_variant))
+		return false
 	_apply_display_mode(BenchmarkMode.NO_HAIR if _active_variant == BenchmarkVariant.NO_HAIR else _active_mode)
 
 	_run_timestamp = _make_run_timestamp()
@@ -464,6 +514,7 @@ func _advance_suite_after_output(expected_token: int) -> void:
 		"repeat": _active_case_repeat,
 		"directory": _run_directory,
 		"sample_count": _samples.size(),
+		"validation": _validation_result(),
 	})
 	if _suite_repeat_index + 1 < _suite_repeat_count:
 		_suite_repeat_index += 1
@@ -640,6 +691,7 @@ func _exit_tree() -> void:
 func _begin_manual_run() -> void:
 	_cancel_current_request()
 	_configure_benchmark_environment()
+	_freeze_benchmark_time()
 	_disable_fixture_nodes()
 	_discover_grooms()
 	_active_prewarm_frames = prewarm_frames
@@ -656,6 +708,7 @@ func _begin_manual_run() -> void:
 func _begin_resource_request() -> void:
 	_cancel_current_request()
 	_configure_benchmark_environment()
+	_freeze_benchmark_time()
 	_disable_fixture_nodes()
 	_discover_grooms()
 	last_start_error = ""
@@ -687,6 +740,7 @@ func _reset_case_metadata() -> void:
 	_active_case_lighting_id = &""
 	_active_case_lighting_name = ""
 	_active_case_lighting_notes = ""
+	_active_case_profile_id = &"source_current"
 	_active_case_viewport_size = Vector2i.ZERO
 	_active_case_repeat = 0
 	_active_case_capture_flags = {
@@ -698,6 +752,33 @@ func _reset_case_metadata() -> void:
 	}
 	_active_capture_records.clear()
 	_active_coverage_metrics = {}
+
+
+## Effectively freezes Godot shader TIME for the duration of a benchmark run: the
+## prior Engine.time_scale is saved and set to BENCHMARK_TIME_SCALE (a tiny
+## positive scale) before benchmark rendering starts. TIME therefore advances at
+## one millionth of real time, so the production TIME*500 integer Bayer coordinate
+## stays constant for normal benchmark durations (the hash stability budget is
+## ~33 minutes; see HASH_BAYER_TIME_FACTOR). The controller's state machine
+## advances by frame counters, not by delta time, so PREWARM/SETTLE/SAMPLE/CAPTURE
+## still complete. Idempotent per run.
+func _freeze_benchmark_time() -> void:
+	if _time_scale_saved:
+		return
+	_saved_time_scale = Engine.time_scale
+	Engine.time_scale = BENCHMARK_TIME_SCALE
+	_time_scale_saved = true
+
+
+## Restores the Engine.time_scale saved by _freeze_benchmark_time(). Idempotent;
+## a no-op when no benchmark freeze is active. Called from
+## _restore_benchmark_environment() so every completion, failure, cancellation,
+## and exit path restores the prior value.
+func _restore_benchmark_time() -> void:
+	if not _time_scale_saved:
+		return
+	Engine.time_scale = _saved_time_scale
+	_time_scale_saved = false
 
 
 func _configure_benchmark_environment() -> void:
@@ -734,6 +815,7 @@ func _lock_benchmark_environment() -> void:
 
 
 func _restore_benchmark_environment() -> void:
+	_restore_benchmark_time()
 	_benchmark_environment_active = false
 	var viewport: Viewport = get_viewport()
 	if _viewport_quality_saved and viewport:
@@ -887,10 +969,14 @@ func _begin_diagnostic_capture(shader: Shader, replace_head_material: bool) -> b
 		for surface_data in groom_data["surfaces"]:
 			var surface_index: int = int(surface_data["surface_index"])
 			var current_override: Material = groom.get_surface_override_material(surface_index)
-			var active_material: ShaderMaterial = groom.get_active_material(surface_index) as ShaderMaterial
+			# Use the source material saved at discovery time, not the currently
+			# active material: the active variant may be a built-in
+			# StandardMaterial3D (BUILTIN_ALPHA_HASH_CONTROL) that cannot be cast.
+			var source_material_value: Variant = surface_data["source_active_material"]
+			var active_material: ShaderMaterial = source_material_value as ShaderMaterial
 			if not active_material:
 				_restore_diagnostic_state()
-				_record_persistence_failure("Unable to prepare diagnostic capture: hair surface has no ShaderMaterial")
+				_record_persistence_failure("Unable to prepare diagnostic capture: hair surface has no source ShaderMaterial")
 				return false
 			diagnostic_surfaces.append({
 				"groom": groom,
@@ -971,11 +1057,14 @@ func _discover_grooms() -> void:
 	if not _head:
 		return
 
+	var groom_metadata := _groom_metadata_lookup()
 	for child in _head.get_children():
 		var groom := child as MeshInstance3D
 		if not groom or not groom.mesh:
 			continue
 
+		var groom_id := StringName(groom.name)
+		var metadata: Dictionary = groom_metadata.get(groom_id, {})
 		var surfaces: Array[Dictionary] = []
 		for surface_index in groom.mesh.get_surface_count():
 			var original_override := groom.get_surface_override_material(surface_index)
@@ -987,8 +1076,14 @@ func _discover_grooms() -> void:
 			})
 
 		groom_catalog.append({
+			# Transient per-process identity; never used for case selection.
 			"id": groom.get_instance_id(),
-			"name": StringName(groom.name),
+			# Stable identity: groom node name under Head, matching case groom_id
+			# and the resource-backed hair_groom_catalog definitions.
+			"groom_id": groom_id,
+			"name": groom_id,
+			"display_name": String(metadata.get("display_name", String(groom_id))),
+			"category": String(metadata.get("category", "")),
 			"node": groom,
 			"original_material_override": groom.material_override,
 			"original_visible": groom.visible,
@@ -996,6 +1091,35 @@ func _discover_grooms() -> void:
 		})
 
 	_original_state_saved = not groom_catalog.is_empty()
+
+
+## Loads the resource-backed groom catalog once and returns a lookup keyed by
+## groom_id with display metadata. Returns an empty dictionary when the catalog
+## resource is absent or unreadable; the controller then falls back to groom
+## node names as display names. Never modifies scene materials.
+func _groom_metadata_lookup() -> Dictionary:
+	if not _groom_metadata_cache.is_empty():
+		return _groom_metadata_cache
+	var catalog_resource: Resource = load(GROOM_CATALOG_RESOURCE_PATH)
+	if catalog_resource:
+		var definitions_value: Variant = catalog_resource.get(&"groom_definitions")
+		if definitions_value is Array:
+			var definitions: Array = definitions_value
+			for definition_value in definitions:
+				var definition := definition_value as Resource
+				if not definition:
+					continue
+				var groom_id_value: Variant = definition.get(&"groom_id")
+				if not (groom_id_value is StringName or groom_id_value is String):
+					continue
+				var groom_id := StringName(groom_id_value)
+				if String(groom_id).strip_edges().is_empty():
+					continue
+				_groom_metadata_cache[groom_id] = {
+					"display_name": String(definition.get(&"display_name")),
+					"category": String(definition.get(&"category")),
+				}
+	return _groom_metadata_cache
 
 
 func _apply_shader_variant(shader: Shader) -> void:
@@ -1019,6 +1143,113 @@ func _apply_shader_variant(shader: Shader) -> void:
 			var cloned_material := source_shader_material.duplicate() as ShaderMaterial
 			cloned_material.shader = shader
 			groom.set_surface_override_material(int(surface_data["surface_index"]), cloned_material)
+
+
+## Applies the built-in StandardMaterial3D alpha-hash control. Per surface, a
+## transient StandardMaterial3D is created from the source ShaderMaterial saved at
+## discovery time (never the currently active variant material). Each source
+## attributes texture (RGB, coverage in red, no alpha) is converted once into a
+## cached in-memory texture with white RGB and the source red channel copied to
+## alpha, which drives Godot's TRANSPARENCY_ALPHA_HASH discard. This is an
+## approximation of COVERAGE_CONTROL: it has no distance/depth bias and no
+## TIME-driven Bayer pattern. Missing or empty attributes textures fail with a
+## clear start failure instead of crashing.
+func _apply_builtin_alpha_hash_variant() -> bool:
+	for groom_data in groom_catalog:
+		var groom := groom_data["node"] as MeshInstance3D
+		if not is_instance_valid(groom):
+			continue
+		# Groom-level material_override wins over surface overrides, so it must be
+		# cleared while applying; _restore_original_surface_state() restores the
+		# exact original value afterwards.
+		groom.material_override = null
+		for surface_data in groom_data["surfaces"]:
+			var source_material_value: Variant = surface_data["source_active_material"]
+			var source_material: ShaderMaterial = source_material_value as ShaderMaterial
+			if not source_material:
+				_record_start_failure(
+					"BUILTIN_ALPHA_HASH_CONTROL could not be applied: groom '%s' surface %d has no source ShaderMaterial."
+					% [String(groom_data["name"]), int(surface_data["surface_index"])]
+				)
+				return false
+			var attributes_value: Variant = source_material.get(&"shader_parameter/attributes_texture")
+			var attributes_texture: Texture2D = attributes_value as Texture2D
+			if not attributes_texture:
+				_record_start_failure(
+					"BUILTIN_ALPHA_HASH_CONTROL could not be applied: groom '%s' surface %d has no attributes_texture."
+					% [String(groom_data["name"]), int(surface_data["surface_index"])]
+				)
+				return false
+			var alpha_texture: ImageTexture = _alpha_texture_for(attributes_texture)
+			if not alpha_texture:
+				_record_start_failure(
+					"BUILTIN_ALPHA_HASH_CONTROL could not be applied: groom '%s' surface %d attributes_texture is empty."
+					% [String(groom_data["name"]), int(surface_data["surface_index"])]
+				)
+				return false
+
+			var alpha_hash_material := StandardMaterial3D.new()
+			alpha_hash_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_HASH
+			alpha_hash_material.cull_mode = BaseMaterial3D.CULL_DISABLED
+			alpha_hash_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+			alpha_hash_material.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+			alpha_hash_material.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
+			alpha_hash_material.roughness = 1.0
+			# Depth write and shadow casting keep their alpha-hash defaults so the
+			# built-in variant participates in shadows/depth as the hash supports.
+			alpha_hash_material.albedo_color = _source_albedo_color(source_material)
+			alpha_hash_material.albedo_texture = alpha_texture
+			groom.set_surface_override_material(int(surface_data["surface_index"]), alpha_hash_material)
+	return true
+
+
+## Returns a cached transient ImageTexture with white RGB and the source red
+## channel copied to alpha. Keyed by the source resource path (or instance id for
+## pathless textures) so each source attributes texture is converted only once per
+## process. The result is never saved to disk or imported.
+func _alpha_texture_for(source_texture: Texture2D) -> ImageTexture:
+	if not source_texture:
+		return null
+	var cache_key: Variant = source_texture.resource_path
+	if String(cache_key).is_empty():
+		cache_key = int(source_texture.get_instance_id())
+	if _alpha_hash_texture_cache.has(cache_key):
+		var cached_value: Variant = _alpha_hash_texture_cache[cache_key]
+		return cached_value as ImageTexture
+
+	var source_image: Image = source_texture.get_image()
+	if not source_image or source_image.get_width() <= 0 or source_image.get_height() <= 0:
+		return null
+	source_image.convert(Image.FORMAT_RGBA8)
+	var pixels: PackedByteArray = source_image.get_data()
+	var pixel_count := pixels.size() >> 2
+	for pixel_index in pixel_count:
+		var offset := pixel_index << 2
+		var coverage_byte: int = pixels[offset]
+		pixels[offset] = 255
+		pixels[offset + 1] = 255
+		pixels[offset + 2] = 255
+		pixels[offset + 3] = coverage_byte
+	var alpha_image := Image.create_from_data(source_image.get_width(), source_image.get_height(), false, Image.FORMAT_RGBA8, pixels)
+	if not alpha_image:
+		return null
+	var alpha_texture := ImageTexture.create_from_image(alpha_image)
+	_alpha_hash_texture_cache[cache_key] = alpha_texture
+	return alpha_texture
+
+
+## Reads the source shader's albedo parameter for the built-in control. The source
+## declares vec3 albedo, which Godot exposes as a Color; alpha is forced to 1 so
+## the converted albedo texture alpha alone drives the alpha-hash discard.
+func _source_albedo_color(source_material: ShaderMaterial) -> Color:
+	var albedo_value: Variant = source_material.get(&"shader_parameter/albedo")
+	if albedo_value is Color:
+		var albedo_color: Color = albedo_value
+		return Color(albedo_color.r, albedo_color.g, albedo_color.b, 1.0)
+	if albedo_value is Vector3:
+		var albedo_vector: Vector3 = albedo_value
+		return Color(albedo_vector.x, albedo_vector.y, albedo_vector.z, 1.0)
+	return Color(0.1, 0.1, 0.1, 1.0)
 
 
 func _apply_display_mode(mode: int) -> void:
@@ -1092,7 +1323,7 @@ func _record_capture_provenance(pass_name: String, file_name: String) -> void:
 		"file": file_name,
 		"process_frame": Engine.get_process_frames(),
 		"monotonic_timestamp_usec": Time.get_ticks_usec(),
-		"time_hash_provenance": "Production TIME-driven Bayer/hash path; temporal hash is recorded, not frozen.",
+		"time_hash_provenance": "Production TIME-driven Bayer/hash path; Engine.time_scale is set to 1e-06 for the run, so shader TIME advances at one millionth of real time and the TIME*500 integer Bayer coordinate stays constant for normal benchmark durations (effectively frozen, not exactly zero; ~33 minute stability budget). The prior Engine.time_scale is restored on every completion, failure, cancellation, and exit path.",
 	})
 
 
@@ -1224,6 +1455,7 @@ func _write_run_outputs() -> bool:
 	var variant_name := _variant_name(_active_variant)
 	var baseline_commit := FileAccess.get_file_as_string("res://benchmark/reference/BASELINE_COMMIT.txt").strip_edges()
 	var actual_viewport: Vector2i = get_viewport().size
+	var validation := _validation_result()
 	var output_files: Array[String] = ["run_manifest.json", "samples.csv", "summary.json"]
 	if _active_capture_color:
 		output_files.append("color.png")
@@ -1238,7 +1470,10 @@ func _write_run_outputs() -> bool:
 			surface_indices.append(int(surface_data["surface_index"]))
 		catalog_manifest.append({
 			"id": int(groom_data["id"]),
+			"groom_id": String(groom_data["groom_id"]),
 			"name": String(groom_data["name"]),
+			"display_name": String(groom_data["display_name"]),
+			"category": String(groom_data["category"]),
 			"surface_indices": surface_indices,
 		})
 	var manifest := {
@@ -1253,6 +1488,7 @@ func _write_run_outputs() -> bool:
 		"mode_value": _active_mode,
 		"variant": variant_name,
 		"variant_value": _active_variant,
+		"profile_id": String(_active_case_profile_id),
 		"individual_groom": String(_active_individual_groom),
 		"state_sequence": ["PREWARM", "SETTLE", "SAMPLE", "CAPTURE", "COMPLETE"],
 		"prewarm_frames": _active_prewarm_frames,
@@ -1270,6 +1506,7 @@ func _write_run_outputs() -> bool:
 		"capture_flags": _active_case_capture_flags,
 		"captures": _active_capture_records,
 		"coverage_metrics": _active_coverage_metrics,
+		"validation": validation,
 		"runtime": _runtime_manifest(),
 		"files": output_files,
 		"material_state": "Source ShaderMaterials are cloned per surface; selected groom-level material_override values are temporarily cleared so per-surface variant/diagnostic overrides take precedence, then restored alongside surface overrides. Mesh and source material resources are never edited.",
@@ -1295,24 +1532,28 @@ func _write_run_outputs() -> bool:
 	if not _write_text(_run_directory.path_join("samples.csv"), csv):
 		return false
 
-	var metric_names := [
-		"cpu_ms",
-		"gpu_ms",
-		"visible_objects",
-		"visible_primitives",
-		"visible_draw_calls",
-		"shadow_objects",
-		"shadow_primitives",
-		"shadow_draw_calls",
-	]
+	var metric_names := ["cpu_ms", "gpu_ms"]
+	metric_names.append_array(STABILITY_METRIC_NAMES)
 	var statistics := {}
 	for metric_name in metric_names:
 		var values: Array = []
 		for sample in _samples:
 			values.append(float(sample[metric_name]))
+		var mean_value := _mean(values)
+		var variance_value := _variance(values, mean_value)
 		statistics[metric_name] = {
+			"count": values.size(),
+			"min": _percentile(values, 0.0),
+			"max": _percentile(values, 1.0),
+			"mean": mean_value,
 			"median": _percentile(values, 0.50),
+			"stddev": sqrt(variance_value),
+			"variance": variance_value,
+			"p90": _percentile(values, 0.90),
 			"p95": _percentile(values, 0.95),
+			"p99": _percentile(values, 0.99),
+			"trimmed_mean_5pct": _trimmed_mean(values, 0.05),
+			"spread": _percentile(values, 1.0) - _percentile(values, 0.0),
 		}
 
 	var summary := {
@@ -1323,10 +1564,13 @@ func _write_run_outputs() -> bool:
 		"repeat": _active_case_repeat,
 		"mode": mode_name,
 		"variant": variant_name,
+		"profile_id": String(_active_case_profile_id),
 		"sample_count": _samples.size(),
 		"captures": _active_capture_records,
 		"coverage_metrics": _active_coverage_metrics,
+		"validation": validation,
 		"comparison_validity": _comparison_validity_manifest(),
+		"runtime": _runtime_manifest(),
 		"statistics": statistics,
 	}
 	if not _write_text(_run_directory.path_join("summary.json"), JSON.stringify(summary, "\t")):
@@ -1388,14 +1632,117 @@ func _transform_manifest(value: Transform3D) -> Dictionary:
 
 func _runtime_manifest() -> Dictionary:
 	var version_info: Dictionary = Engine.get_version_info()
+	var viewport: Viewport = get_viewport()
 	return {
 		"godot_version": String(version_info.get("string", "unknown")),
+		"git_commit": _git_commit(),
+		"build": {
+			"debug_build": OS.is_debug_build(),
+			"editor_build": Engine.is_editor_hint(),
+		},
 		"render_method": String(ProjectSettings.get_setting("rendering/renderer/rendering_method", "unknown")),
 		"gpu_adapter": RenderingServer.get_video_adapter_name(),
 		"gpu_api": RenderingServer.get_video_adapter_api_version(),
 		"driver": String(ProjectSettings.get_setting("rendering/driver/driver_name", "unknown")),
 		"os": OS.get_name(),
+		"os_distribution": _os_distribution_name(),
+		"display": {
+			"window_mode": _window_mode_name(DisplayServer.window_get_mode()),
+			"window_mode_value": int(DisplayServer.window_get_mode()),
+			"window_size": _vector2i_manifest(DisplayServer.window_get_size()),
+			"vsync_mode": _vsync_mode_name(DisplayServer.window_get_vsync_mode()),
+			"vsync_mode_value": int(DisplayServer.window_get_vsync_mode()),
+			"max_fps": Engine.max_fps,
+		},
+		"viewport": {
+			# These are the harness-locked run values (TAA off, scaling forced to
+			# bilinear 1.0); the caller's originals are restored after the run.
+			"scaling_3d_mode": int(viewport.scaling_3d_mode) if viewport else -1,
+			"scaling_3d_scale": viewport.scaling_3d_scale if viewport else 1.0,
+			"msaa_3d": int(viewport.msaa_3d) if viewport else 0,
+			"use_taa": viewport.use_taa if viewport else false,
+		},
+		"shadows": {
+			"directional_shadow_size": _project_setting("rendering/lights_and_shadows/directional_shadow/size"),
+			"directional_shadow_16_bits": _project_setting("rendering/lights_and_shadows/directional_shadow/16_bits"),
+			"directional_soft_shadow_filter_quality": _project_setting("rendering/lights_and_shadows/directional_shadow/soft_shadow_filter_quality"),
+			"positional_soft_shadow_filter_quality": _project_setting("rendering/lights_and_shadows/positional_shadow/soft_shadow_filter_quality"),
+			"use_physical_light_units": _project_setting("rendering/lights_and_shadows/use_physical_light_units"),
+		},
+		"anti_aliasing": {
+			"use_debanding": _project_setting("rendering/anti_aliasing/quality/use_debanding"),
+			"screen_space_roughness_limiter_enabled": _project_setting("rendering/anti_aliasing/quality/screen_space_roughness_limiter/enabled"),
+		},
+		"environment_resource_path": _environment_resource_path(),
+		"hash_time": {
+			"strategy": "Engine.time_scale is saved and set to BENCHMARK_TIME_SCALE (1e-06) before benchmark rendering starts so Godot shader TIME advances at one millionth of real time; the controller's frame-count state machine still advances. The prior value is restored on every completion, failure, cancellation, and exit path.",
+			"benchmark_time_scale": BENCHMARK_TIME_SCALE,
+			"engine_time_scale": Engine.time_scale,
+			"effectively_frozen": _time_scale_saved,
+			"hash_bayer_time_factor": HASH_BAYER_TIME_FACTOR,
+			"hash_stability_budget_seconds": 1.0 / (HASH_BAYER_TIME_FACTOR * BENCHMARK_TIME_SCALE),
+			"phase": "Effectively frozen (TIME advances at 1e-06x real time) for the entire run: PREWARM, SETTLE, SAMPLE, CAPTURE.",
+		},
 	}
+
+
+## Safe ProjectSettings lookup: returns the setting value, or the string "unset"
+## when the project does not define it. Never fails on missing keys.
+func _project_setting(setting_name: String) -> Variant:
+	if ProjectSettings.has_setting(setting_name):
+		return ProjectSettings.get_setting(setting_name)
+	return "unset"
+
+
+## Best-effort Git commit discovery: reads res://.git/HEAD and the referenced ref
+## file directly (no shell calls, no file writes). Returns "unknown" when the
+## repository is absent, packed away, or unreadable.
+func _git_commit() -> String:
+	var head_file: FileAccess = FileAccess.open("res://.git/HEAD", FileAccess.READ)
+	if head_file == null:
+		return "unknown"
+	var head_text: String = head_file.get_as_text().strip_edges()
+	if head_text.begins_with("ref:"):
+		var ref_path := head_text.trim_prefix("ref:").strip_edges()
+		var ref_file: FileAccess = FileAccess.open("res://.git/%s" % ref_path, FileAccess.READ)
+		if ref_file == null:
+			return "unknown"
+		return ref_file.get_as_text().strip_edges()
+	if head_text.length() == 40 or head_text.length() == 64:
+		return head_text
+	return "unknown"
+
+
+func _os_distribution_name() -> String:
+	var distribution_name: String = OS.get_distribution_name()
+	return distribution_name if not distribution_name.is_empty() else "unknown"
+
+
+func _window_mode_name(mode: int) -> String:
+	return WINDOW_MODE_NAMES[clampi(mode, 0, WINDOW_MODE_NAMES.size() - 1)]
+
+
+func _vsync_mode_name(mode: int) -> String:
+	return VSYNC_MODE_NAMES[clampi(mode, 0, VSYNC_MODE_NAMES.size() - 1)]
+
+
+func _vector2i_manifest(value: Vector2i) -> Array:
+	return [value.x, value.y]
+
+
+## Path of the environment currently active in the run viewport; "none" when no
+## environment is set, "embedded (no resource path)" for in-scene resources.
+func _environment_resource_path() -> String:
+	var viewport: Viewport = get_viewport()
+	if not viewport:
+		return "unknown"
+	var world_environment: Environment = viewport.get_world_3d().environment
+	if not world_environment:
+		return "none"
+	var resource_path: String = world_environment.resource_path
+	if resource_path.is_empty():
+		return "embedded (no resource path)"
+	return resource_path
 
 
 func _comparison_validity_manifest() -> Dictionary:
@@ -1481,6 +1828,76 @@ func _percentile(values: Array, percentile: float) -> float:
 	sorted.sort()
 	var index := clampi(int(ceil(float(sorted.size() - 1) * percentile)), 0, sorted.size() - 1)
 	return float(sorted[index])
+
+
+func _mean(values: Array) -> float:
+	if values.is_empty():
+		return 0.0
+	var sum := 0.0
+	for value in values:
+		sum += float(value)
+	return sum / float(values.size())
+
+
+## Population variance (sum of squared deviations divided by n). Returns 0.0 for
+## fewer than two samples.
+func _variance(values: Array, mean_value: float) -> float:
+	if values.size() < 2:
+		return 0.0
+	var sum_squares := 0.0
+	for value in values:
+		var difference := float(value) - mean_value
+		sum_squares += difference * difference
+	return sum_squares / float(values.size())
+
+
+## Mean after excluding the lowest and highest trim_fraction of samples. Falls
+## back to the plain mean when the trim would remove every sample (small windows)
+## or when the trim fraction is not positive.
+func _trimmed_mean(values: Array, trim_fraction: float) -> float:
+	if values.is_empty():
+		return 0.0
+	var sorted: Array = values.duplicate()
+	sorted.sort()
+	var trim_count := int(floor(float(sorted.size()) * trim_fraction))
+	if trim_count <= 0 or trim_count * 2 >= sorted.size():
+		return _mean(values)
+	return _mean(sorted.slice(trim_count, sorted.size() - trim_count))
+
+
+## Computes the run-validation result. A run is valid when at least one sample was
+## collected and every visible/shadow object/primitive/draw-call counter is
+## constant across the sample window (the scene is static and TIME is effectively
+## frozen, so any counter variance indicates an unstable or mismatched run).
+## Intentional short sample windows (pass-count tests) are never rejected; they
+## are only noted.
+func _validation_result() -> Dictionary:
+	var notes: Array = []
+	var valid := true
+	if _samples.is_empty():
+		valid = false
+		notes.append("no samples were collected")
+	elif _samples.size() < _active_sample_frames:
+		valid = false
+		notes.append("sample count %d is below the requested %d frames" % [_samples.size(), _active_sample_frames])
+	elif _active_sample_frames < SAMPLE_DEFAULT:
+		notes.append("intentional short sample window (%d frames, default is %d); statistics are computed on fewer samples" % [_active_sample_frames, SAMPLE_DEFAULT])
+	for metric_name in STABILITY_METRIC_NAMES:
+		var minimum_value := INF
+		var maximum_value := -INF
+		for sample in _samples:
+			var value := float(sample[metric_name])
+			minimum_value = minf(minimum_value, value)
+			maximum_value = maxf(maximum_value, value)
+		if _samples.is_empty():
+			continue
+		if minimum_value != maximum_value:
+			valid = false
+			notes.append("%s is not stable across the sample window: min %d, max %d" % [metric_name, int(minimum_value), int(maximum_value)])
+	return {
+		"valid": valid,
+		"validation_notes": notes,
+	}
 
 
 func _make_run_timestamp() -> String:
