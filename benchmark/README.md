@@ -10,6 +10,24 @@ user://hair_benchmarks/<timestamp>/
 
 Each completed run contains `run_manifest.json`, `samples.csv`, `summary.json`, and `color.png`.
 
+## Preview overlay
+
+`BenchmarkHarness.tscn` includes an optional `BenchmarkPreviewOverlay` Control in a
+separate CanvasLayer. It is visible by default (`show_preview_ui = true`) and
+provides compact groom, variant, and mode selectors for the ten registered
+grooms. **Apply Preview** calls the controller's non-timed `apply_variant()` path
+and leaves the selected configuration visible. The overlay reports the active
+groom/variant/profile, benchmark state, live or completed-render CPU/GPU timing,
+visible/shadow draw calls and primitives, and validation state.
+
+Preview telemetry is not a benchmark sample: it does not create output files or
+enter PREWARM/SAMPLE. The overlay hides itself for PREWARM, SETTLE, SAMPLE, and
+CAPTURE so it cannot affect timed measurements or captures. Timed smoke and
+visual suites remain available through the existing controller and CLI APIs;
+preview controls intentionally do not launch suites from inside the overlay.
+Disable the tool by turning off `BenchmarkPreviewOverlay.show_preview_ui` in the
+scene instance. The fixture camera, light, and environment layout is unchanged.
+
 ## Scope
 
 The harness discovers direct `MeshInstance3D` groom children under `Head` at runtime and currently covers the ten fixture grooms. Resource-backed cases and suites own their camera pose, lighting PackedScene, viewport target, timing, repeats, and capture flags; the controller still preserves the manual API. The harness owns the camera, directional-light fallback, and environment; fixture camera/light/environment state is restored on reset or exit without changing the fixture scene.
@@ -42,9 +60,11 @@ Stable groom and material contracts live under `benchmark/resources/` and never 
 - `hair_groom_catalog.gd` (`HairGroomCatalog`): ordered resource-backed catalog of `HairGroomDefinition`s with duplicate-id validation.
 - Data: `benchmark/resources/profiles/source_current.tres` is the default profile (id `&"source_current"`, mirroring the source shader defaults); `benchmark/resources/grooms/hair_groom_catalog.tres` defines the ten fixture grooms.
 
-`BenchmarkCase` gained `profile_id: StringName` defaulting to `&"source_current"`; it is validated (non-empty) and recorded in `run_manifest.json`/`summary.json` as `profile_id`. Existing `.tres` cases load unchanged because the default applies. The controller's runtime groom catalog now exposes stable `groom_id`/`name` and display metadata (`display_name`, `category`) separately from the transient per-process instance `id`, merging `display_name`/`category` from `hair_groom_catalog.tres` when it loads (falling back to node names otherwise); `run_manifest.json` grooms entries include both. `Blowout` case selection and all material assignment paths are unchanged — the existing source-material clone path still applies variants.
+`BenchmarkCase` gained `profile_id: StringName` defaulting to `&"source_current"`; it is validated (non-empty, and the profile resource must exist under `res://benchmark/resources/profiles/`) and recorded in `run_manifest.json`/`summary.json` as `profile_id`. Existing `.tres` cases load unchanged because the default applies. The controller's runtime groom catalog now exposes stable `groom_id`/`name` and display metadata (`display_name`, `category`) separately from the transient per-process instance `id`, merging them from `hair_groom_catalog.tres` when it loads (falling back to node names otherwise); `run_manifest.json` grooms entries include both.
 
-Current limitation: per-groom catalog assets and the profile adapter (resolving `groom_root`, applying `expected_material_profile` per surface, and rewriting material assignment around adapters) are the next step; for now the catalog is a metadata contract only.
+Material adapter: `benchmark/scripts/hair_material_adapter.gd` (`HairMaterialAdapter`) owns all material construction — cloning the source `ShaderMaterial` and swapping in the selected benchmark shader, applying canonical profile parameters/textures, and building the built-in `StandardMaterial3D` alpha-hash control (including the cached red-coverage-to-alpha conversion). Variant-specific shader selection stays in the controller; the controller no longer duplicates material-construction code. Profile resolution: the case's `profile_id` resolves to `res://benchmark/resources/profiles/<profile_id>.tres`; a missing or invalid profile fails the start clearly. The default `source_current` profile sets `preserve_source_parameters = true`, so the adapter keeps every per-groom parameter and texture from the cloned source material and rendered behavior is unchanged; canonical profiles (future) set it false to apply the profile's source-compatible values.
+
+Explicit surface selection: `hair_groom_catalog.tres` `hair_surface_indices` now drive which mesh surfaces receive benchmark overrides. Only selected surfaces get variant/diagnostic materials; non-selected surfaces are never touched. Restoration is unchanged and exact: selected surface overrides, groom-level `material_override`, visibility, and diagnostic state all return to their discovered originals. Grooms without a catalog definition keep every surface selected (backward-compatible fallback). Transient instance ids and stable groom ids remain separate. The next slice (not yet implemented) introduces HEAVIEST/HAIR_ONLY display modes.
 
 ## Resource-backed suites
 

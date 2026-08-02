@@ -7,6 +7,8 @@ extends Node
 signal suite_completed(success: bool, suite_id: StringName)
 signal start_failed(message: String)
 signal persistence_failed(message: String)
+signal benchmark_state_changed(state: int)
+signal preview_applied(success: bool)
 
 enum BenchmarkState {
 	IDLE,
@@ -34,6 +36,7 @@ enum BenchmarkVariant {
 
 const MODE_NAMES := ["NO_HAIR", "INDIVIDUAL_GROOM", "ALL_GROOMS", "REPRESENTATIVE_DEFAULT"]
 const VARIANT_NAMES := ["NO_HAIR", "COVERAGE_CONTROL", "CURRENT_MARSCHNER_BASELINE", "APPROX_KAJIYA_KAY", "BUILTIN_ALPHA_HASH_CONTROL"]
+const STATE_NAMES := ["IDLE", "PREWARM", "SETTLE", "SAMPLE", "CAPTURE", "COMPLETE"]
 
 const PREWARM_DEFAULT := 180
 const SETTLE_DEFAULT := 30
@@ -46,6 +49,10 @@ const COVERAGE_CONTROL_SHADER: Shader = preload("res://benchmark/shaders/hair_co
 const COVERAGE_MASK_SHADER: Shader = preload("res://benchmark/shaders/hair_coverage_mask.gdshader")
 const DEBUG_TANGENT_SHADER: Shader = preload("res://benchmark/shaders/hair_debug_tangent.gdshader")
 const CURRENT_MARSCHNER_SHADER: Shader = preload("res://benchmark/reference/baseline_hair.gdshader")
+## Preview-only variant of the baseline shader: identical rendering code and
+## interface plus the opt-in freeze_bayer_phase uniform. Timed runs keep using
+## CURRENT_MARSCHNER_SHADER so the timed reference stays byte-identical.
+const BASELINE_PREVIEW_SHADER: Shader = preload("res://benchmark/reference/baseline_hair_preview.gdshader")
 const APPROX_KAJIYA_KAY_SHADER: Shader = preload("res://assets/hair/materials/shaders/hair_approx.gdshader")
 const COVERAGE_WHITE_THRESHOLD: float = 0.95
 
@@ -74,6 +81,9 @@ const WINDOW_MODE_NAMES := ["windowed", "minimized", "maximized", "fullscreen", 
 const VSYNC_MODE_NAMES := ["disabled", "enabled", "adaptive", "mailbox"]
 ## Resource-backed catalog of stable groom definitions (display metadata source).
 const GROOM_CATALOG_RESOURCE_PATH := "res://benchmark/resources/grooms/hair_groom_catalog.tres"
+## Material adapter script; the const shadows the class_name so parsing never
+## depends on the global class cache being regenerated.
+const HairMaterialAdapter := preload("res://benchmark/scripts/hair_material_adapter.gd")
 
 ## RenderingServer's viewport render-info enum values in Godot 4.7.
 const RENDER_INFO_OBJECTS := 0
@@ -118,7 +128,7 @@ var _active_variant := BenchmarkVariant.CURRENT_MARSCHNER_BASELINE
 var _active_individual_groom: StringName = &"Blowout"
 var _active_case_profile_id: StringName = &"source_current"
 var _groom_metadata_cache: Dictionary = {}
-var _alpha_hash_texture_cache: Dictionary = {}
+var _material_adapter: HairMaterialAdapter
 var _time_scale_saved := false
 var _saved_time_scale := 1.0
 var _state_frame := 0
@@ -220,7 +230,7 @@ func _process(_delta: float) -> void:
 			_collect_sample()
 			_state_frame += 1
 			if _state_frame >= _active_sample_frames:
-				benchmark_state = BenchmarkState.CAPTURE
+				_set_benchmark_state(BenchmarkState.CAPTURE)
 				_state_frame = 0
 				_capture_after_frame_post_draw(_run_token)
 		BenchmarkState.CAPTURE, BenchmarkState.COMPLETE, BenchmarkState.IDLE:
@@ -232,6 +242,105 @@ func start_smoke() -> void:
 	start_benchmark(benchmark_mode, benchmark_variant, individual_groom)
 
 
+## Selects and applies a non-timed preview. This is the public bridge for tools
+## that need to compare variants without entering PREWARM/SAMPLE or writing any
+## benchmark artifacts. Material construction remains entirely in apply_variant().
+func apply_preview(requested_mode: int, requested_variant: int, requested_groom: StringName = &"") -> bool:
+	if _is_timed_state():
+		_record_start_failure("Preview changes are disabled while a benchmark is running.")
+		preview_applied.emit(false)
+		return false
+
+	_active_mode = clampi(requested_mode, BenchmarkMode.NO_HAIR, BenchmarkMode.REPRESENTATIVE_DEFAULT)
+	_active_variant = clampi(requested_variant, BenchmarkVariant.NO_HAIR, BenchmarkVariant.BUILTIN_ALPHA_HASH_CONTROL)
+	if requested_groom != &"":
+		_active_individual_groom = requested_groom
+	last_start_error = ""
+	last_persistence_error = ""
+	var applied := apply_variant(_active_variant, true)
+	# Interactive previews freeze the Bayer phase of the TIME-discard shaders
+	# (custom coverage control and the frozen Marschner baseline) so the strand
+	# pattern is deterministic while previewing. Timed runs re-apply fresh
+	# clones from the source materials (uniform default false), so benchmark
+	# behavior and timing semantics are unchanged.
+	if applied and (_active_variant == BenchmarkVariant.COVERAGE_CONTROL or _active_variant == BenchmarkVariant.CURRENT_MARSCHNER_BASELINE):
+		_freeze_preview_bayer_phase()
+	_set_benchmark_state(BenchmarkState.IDLE)
+	if applied:
+		# A completed timed run is no longer the active state after a manual preview.
+		# The completed samples remain available to the existing benchmark output
+		# path, but the UI correctly labels this selection as a fresh preview.
+		pass
+	preview_applied.emit(applied)
+	return applied
+
+
+## Sets freeze_bayer_phase on the live COVERAGE_CONTROL / CURRENT_MARSCHNER_BASELINE
+## surface overrides so the interactive preview's alpha-coverage pattern is
+## deterministic. Only selected surfaces are touched; the uniform exists solely
+## on those two TIME-discard shaders (Kajiya and built-in alpha hash are not
+## frozen; timed runs leave it at the shader default).
+func _freeze_preview_bayer_phase() -> void:
+	for groom_data in groom_catalog:
+		var groom := groom_data["node"] as MeshInstance3D
+		if not is_instance_valid(groom):
+			continue
+		for surface_data in groom_data["surfaces"]:
+			if not bool(surface_data["selected"]):
+				continue
+			var override_material := groom.get_surface_override_material(int(surface_data["surface_index"])) as ShaderMaterial
+			if override_material:
+				override_material.set(&"shader_parameter/freeze_bayer_phase", true)
+
+
+## Returns the stable groom entries used by the preview selector. The returned
+## dictionaries are metadata only; callers never receive material resources.
+func get_preview_grooms() -> Array[Dictionary]:
+	if groom_catalog.is_empty():
+		_discover_grooms()
+	var preview_grooms: Array[Dictionary] = []
+	for groom_data in groom_catalog:
+		preview_grooms.append({
+			"groom_id": StringName(groom_data.get("groom_id", groom_data.get("name", &""))),
+			"display_name": String(groom_data.get("display_name", groom_data.get("name", ""))),
+			"category": String(groom_data.get("category", "")),
+		})
+	return preview_grooms
+
+
+## Lightweight status snapshot for the optional preview UI. It reads renderer
+## counters in memory only; it never opens files or touches the timed sample
+## collection path. When a completed run exists, its last sample and validation
+## are exposed as available benchmark evidence. Otherwise the values are live
+## renderer telemetry and explicitly marked as preview-only.
+func get_preview_status() -> Dictionary:
+	var metrics := _preview_render_metrics()
+	var has_benchmark_measurement := benchmark_state == BenchmarkState.COMPLETE and not _samples.is_empty()
+	if has_benchmark_measurement:
+		metrics = _samples.back().duplicate()
+	var validation := {
+		"status": "VALID" if has_benchmark_measurement and bool(_validation_result().get("valid", false)) else "PREVIEW ONLY",
+		"valid": has_benchmark_measurement and bool(_validation_result().get("valid", false)),
+		"notes": _validation_result().get("validation_notes", []) if has_benchmark_measurement else ["Preview timing is not a benchmark sample."],
+	}
+	return {
+		"state": benchmark_state,
+		"state_name": STATE_NAMES[clampi(benchmark_state, 0, STATE_NAMES.size() - 1)],
+		"mode": _active_mode,
+		"mode_name": _mode_name(_active_mode),
+		"variant": _active_variant,
+		"variant_name": _variant_name(_active_variant),
+		"groom_id": String(_active_individual_groom),
+		"groom_name": _preview_groom_name(_active_individual_groom),
+		"profile_id": String(_active_case_profile_id),
+		"profile_name": String(_active_case_profile_id),
+		"metrics": metrics,
+		"metrics_source": "benchmark sample" if has_benchmark_measurement else "live preview telemetry",
+		"validation": validation,
+		"start_error": last_start_error,
+	}
+
+
 ## Starts one run with explicit mode, variant, and optional groom selection.
 func start_benchmark(requested_mode: int = -1, requested_variant: int = -1, requested_groom: StringName = &"") -> void:
 	_begin_manual_run()
@@ -240,7 +349,7 @@ func start_benchmark(requested_mode: int = -1, requested_variant: int = -1, requ
 	_active_variant = benchmark_variant if requested_variant < 0 else clampi(requested_variant, 0, BenchmarkVariant.BUILTIN_ALPHA_HASH_CONTROL)
 	_active_individual_groom = individual_groom if requested_groom == &"" else requested_groom
 	if not apply_variant(_active_variant):
-		benchmark_state = BenchmarkState.IDLE
+		_set_benchmark_state(BenchmarkState.IDLE)
 		_record_start_failure("Unable to start benchmark: variant %s could not be applied." % _variant_name(_active_variant))
 		_restore_benchmark_environment()
 		return
@@ -251,10 +360,10 @@ func start_benchmark(requested_mode: int = -1, requested_variant: int = -1, requ
 	_run_timestamp = _make_run_timestamp()
 	_run_directory = output_root.path_join(_run_timestamp)
 	if not _ensure_output_directory(_run_directory):
-		benchmark_state = BenchmarkState.IDLE
+		_set_benchmark_state(BenchmarkState.IDLE)
 		_restore_benchmark_environment()
 		return
-	benchmark_state = BenchmarkState.PREWARM
+	_set_benchmark_state(BenchmarkState.PREWARM)
 
 
 ## Starts one validated resource-backed case. Returns false without sampling when validation fails.
@@ -324,31 +433,56 @@ func start_suite(suite: Resource) -> bool:
 
 ## Applies a supported material/display variant without starting a run.
 ## Returns false (and restores the original surface state) when a variant
-## cannot be applied, for example when a source attributes texture is missing.
-func apply_variant(variant_id: int) -> bool:
+## cannot be applied, for example when a source attributes texture is missing
+## or the case's profile_id cannot be resolved.
+## preview_only selects the preview-only baseline shader variant for
+## CURRENT_MARSCHNER_BASELINE; timed paths keep CURRENT_MARSCHNER_SHADER.
+func apply_variant(variant_id: int, preview_only: bool = false) -> bool:
 	if groom_catalog.is_empty():
 		_discover_grooms()
+	if _material_adapter == null:
+		_material_adapter = HairMaterialAdapter.new()
 	var selected_variant := clampi(variant_id, 0, BenchmarkVariant.BUILTIN_ALPHA_HASH_CONTROL)
 	var display_mode := _active_mode
 	_restore_original_surface_state()
 	_active_variant = selected_variant
 	var applied := true
 
-	match selected_variant:
-		BenchmarkVariant.NO_HAIR:
-			_apply_display_mode(BenchmarkMode.NO_HAIR)
-		BenchmarkVariant.COVERAGE_CONTROL:
-			_apply_shader_variant(COVERAGE_CONTROL_SHADER)
-			_apply_display_mode(display_mode)
-		BenchmarkVariant.CURRENT_MARSCHNER_BASELINE:
-			_apply_shader_variant(CURRENT_MARSCHNER_SHADER)
-			_apply_display_mode(display_mode)
-		BenchmarkVariant.APPROX_KAJIYA_KAY:
-			_apply_shader_variant(APPROX_KAJIYA_KAY_SHADER)
-			_apply_display_mode(display_mode)
-		BenchmarkVariant.BUILTIN_ALPHA_HASH_CONTROL:
-			applied = _apply_builtin_alpha_hash_variant()
-			_apply_display_mode(display_mode)
+	# Material variants resolve the case's canonical profile; NO_HAIR needs none.
+	var profile: Resource = null
+	if selected_variant != BenchmarkVariant.NO_HAIR:
+		profile = _material_adapter.resolve_profile(_active_case_profile_id)
+		if profile == null:
+			_record_start_failure(
+				"Unable to apply variant %s: profile '%s' could not be resolved (missing or unreadable profile resource)."
+				% [_variant_name(selected_variant), String(_active_case_profile_id)]
+			)
+			applied = false
+		elif profile.has_method(&"validation_errors"):
+			var profile_errors: PackedStringArray = profile.call(&"validation_errors")
+			if not profile_errors.is_empty():
+				_record_start_failure(
+					"Unable to apply variant %s: profile '%s' is invalid: %s"
+					% [_variant_name(selected_variant), String(_active_case_profile_id), "; ".join(profile_errors)]
+				)
+				applied = false
+
+	if applied:
+		match selected_variant:
+			BenchmarkVariant.NO_HAIR:
+				_apply_display_mode(BenchmarkMode.NO_HAIR)
+			BenchmarkVariant.COVERAGE_CONTROL:
+				_apply_shader_variant(COVERAGE_CONTROL_SHADER, profile)
+				_apply_display_mode(display_mode)
+			BenchmarkVariant.CURRENT_MARSCHNER_BASELINE:
+				_apply_shader_variant(BASELINE_PREVIEW_SHADER if preview_only else CURRENT_MARSCHNER_SHADER, profile)
+				_apply_display_mode(display_mode)
+			BenchmarkVariant.APPROX_KAJIYA_KAY:
+				_apply_shader_variant(APPROX_KAJIYA_KAY_SHADER, profile)
+				_apply_display_mode(display_mode)
+			BenchmarkVariant.BUILTIN_ALPHA_HASH_CONTROL:
+				applied = _apply_builtin_alpha_hash_variant(profile)
+				_apply_display_mode(display_mode)
 	if not applied:
 		_restore_original_surface_state()
 	return applied
@@ -444,7 +578,7 @@ func _start_resource_case(case: Resource, expected_token: int, output_directory:
 		return false
 	_samples.clear()
 	_state_frame = 0
-	benchmark_state = BenchmarkState.PREWARM
+	_set_benchmark_state(BenchmarkState.PREWARM)
 	return true
 
 
@@ -493,7 +627,7 @@ func _instantiate_case_lighting(lighting_rig: Resource) -> bool:
 func _abort_resource_case(reason: String) -> void:
 	_record_start_failure("Benchmark case rejected during setup: %s" % reason)
 	_capture_requested = false
-	benchmark_state = BenchmarkState.IDLE
+	_set_benchmark_state(BenchmarkState.IDLE)
 	_restore_original_surface_state()
 	_restore_scene_state()
 	_restore_benchmark_environment()
@@ -501,7 +635,7 @@ func _abort_resource_case(reason: String) -> void:
 
 func _restore_failed_resource_start() -> void:
 	_restore_failed_resource_run()
-	benchmark_state = BenchmarkState.IDLE
+	_set_benchmark_state(BenchmarkState.IDLE)
 
 
 func _advance_suite_after_output(expected_token: int) -> void:
@@ -533,13 +667,13 @@ func _finish_suite(expected_token: int) -> void:
 		suite_persisted = _write_suite_manifest()
 	if not suite_persisted:
 		_fail_active_suite()
-		benchmark_state = BenchmarkState.COMPLETE
+		_set_benchmark_state(BenchmarkState.COMPLETE)
 		return
 	_restore_original_surface_state()
 	_restore_scene_state()
 	_restore_benchmark_environment()
 	_suite_active = false
-	benchmark_state = BenchmarkState.COMPLETE
+	_set_benchmark_state(BenchmarkState.COMPLETE)
 	if _suite_resource:
 		_suite_terminal_emitted = true
 		suite_completed.emit(true, completed_suite_id)
@@ -669,7 +803,7 @@ func reset_benchmark() -> void:
 	_suite_resource = null
 	_suite_cases.clear()
 	_suite_results.clear()
-	benchmark_state = BenchmarkState.IDLE
+	_set_benchmark_state(BenchmarkState.IDLE)
 	_state_frame = 0
 	_restore_original_surface_state()
 	_restore_scene_state()
@@ -719,7 +853,7 @@ func _cancel_current_request() -> void:
 	_fail_active_suite()
 	_run_token += 1
 	_capture_requested = false
-	benchmark_state = BenchmarkState.IDLE
+	_set_benchmark_state(BenchmarkState.IDLE)
 	_state_frame = 0
 	_suite_active = false
 	_suite_resource = null
@@ -1065,12 +1199,22 @@ func _discover_grooms() -> void:
 
 		var groom_id := StringName(groom.name)
 		var metadata: Dictionary = groom_metadata.get(groom_id, {})
+		# Explicit per-groom surface selection from hair_groom_catalog.tres.
+		# Only selected surfaces receive benchmark overrides; non-selected
+		# surfaces remain untouched. Grooms without a catalog definition keep
+		# every surface selected (backward-compatible fallback).
+		var surface_selection: Array = metadata.get("hair_surface_indices", [])
+		var selection_is_explicit := not surface_selection.is_empty()
 		var surfaces: Array[Dictionary] = []
 		for surface_index in groom.mesh.get_surface_count():
 			var original_override := groom.get_surface_override_material(surface_index)
 			var source_active_material := groom.get_active_material(surface_index)
+			var selected := true
+			if selection_is_explicit:
+				selected = surface_selection.has(surface_index)
 			surfaces.append({
 				"surface_index": surface_index,
+				"selected": selected,
 				"original_override": original_override,
 				"source_active_material": source_active_material,
 			})
@@ -1115,14 +1259,25 @@ func _groom_metadata_lookup() -> Dictionary:
 				var groom_id := StringName(groom_id_value)
 				if String(groom_id).strip_edges().is_empty():
 					continue
+				var surface_indices: Array = []
+				var surface_indices_value: Variant = definition.get(&"hair_surface_indices")
+				if surface_indices_value is Array:
+					surface_indices = surface_indices_value
 				_groom_metadata_cache[groom_id] = {
 					"display_name": String(definition.get(&"display_name")),
 					"category": String(definition.get(&"category")),
+					"hair_surface_indices": surface_indices,
 				}
 	return _groom_metadata_cache
 
 
-func _apply_shader_variant(shader: Shader) -> void:
+## Applies a benchmark Shader variant to every selected hair surface via the
+## material adapter: per-surface clones of the source ShaderMaterial with the
+## benchmark shader and the active profile's parameters. Non-selected surfaces
+## are never touched. Groom-level material_override is cleared so the per-surface
+## overrides take precedence; _restore_original_surface_state() restores it
+## exactly.
+func _apply_shader_variant(shader: Shader, profile: Resource) -> void:
 	for groom_data in groom_catalog:
 		var groom := groom_data["node"] as MeshInstance3D
 		if not is_instance_valid(groom):
@@ -1132,29 +1287,25 @@ func _apply_shader_variant(shader: Shader) -> void:
 		# captured during discovery, so mesh/source resources remain untouched.
 		groom.material_override = null
 		for surface_data in groom_data["surfaces"]:
+			if not bool(surface_data["selected"]):
+				continue
 			var source_material := surface_data["source_active_material"] as Material
 			if not source_material:
 				continue
 			var source_shader_material := source_material as ShaderMaterial
 			if not source_shader_material:
 				continue
-
-			# Duplicate per surface so the source ShaderMaterial and mesh resource remain untouched.
-			var cloned_material := source_shader_material.duplicate() as ShaderMaterial
-			cloned_material.shader = shader
+			var cloned_material: ShaderMaterial = _material_adapter.make_shader_variant_material(source_shader_material, shader, profile)
+			if cloned_material == null:
+				continue
 			groom.set_surface_override_material(int(surface_data["surface_index"]), cloned_material)
 
 
-## Applies the built-in StandardMaterial3D alpha-hash control. Per surface, a
-## transient StandardMaterial3D is created from the source ShaderMaterial saved at
-## discovery time (never the currently active variant material). Each source
-## attributes texture (RGB, coverage in red, no alpha) is converted once into a
-## cached in-memory texture with white RGB and the source red channel copied to
-## alpha, which drives Godot's TRANSPARENCY_ALPHA_HASH discard. This is an
-## approximation of COVERAGE_CONTROL: it has no distance/depth bias and no
-## TIME-driven Bayer pattern. Missing or empty attributes textures fail with a
-## clear start failure instead of crashing.
-func _apply_builtin_alpha_hash_variant() -> bool:
+## Applies the built-in StandardMaterial3D alpha-hash control to every selected
+## hair surface via the material adapter. Missing or empty attributes textures
+## fail with a clear start failure instead of crashing. Non-selected surfaces
+## are never touched.
+func _apply_builtin_alpha_hash_variant(profile: Resource) -> bool:
 	for groom_data in groom_catalog:
 		var groom := groom_data["node"] as MeshInstance3D
 		if not is_instance_valid(groom):
@@ -1164,6 +1315,8 @@ func _apply_builtin_alpha_hash_variant() -> bool:
 		# exact original value afterwards.
 		groom.material_override = null
 		for surface_data in groom_data["surfaces"]:
+			if not bool(surface_data["selected"]):
+				continue
 			var source_material_value: Variant = surface_data["source_active_material"]
 			var source_material: ShaderMaterial = source_material_value as ShaderMaterial
 			if not source_material:
@@ -1172,84 +1325,15 @@ func _apply_builtin_alpha_hash_variant() -> bool:
 					% [String(groom_data["name"]), int(surface_data["surface_index"])]
 				)
 				return false
-			var attributes_value: Variant = source_material.get(&"shader_parameter/attributes_texture")
-			var attributes_texture: Texture2D = attributes_value as Texture2D
-			if not attributes_texture:
+			var alpha_hash_material: StandardMaterial3D = _material_adapter.make_builtin_alpha_hash_material(source_material, profile)
+			if alpha_hash_material == null:
 				_record_start_failure(
-					"BUILTIN_ALPHA_HASH_CONTROL could not be applied: groom '%s' surface %d has no attributes_texture."
+					"BUILTIN_ALPHA_HASH_CONTROL could not be applied: groom '%s' surface %d attributes_texture is missing or empty."
 					% [String(groom_data["name"]), int(surface_data["surface_index"])]
 				)
 				return false
-			var alpha_texture: ImageTexture = _alpha_texture_for(attributes_texture)
-			if not alpha_texture:
-				_record_start_failure(
-					"BUILTIN_ALPHA_HASH_CONTROL could not be applied: groom '%s' surface %d attributes_texture is empty."
-					% [String(groom_data["name"]), int(surface_data["surface_index"])]
-				)
-				return false
-
-			var alpha_hash_material := StandardMaterial3D.new()
-			alpha_hash_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_HASH
-			alpha_hash_material.cull_mode = BaseMaterial3D.CULL_DISABLED
-			alpha_hash_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-			alpha_hash_material.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
-			alpha_hash_material.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
-			alpha_hash_material.roughness = 1.0
-			# Depth write and shadow casting keep their alpha-hash defaults so the
-			# built-in variant participates in shadows/depth as the hash supports.
-			alpha_hash_material.albedo_color = _source_albedo_color(source_material)
-			alpha_hash_material.albedo_texture = alpha_texture
 			groom.set_surface_override_material(int(surface_data["surface_index"]), alpha_hash_material)
 	return true
-
-
-## Returns a cached transient ImageTexture with white RGB and the source red
-## channel copied to alpha. Keyed by the source resource path (or instance id for
-## pathless textures) so each source attributes texture is converted only once per
-## process. The result is never saved to disk or imported.
-func _alpha_texture_for(source_texture: Texture2D) -> ImageTexture:
-	if not source_texture:
-		return null
-	var cache_key: Variant = source_texture.resource_path
-	if String(cache_key).is_empty():
-		cache_key = int(source_texture.get_instance_id())
-	if _alpha_hash_texture_cache.has(cache_key):
-		var cached_value: Variant = _alpha_hash_texture_cache[cache_key]
-		return cached_value as ImageTexture
-
-	var source_image: Image = source_texture.get_image()
-	if not source_image or source_image.get_width() <= 0 or source_image.get_height() <= 0:
-		return null
-	source_image.convert(Image.FORMAT_RGBA8)
-	var pixels: PackedByteArray = source_image.get_data()
-	var pixel_count := pixels.size() >> 2
-	for pixel_index in pixel_count:
-		var offset := pixel_index << 2
-		var coverage_byte: int = pixels[offset]
-		pixels[offset] = 255
-		pixels[offset + 1] = 255
-		pixels[offset + 2] = 255
-		pixels[offset + 3] = coverage_byte
-	var alpha_image := Image.create_from_data(source_image.get_width(), source_image.get_height(), false, Image.FORMAT_RGBA8, pixels)
-	if not alpha_image:
-		return null
-	var alpha_texture := ImageTexture.create_from_image(alpha_image)
-	_alpha_hash_texture_cache[cache_key] = alpha_texture
-	return alpha_texture
-
-
-## Reads the source shader's albedo parameter for the built-in control. The source
-## declares vec3 albedo, which Godot exposes as a Color; alpha is forced to 1 so
-## the converted albedo texture alpha alone drives the alpha-hash discard.
-func _source_albedo_color(source_material: ShaderMaterial) -> Color:
-	var albedo_value: Variant = source_material.get(&"shader_parameter/albedo")
-	if albedo_value is Color:
-		var albedo_color: Color = albedo_value
-		return Color(albedo_color.r, albedo_color.g, albedo_color.b, 1.0)
-	if albedo_value is Vector3:
-		var albedo_vector: Vector3 = albedo_value
-		return Color(albedo_vector.x, albedo_vector.y, albedo_vector.z, 1.0)
-	return Color(0.1, 0.1, 0.1, 1.0)
 
 
 func _apply_display_mode(mode: int) -> void:
@@ -1288,10 +1372,42 @@ func _restore_original_surface_state() -> void:
 		groom.material_override = groom_data["original_material_override"] as Material
 
 
+func _set_benchmark_state(next_state: int) -> void:
+	if benchmark_state == next_state:
+		return
+	benchmark_state = next_state
+	benchmark_state_changed.emit(next_state)
+
+
+func _is_timed_state() -> bool:
+	return benchmark_state >= BenchmarkState.PREWARM and benchmark_state <= BenchmarkState.CAPTURE
+
+
+func _preview_render_metrics() -> Dictionary:
+	var viewport_rid: RID = get_viewport().get_viewport_rid()
+	return {
+		"cpu_ms": RenderingServer.viewport_get_measured_render_time_cpu(viewport_rid),
+		"gpu_ms": RenderingServer.viewport_get_measured_render_time_gpu(viewport_rid),
+		"visible_objects": _viewport_counter(viewport_rid, RENDER_INFO_VISIBLE, RENDER_INFO_OBJECTS),
+		"visible_primitives": _viewport_counter(viewport_rid, RENDER_INFO_VISIBLE, RENDER_INFO_PRIMITIVES),
+		"visible_draw_calls": _viewport_counter(viewport_rid, RENDER_INFO_VISIBLE, RENDER_INFO_DRAW_CALLS),
+		"shadow_objects": _viewport_counter(viewport_rid, RENDER_INFO_SHADOW, RENDER_INFO_OBJECTS),
+		"shadow_primitives": _viewport_counter(viewport_rid, RENDER_INFO_SHADOW, RENDER_INFO_PRIMITIVES),
+		"shadow_draw_calls": _viewport_counter(viewport_rid, RENDER_INFO_SHADOW, RENDER_INFO_DRAW_CALLS),
+	}
+
+
+func _preview_groom_name(groom_id: StringName) -> String:
+	for groom_data in groom_catalog:
+		if StringName(groom_data.get("groom_id", groom_data.get("name", &""))) == groom_id:
+			return String(groom_data.get("display_name", groom_data.get("name", String(groom_id))))
+	return String(groom_id)
+
+
 func _advance_timing_state(frame_limit: int, next_state: int) -> void:
 	_state_frame += 1
 	if _state_frame >= frame_limit:
-		benchmark_state = next_state
+		_set_benchmark_state(next_state)
 		_state_frame = 0
 
 
@@ -1444,7 +1560,7 @@ func _capture_after_frame_post_draw(run_token: int) -> void:
 	if not _write_run_outputs():
 		_handle_run_persistence_failure(run_token)
 		return
-	benchmark_state = BenchmarkState.COMPLETE
+	_set_benchmark_state(BenchmarkState.COMPLETE)
 	_capture_requested = false
 	if _suite_active:
 		call_deferred("_advance_suite_after_output", run_token)
@@ -1790,7 +1906,7 @@ func _handle_run_persistence_failure(run_token: int) -> void:
 		_fail_active_suite()
 	else:
 		_restore_failed_resource_run()
-	benchmark_state = BenchmarkState.COMPLETE
+	_set_benchmark_state(BenchmarkState.COMPLETE)
 
 
 func _restore_failed_resource_run() -> void:

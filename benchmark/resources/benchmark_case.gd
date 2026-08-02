@@ -56,6 +56,8 @@ func validation_errors() -> PackedStringArray:
 		errors.append("variant must be a non-negative controller integer")
 	if String(profile_id).strip_edges().is_empty():
 		errors.append("profile_id must not be empty")
+	elif not ResourceLoader.exists("res://benchmark/resources/profiles/%s.tres" % String(profile_id)):
+		errors.append("profile_id '%s' has no profile resource under res://benchmark/resources/profiles/" % profile_id)
 	if viewport_size.x <= 0 or viewport_size.y <= 0:
 		errors.append("viewport_size dimensions must be greater than 0")
 	if warmup_frames < 0:

@@ -25,6 +25,12 @@ uniform bool show_hashed_strands = false;
 uniform vec3 lobe_scales = vec3(1.0);
 group_uniforms;
 
+group_uniforms Preview;
+/** Freezes the Bayer phase for deterministic interactive previews. Default false
+ *  preserves the production TIME-driven behavior for benchmark runs. */
+uniform bool freeze_bayer_phase = false;
+group_uniforms;
+
 varying vec3 vertex_world;
 
 /** Returns a random vec3 in [0, 1) using PCG hash. */
@@ -58,7 +64,8 @@ void fragment() {
 		vec4( 3.0, 11.0,  1.0,  9.0),
 		vec4(15.0,  7.0, 13.0,  5.0)) / 16.0;
 
-	ivec2 id = ivec2(FRAGCOORD.xy + UV.xy*vec2(textureSize(attributes_texture, 0)*2) + TIME*500.0);
+	float bayer_time = freeze_bayer_phase ? 0.0 : TIME;
+	ivec2 id = ivec2(FRAGCOORD.xy + UV.xy*vec2(textureSize(attributes_texture, 0)*2) + bayer_time*500.0);
 	float dist = length((CAMERA_POSITION_WORLD - vertex_world) / MODEL_MATRIX[0].xyz) / tan(PI/6.0) / PROJECTION_MATRIX[1][1];
 	float bias = max((1.0 - clamp((dist - 1.0)*0.5, 0.0, 1.0))*(1.0 - depth*depth), 0.1);
 	if (!show_hair_cards && pow(coverage, bias) < bayer4x4[id.x % 4][id.y % 4]) discard;

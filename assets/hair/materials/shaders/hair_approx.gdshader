@@ -100,21 +100,21 @@ void light() {
 	float primary_lobe = kk_specular_lobe(primary_tangent, light_direction, view_direction, primary_roughness);
 	float secondary_lobe = kk_specular_lobe(secondary_tangent, light_direction, view_direction, secondary_roughness);
 
-	vec3 area_diffuse_multiplier = vec3(1.0);
-	vec3 area_specular_multiplier = vec3(1.0);
-	if (LIGHT_IS_AREA) {
-		area_diffuse_multiplier = LIGHT_AREA_DIFFUSE_MULTIPLIER;
-		area_specular_multiplier = LIGHT_AREA_SPECULAR_MULTIPLIER;
-	}
-
 	// Cheap wrapped diffuse/scatter and both independently tinted lobes are
 	// accumulated per light, preserving Forward+ light and shadow influence.
 	float diffuse = kk_wrapped_diffuse(strand_tangent, light_direction, scatter);
-	DIFFUSE_LIGHT += ALBEDO * diffuse * LIGHT_COLOR * ATTENUATION * area_diffuse_multiplier / PI;
+	// Area lights contribute a diffuse multiplier. The LIGHT_AREA_* built-ins
+	// are used directly (never assigned to typed locals): Godot 4.7 declares
+	// them vec3 in the shader language but generates them as scalar floats in
+	// the light stage, so only a construction in place keeps both the source
+	// and the generated code compilable on the NVIDIA driver.
+	DIFFUSE_LIGHT += ALBEDO * diffuse * LIGHT_COLOR * ATTENUATION
+		* (LIGHT_IS_AREA ? vec3(LIGHT_AREA_DIFFUSE_MULTIPLIER) : vec3(1.0)) / PI;
 
 	vec3 specular_light = ALBEDO * (
 		primary_color * primary_lobe * primary_strength * primary_debug_scale
 		+ secondary_color * secondary_lobe * secondary_strength * secondary_debug_scale
 	);
-	SPECULAR_LIGHT += specular_light * LIGHT_COLOR * ATTENUATION * area_specular_multiplier * specular;
+	SPECULAR_LIGHT += specular_light * LIGHT_COLOR * ATTENUATION
+		* (LIGHT_IS_AREA ? vec3(LIGHT_AREA_SPECULAR_MULTIPLIER) : vec3(1.0)) * specular;
 }

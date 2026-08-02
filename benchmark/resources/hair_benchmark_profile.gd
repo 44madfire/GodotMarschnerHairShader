@@ -29,6 +29,11 @@ class_name HairBenchmarkProfile
 @export var coords_texture: Texture2D
 ## Source shader `attributes_texture` (R coverage, G depth, B seed).
 @export var attributes_texture: Texture2D
+## When true (the default, and the value of the `source_current` profile), the
+## adapter preserves every per-groom parameter and texture from the cloned
+## source material, so rendered behavior is unchanged. Canonical profiles set
+## this false to override the source-compatible parameters below.
+@export var preserve_source_parameters: bool = true
 
 @export_category("Future Tier - Placeholders")
 ## Absorption coefficient for the dual-scattering approximation; not yet read.
