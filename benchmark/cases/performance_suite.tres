@@ -1,4 +1,4 @@
-[gd_resource type="Resource" script_class="BenchmarkSuite" load_steps=9 format=3]
+[gd_resource type="Resource" script_class="BenchmarkSuite" load_steps=11 format=3]
 
 [ext_resource type="Script" path="res://benchmark/resources/benchmark_suite.gd" id="1_benchmark_suite"]
 [ext_resource type="Resource" path="res://benchmark/cases/perf_blowout_coverage_control.tres" id="2_case"]
@@ -7,11 +7,14 @@
 [ext_resource type="Resource" path="res://benchmark/cases/perf_blowout_builtin_alpha_hash.tres" id="5_case"]
 [ext_resource type="Resource" path="res://benchmark/cases/perf_blowout_no_hair.tres" id="6_case"]
 [ext_resource type="Resource" path="res://benchmark/cases/perf_all_grooms_frozen_baseline.tres" id="7_case"]
-[ext_resource type="Script" path="res://benchmark/resources/benchmark_case.gd" id="8_benchmark_case"]
+[ext_resource type="Script" path="res://benchmark/resources/benchmark_case.gd" id="11_benchmark_case"]
+[ext_resource type="Resource" path="res://benchmark/cases/perf_blowout_fast_marschner.tres" id="9_case"]
+[ext_resource type="Resource" path="res://benchmark/cases/perf_blowout_fast_marschner_lut.tres" id="10_case"]
+[ext_resource type="Resource" path="res://benchmark/cases/perf_blowout_fast_marschner_dual_scatter_preintegrated.tres" id="12_case"]
 [resource]
 resource_name = "Performance suite"
 script = ExtResource("1_benchmark_suite")
 id = &"performance_suite"
 display_name = "Performance suite"
-cases = Array[ExtResource("8_benchmark_case")]([ExtResource("2_case"), ExtResource("3_case"), ExtResource("4_case"), ExtResource("5_case"), ExtResource("6_case"), ExtResource("7_case")])
+cases = Array[ExtResource("11_benchmark_case")]([ExtResource("2_case"), ExtResource("3_case"), ExtResource("4_case"), ExtResource("5_case"), ExtResource("6_case"), ExtResource("7_case"), ExtResource("9_case"), ExtResource("10_case"), ExtResource("12_case")])
 output_subdirectory = "performance_suite"

@@ -28,6 +28,205 @@ preview controls intentionally do not launch suites from inside the overlay.
 Disable the tool by turning off `BenchmarkPreviewOverlay.show_preview_ui` in the
 scene instance. The fixture camera, light, and environment layout is unchanged.
 
+## Tier-2 runtime test
+
+`benchmark/tests/test_fast_marschner_runtime.gd` is a focused, durable runtime
+test for the `FAST_MARSCHNER_ANALYTIC` preview variant (enum value 5). It
+instantiates `BenchmarkHarness.tscn`, hides the preview overlay, calls
+`apply_preview(INDIVIDUAL_GROOM, FAST_MARSCHNER_ANALYTIC, &"Blowout")`, asserts
+the selected surface override is a `ShaderMaterial` on
+`res://assets/hair/materials/shaders/hair_marschner_fast.gdshader`, checks the
+viewport capture has usable dimensions and a lit (non-background) pixel count
+robust to dark brown hair, and then re-captures after enough preview frames for
+the Bayer `TIME` phase to move, asserting a nonzero frame diff so a static flat
+fallback cannot pass. It prints tagged `EVIDENCE` lines and
+`FAST_MARSCHNER_RUNTIME_TEST_OK` on success (exit 0), or pushed errors and exit
+1 on failure. It never starts a timed run and writes no benchmark artifacts.
+
+The normal windowed Godot binary is required (not `--headless`), because the
+test exercises the live preview path with `Engine.time_scale == 1.0`:
+
+```text
+/mnt/c/Tools/Godot/godot.exe --path "//wsl.localhost/Ubuntu/home/jeffreymwang/godot-hair-shader/.slim/worktrees/tier-2-marschner-hair-shader" --script res://benchmark/tests/test_fast_marschner_runtime.gd
+```
+
+The known unrelated `util/light_controller.gd:36` Camera3D `_current_mode`
+script warning may appear while the harness runs; it is fixture noise and not a
+test failure.
+
+## Tier-2 azimuthal LUT
+
+The `FAST_MARSCHNER_LUT` variant (enum 6) is a separately selectable,
+LUT-backed version of the fast Marschner shader. `FAST_MARSCHNER_ANALYTIC`
+(enum 5) remains the default/reference path with the analytic d'Eon azimuthal
+model; the shared `hair_marschner_fast.gdshader` carries an opt-in
+`use_azimuthal_lut` flag (default false) that only the LUT variant enables.
+The `sampler3D` LUT holds the R/TT/TRT azimuthal terms in RGB over a 64^3
+RGBAF grid (axes: U = relative azimuth phi in [-PI, PI], V = cos_theta_d,
+W = azimuthal_roughness). The U/phi axis wraps continuously: linear sampling
+with repeat enabled plus `fract()` on U interpolates across the seam between
+the last and first texels, while V and W are half-texel clamped into the
+interior texel-center range so repeat never wraps those axes. Only the
+light-invariant width axis is hoisted to `fragment()`, and the per-light sample
+stays in `light()`.
+
+Godot 4.7 cannot self-contain an `ImageTexture3D` (ResourceSaver writes a
+`local://` stub for `.res` and a data-less `.tres`, and the static
+`ImageTexture3D.create` does not resolve in GDScript), so the generator commits
+the raw texel data as a `FastMarschnerLUTData` resource and the material
+adapter builds the `ImageTexture3D` at runtime with the instance `create()`
+call, cached per process. Artifacts:
+
+- `benchmark/tools/generate_marschner_azimuthal_lut.gd` — offline generator
+  (exact GDScript port of the include's fresnel/logistic/angular-offset math,
+  fixed eta 1.55, h_TT = 0, h_TRT = sqrt(3)/2):
+  `godot --headless --path <project> --script res://benchmark/tools/generate_marschner_azimuthal_lut.gd`
+- `benchmark/resources/luts/fast_marschner_azimuthal_lut_64.res` — committed
+  4 MB data blob (round-trip verified by the generator).
+- `benchmark/tools/validate_marschner_azimuthal_lut.gd` — GPU-matching
+  trilinear numerical validation (max/RMS per channel plus the phi seam delta):
+  `godot --headless --path <project> --script res://benchmark/tools/validate_marschner_azimuthal_lut.gd`
+
+Measured error vs the analytic formulas (64^3): R max 0.0061 / RMS 0.0028, TT
+max 0.0033 / RMS 0.0010, TRT max 0.130 / RMS 0.0087 with a zero phi-seam delta
+for R/TT and 0.025 for TRT; the TRT worst point sits at the extreme corner
+(azimuthal_roughness 0.1, cos_theta_d = 1) — over the realistic benchmark
+roughness range (>= 0.3; profiles use 0.75–1.0) the worst error is 0.0132.
+Environment sampling and screen-indirect remain deferred; global strand-count dual scattering is out of scope.
+
+`benchmark/tests/test_fast_marschner_lut_runtime.gd` asserts shader selection,
+the enable flag, the bound 64^3 texture, non-black output, live preview frame
+changes, and that the analytic variant keeps the flag false. Performance and
+visual cases `perf_blowout_fast_marschner_lut` and
+`visual_blowout_fast_marschner_lut_close_up` are wired into the performance and
+visual suites for analytic-vs-LUT comparisons.
+
+## Tier-2 local dual scattering
+
+The `FAST_MARSCHNER_DUAL_SCATTER` variant (enum 7) is an experimental opt-in
+local dual-scattering slice on the same shared fast shader. It carries the
+packed `attributes_texture.g` depth value into `light()` via a varying and
+replaces — never adds on top of — the Karis multiple-scattering diffuse term
+with a Zinke-style local approximation: the depth channel is the
+density/visibility proxy, the forward-scattered term is Beer-Lambert attenuated
+through that density with the existing `sigma_a`, and the backward-scattered
+term peaks for opposing light/view directions. `dual_scatter_strength` and
+`dual_scatter_density` are profile-driven controls (defaults 0.5/0.5, validation
+ranges [0,2] and [0,1]); a zero strength removes the dual diffuse contribution.
+The analytic and LUT variants keep `use_dual_scatter=false` and their Karis
+reference path exactly; area diffuse/specular multipliers remain at the final
+direct-light accumulation. This phase is direct-light only: no environment
+sampling, screen-indirect, LUT changes, global strand-count integration, or
+roughness heuristics.
+
+`benchmark/tests/test_fast_marschner_dual_scatter_runtime.gd` asserts variant
+selection, the bound controls, non-black output, live preview frame changes,
+and that the analytic/LUT flags stay false. The rear/backlit case
+`visual_blowout_fast_marschner_dual_scatter_rear_backlit` (rear_backlit camera,
+rear_spot rig) is wired into the visual suite.
+
+## Tier-2 preintegrated dual scattering (Stage B)
+
+The `FAST_MARSCHNER_DUAL_SCATTER_PREINTEGRATED` variant (enum 9) is an opt-in
+Stage-B upgrade of the local dual-scattering slice on the same shared fast
+shader. Variant identity is authoritative: it forces `use_dual_scatter=true`
+and `use_preintegrated_dual_scatter=true` and `use_azimuthal_lut=false` /
+`use_environment=false`, then binds a committed 2D LUT. `light()` then samples
+the LUT instead of the analytic Stage-A `fm_dual_scattering()` (variant 7
+remains the untouched analytic fallback; both dual variants replace — never
+add on top of — the Karis diffuse term).
+
+The LUT stores **scalar one-/three-event aggregate scattering-energy terms** over a
+**scalar optical-depth/cosine domain** (64x64 RGBAF, linear filtering, repeat
+disabled):
+
+- U = scalar local-scattering optical depth `tau` in `[0, 16]` (the shader
+  derives it from the bounded depth-density proxy; RGB absorption is applied
+  separately after the lookup)
+- V = scattering cosine `c` (light/view alignment) in `[-1, 1]`
+- `P1 = 1 - exp(-tau)` and `P3 = 1 - exp(-1.5*tau)`
+- R = one-event forward energy `0.5*(1+c)*(1-F0)^2*P1`
+- G = one-event backward energy `0.5*(1-c)*(1-F0)^2*P1`
+- B = three-event forward energy `0.5*(1+c)*(1-F0)^2*F0*P3`
+- A = three-event backward energy `0.5*(1-c)*(1-F0)^2*F0*P3`
+
+with `F0 = ((1-eta)/(1+eta))^2` at the plan's fixed `eta = 1.55` (same
+convention as the azimuthal LUT). Zero density produces zero secondary energy;
+increasing density increases and then saturates the one-/three-event terms.
+Runtime `sigma_a` stays RGB and is applied with one-event path length `1.0` and
+three-event path length `1.5`, so the LUT never bakes one hair color. All terms
+are bounded in `[0, 1]`, monotone (energy grows with tau, three-event never
+exceeds one-event, forward/backward lobes split monotonically with c), and
+`ATTENUATION` enters only as the direct-light visibility ramp, never into the
+LUT math.
+
+As with the azimuthal LUT, Godot 4.7 cannot self-contain an `ImageTexture`, so
+the generator commits the raw RGBAF data as a `FastMarschnerDualLUTData`
+resource and the material adapter builds the `ImageTexture` at runtime
+(`Image.create_from_data` / `ImageTexture.create_from_image`), cached per
+process with the same defensive RID/size checks. Artifacts:
+
+- `benchmark/tools/generate_marschner_dual_scatter_lut.gd` — offline
+  deterministic generator:
+  `godot --headless --path <project> --script res://benchmark/tools/generate_marschner_dual_scatter_lut.gd`
+- `benchmark/resources/luts/fast_marschner_dual_scatter_lut_64.res` — committed
+  64x64 data blob (round-trip verified by the generator).
+- `benchmark/tools/validate_marschner_dual_scatter_lut.gd` — GPU-matching
+  bilinear numerical validation (finite/bounded data, edge-clamp seam
+  continuity, monotone attenuation/energy, max/RMS error vs the generator's
+  analytic formulas), ending with `DUAL_SCATTER_LUT_VALIDATION_OK`:
+  `godot --headless --path <project> --script res://benchmark/tools/validate_marschner_dual_scatter_lut.gd`
+
+Endpoint-preserving sampling represents zero-density and extreme-cosine values
+with the first/last texels; the interior gate (tau >= 0.25, |cosine| <= 0.9)
+remains inside the 0.02 release threshold. Monotonicity, zero-density behavior,
+and energy bounds hold across the whole grid.
+
+Profile fields `use_preintegrated_dual_scatter` (default false) and
+`dual_scatter_lut_data` are declaration-gated through the adapter; enabling
+requires the committed LUT data, and `source_current` keeps the feature off.
+`benchmark/tests/test_fast_marschner_dual_scatter_runtime.gd` covers variant 9:
+accepted, `use_dual_scatter=true` + `use_preintegrated_dual_scatter=true`,
+azimuthal LUT/environment forced off, the committed 64x64 texture bound,
+non-black output with live frame movement, and full identity checks (the
+analytic/LUT/environment/Stage-A variants force the preintegrated flag off
+regardless of profile fields). Visual and performance cases
+`visual_blowout_fast_marschner_dual_scatter_preintegrated_rear_backlit` (the
+Stage-A rear/backlit setup) and
+`perf_blowout_fast_marschner_dual_scatter_preintegrated` are wired into the
+visual and performance suites for A/B Stage-A-vs-Stage-B comparisons.
+
+## Tier-2 fragment environment response
+
+The `FAST_MARSCHNER_ENVIRONMENT` variant (enum 8) adds an opt-in
+fragment-stage environment contribution to the shared fast shader. It samples
+a committed 2D equirectangular environment stand-in
+(`benchmark/resources/textures/environment_gradient.tres`, a 256x128
+`GradientTexture2D` with dark zenith, warm horizon, and cool sky — a
+representative gradient, not a physical HDRI) once per fragment at the
+reflected view direction (`u = 0.5 + atan(z, x) / TAU`, `v = 0.5 - asin(y) /
+PI`) and adds the result via `EMISSION`, tinted by the existing albedo with an
+absorption-attenuated R/TRT-compatible coloring (TT is skipped for the local
+slice). The reflected direction is evaluated in **camera space** — this is a
+local stand-in, not world-space IBL — and the sample is guarded with
+`!IN_SHADOW_PASS` so shadow passes skip the unused environment read. The term is evaluated in `fragment()` only — `light()` is untouched —
+so it is light-count invariant and renders even under the `environment_only`
+rig with zero lights. Identity is authoritative: the environment variant
+forces `use_azimuthal_lut=false`, `use_dual_scatter=false`, and
+`use_preintegrated_dual_scatter=false`, and the analytic/LUT/dual variants
+force `use_environment=false`. Profile fields
+`use_environment` (default false), `environment_texture`, and
+`environment_strength` ([0,2], default 1.0) are declaration-gated through the
+adapter; `source_current` keeps the feature disabled.
+
+`benchmark/tests/test_fast_marschner_environment_runtime.gd` asserts variant
+identity, the bound texture and strength, non-black output, live preview
+frames, and the zero-light (fragment-only) rendering proof. The visual case
+`visual_blowout_fast_marschner_environment_only` uses the existing
+`environment_only` rig and is wired into the visual suite. Environment
+sampling here is a local stand-in; full environment/IRRADIANCE integration and
+screen-indirect remain deferred.
+
 ## Scope
 
 The harness discovers direct `MeshInstance3D` groom children under `Head` at runtime and currently covers the ten fixture grooms. Resource-backed cases and suites own their camera pose, lighting PackedScene, viewport target, timing, repeats, and capture flags; the controller still preserves the manual API. The harness owns the camera, directional-light fallback, and environment; fixture camera/light/environment state is restored on reset or exit without changing the fixture scene.
@@ -46,6 +245,11 @@ Variants are exactly:
 - `CURRENT_MARSCHNER_BASELINE`
 - `APPROX_KAJIYA_KAY`
 - `BUILTIN_ALPHA_HASH_CONTROL`
+- `FAST_MARSCHNER_ANALYTIC`
+- `FAST_MARSCHNER_LUT`
+- `FAST_MARSCHNER_DUAL_SCATTER`
+- `FAST_MARSCHNER_ENVIRONMENT`
+- `FAST_MARSCHNER_DUAL_SCATTER_PREINTEGRATED`
 
 The baseline, coverage, and approximate Kajiya–Kay variants clone each active source `ShaderMaterial` per mesh surface, preserve its parameters and groom textures, replace only the shader resource, and use `set_surface_override_material()`. Mesh material resources are never edited. `benchmark/reference/BASELINE_COMMIT.txt` freezes the source commit, and the reference shader/include are immutable copies of the current source.
 
@@ -56,13 +260,13 @@ Two variants exercise the source alpha path with different discard methods. `COV
 Stable groom and material contracts live under `benchmark/resources/` and never modify imported scenes or materials:
 
 - `hair_groom_definition.gd` (`HairGroomDefinition`): stable `groom_id` (node-name based, must match the pattern of ASCII letters/digits/underscores), `display_name`, `category`, `groom_root` (NodePath relative to `Head`), `hair_mesh_paths` (relative to `groom_root`), explicit `hair_surface_indices` (never an implicit "all surfaces"), `expected_material_profile` (a profile id), and `notes`. `validation_errors()` enforces stable IDs, a non-empty root, at least one mesh path, and explicit, non-negative, duplicate-free surface selection.
-- `hair_benchmark_profile.gd` (`HairBenchmarkProfile`): canonical material parameters. Source-compatible fields mirror the current production shader interface (`albedo`, `longitudinal_roughness`, `azimuthal_roughness`, `cuticle_tilt_offset`, `specular`, `coords_texture`, `attributes_texture`) and can be applied today by cloning the source `ShaderMaterial`s and setting the matching shader parameters. Future-tier placeholder fields (absorption/melanin, `index_of_refraction`, R/TT/TRT lobe weights, multiple scattering, root/tip colors, flow texture, coverage/alpha overrides) are typed and validated but not yet read by the controller — they are documented as placeholders for the profile adapter.
+- `hair_benchmark_profile.gd` (`HairBenchmarkProfile`): canonical material parameters. Source-compatible fields mirror the current production shader interface (`albedo`, `longitudinal_roughness`, `azimuthal_roughness`, `cuticle_tilt_offset`, `specular`, `coords_texture`, `attributes_texture`) and can be applied today by cloning the source `ShaderMaterial`s and setting the matching shader parameters. Tier-2 Fast Marschner fields (`absorption_mode`, `absorption`, `eumelanin`, `pheomelanin`, `melanin_absorption_scale`, `ior`) are applied when the target shader declares them. Remaining future-tier placeholder fields (R/TT/TRT lobe weights, multiple scattering, root/tip colors, flow texture, coverage/alpha overrides) are typed and validated but not yet read by the controller.
 - `hair_groom_catalog.gd` (`HairGroomCatalog`): ordered resource-backed catalog of `HairGroomDefinition`s with duplicate-id validation.
 - Data: `benchmark/resources/profiles/source_current.tres` is the default profile (id `&"source_current"`, mirroring the source shader defaults); `benchmark/resources/grooms/hair_groom_catalog.tres` defines the ten fixture grooms.
 
 `BenchmarkCase` gained `profile_id: StringName` defaulting to `&"source_current"`; it is validated (non-empty, and the profile resource must exist under `res://benchmark/resources/profiles/`) and recorded in `run_manifest.json`/`summary.json` as `profile_id`. Existing `.tres` cases load unchanged because the default applies. The controller's runtime groom catalog now exposes stable `groom_id`/`name` and display metadata (`display_name`, `category`) separately from the transient per-process instance `id`, merging them from `hair_groom_catalog.tres` when it loads (falling back to node names otherwise); `run_manifest.json` grooms entries include both.
 
-Material adapter: `benchmark/scripts/hair_material_adapter.gd` (`HairMaterialAdapter`) owns all material construction — cloning the source `ShaderMaterial` and swapping in the selected benchmark shader, applying canonical profile parameters/textures, and building the built-in `StandardMaterial3D` alpha-hash control (including the cached red-coverage-to-alpha conversion). Variant-specific shader selection stays in the controller; the controller no longer duplicates material-construction code. Profile resolution: the case's `profile_id` resolves to `res://benchmark/resources/profiles/<profile_id>.tres`; a missing or invalid profile fails the start clearly. The default `source_current` profile sets `preserve_source_parameters = true`, so the adapter keeps every per-groom parameter and texture from the cloned source material and rendered behavior is unchanged; canonical profiles (future) set it false to apply the profile's source-compatible values.
+Material adapter: `benchmark/scripts/hair_material_adapter.gd` (`HairMaterialAdapter`) owns all material construction — cloning the source `ShaderMaterial` and swapping in the selected benchmark shader, applying canonical profile parameters/textures, and building the built-in `StandardMaterial3D` alpha-hash control (including the cached red-coverage-to-alpha conversion). Variant-specific shader selection stays in the controller; the controller no longer duplicates material-construction code. Profile resolution: the case's `profile_id` resolves to `res://benchmark/resources/profiles/<profile_id>.tres`; a missing or invalid profile fails the start clearly. The default `source_current` profile sets `preserve_source_parameters = true`, so the adapter keeps every per-groom source parameter and texture while still applying declaration-gated Tier-2-only uniforms to Fast Marschner clones; canonical profiles set it false when they need to override source-compatible values.
 
 Explicit surface selection: `hair_groom_catalog.tres` `hair_surface_indices` now drive which mesh surfaces receive benchmark overrides. Only selected surfaces get variant/diagnostic materials; non-selected surfaces are never touched. Restoration is unchanged and exact: selected surface overrides, groom-level `material_override`, visibility, and diagnostic state all return to their discovered originals. Grooms without a catalog definition keep every surface selected (backward-compatible fallback). Transient instance ids and stable groom ids remain separate. The next slice (not yet implemented) introduces HEAVIEST/HAIR_ONLY display modes.
 
@@ -78,9 +282,9 @@ Camera poses (all against the real fixture head at the origin, fov 60, look-at m
 
 Three representative suites were added (all cases at 1920×1080, default timing 180/30/300, `capture_color` only):
 
-- `visual_suite.tres` (7 cases): exercises the new poses and rigs — frozen baseline at `side_grazing`/`close_up`/`distant_lod`, coverage control at `side_grazing` (rear spot), approximate Kajiya–Kay at `close_up` (area light), built-in alpha hash at `distant_lod` (front omni), and a `NO_HAIR` side reference.
-- `performance_suite.tres` (6 cases): the five Blowout variants (NO_HAIR, exact coverage control, frozen baseline, approximate Kajiya–Kay, built-in alpha hash) at `three_quarter` + `single_directional_key`, plus an `ALL_GROOMS` frozen-baseline case (all ten grooms — the heaviest supported scene) at the same camera/rig.
-- `light_scaling_suite.tres` (7 cases): frozen baseline at `three_quarter` across the lighting sweep — `environment_only`, `single_directional_key`, `front_omni`, `rear_spot`, `four_light_rig`, `area_light`, `eight_light_stress`.
+- `visual_suite.tres` (13 cases): exercises the new poses and rigs — frozen baseline at `side_grazing`/`close_up`/`distant_lod`, coverage control at `side_grazing` (rear spot), approximate Kajiya–Kay at `close_up` (area light), built-in alpha hash at `distant_lod` (front omni), a `NO_HAIR` side reference, and Fast Marschner at `close_up` (area light) plus `side_grazing` (rear spot).
+- `performance_suite.tres` (9 cases): the six Blowout variants (NO_HAIR, exact coverage control, frozen baseline, approximate Kajiya–Kay, built-in alpha hash, Fast Marschner) at `three_quarter` + `single_directional_key`, plus an `ALL_GROOMS` frozen-baseline case (all ten grooms — the heaviest supported scene) at the same camera/rig.
+- `light_scaling_suite.tres` (14 cases): frozen baseline and Fast Marschner each across the lighting sweep — `environment_only`, `single_directional_key`, `front_omni`, `rear_spot`, `four_light_rig`, `area_light`, `eight_light_stress`.
 
 All case/suite/camera/lighting ids are unique; the existing `smoke_suite.tres` and `capture_smoke_suite.tres` are unchanged and still validate. The shorter timing used by `capture_smoke_suite` cases is intentional (diagnostic captures); the new suites keep the 180/30/300 smoke defaults.
 

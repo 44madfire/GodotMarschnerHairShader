@@ -1,4 +1,4 @@
-[gd_resource type="Resource" script_class="BenchmarkSuite" load_steps=10 format=3]
+[gd_resource type="Resource" script_class="BenchmarkSuite" load_steps=16 format=3]
 
 [ext_resource type="Script" path="res://benchmark/resources/benchmark_suite.gd" id="1_benchmark_suite"]
 [ext_resource type="Resource" path="res://benchmark/cases/visual_blowout_frozen_baseline_side_grazing.tres" id="2_case"]
@@ -9,10 +9,16 @@
 [ext_resource type="Resource" path="res://benchmark/cases/visual_blowout_builtin_alpha_hash_distant_lod.tres" id="7_case"]
 [ext_resource type="Resource" path="res://benchmark/cases/visual_blowout_no_hair_side_grazing.tres" id="8_case"]
 [ext_resource type="Script" path="res://benchmark/resources/benchmark_case.gd" id="9_benchmark_case"]
+[ext_resource type="Resource" path="res://benchmark/cases/visual_blowout_fast_marschner_analytic_close_up.tres" id="10_case"]
+[ext_resource type="Resource" path="res://benchmark/cases/visual_blowout_fast_marschner_analytic_side_grazing.tres" id="11_case"]
+[ext_resource type="Resource" path="res://benchmark/cases/visual_blowout_fast_marschner_lut_close_up.tres" id="12_case"]
+[ext_resource type="Resource" path="res://benchmark/cases/visual_blowout_fast_marschner_dual_scatter_rear_backlit.tres" id="13_case"]
+[ext_resource type="Resource" path="res://benchmark/cases/visual_blowout_fast_marschner_environment_only.tres" id="14_case"]
+[ext_resource type="Resource" path="res://benchmark/cases/visual_blowout_fast_marschner_dual_scatter_preintegrated_rear_backlit.tres" id="15_case"]
 [resource]
 resource_name = "Visual suite"
 script = ExtResource("1_benchmark_suite")
 id = &"visual_suite"
 display_name = "Visual suite"
-cases = Array[ExtResource("9_benchmark_case")]([ExtResource("2_case"), ExtResource("3_case"), ExtResource("4_case"), ExtResource("5_case"), ExtResource("6_case"), ExtResource("7_case"), ExtResource("8_case")])
+cases = Array[ExtResource("9_benchmark_case")]([ExtResource("2_case"), ExtResource("3_case"), ExtResource("4_case"), ExtResource("5_case"), ExtResource("6_case"), ExtResource("7_case"), ExtResource("8_case"), ExtResource("10_case"), ExtResource("11_case"), ExtResource("12_case"), ExtResource("13_case"), ExtResource("14_case"), ExtResource("15_case")])
 output_subdirectory = "visual_suite"

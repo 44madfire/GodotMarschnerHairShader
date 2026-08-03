@@ -32,10 +32,15 @@ enum BenchmarkVariant {
 	CURRENT_MARSCHNER_BASELINE,
 	APPROX_KAJIYA_KAY,
 	BUILTIN_ALPHA_HASH_CONTROL,
+	FAST_MARSCHNER_ANALYTIC,
+	FAST_MARSCHNER_LUT,
+	FAST_MARSCHNER_DUAL_SCATTER,
+	FAST_MARSCHNER_ENVIRONMENT,
+	FAST_MARSCHNER_DUAL_SCATTER_PREINTEGRATED,
 }
 
 const MODE_NAMES := ["NO_HAIR", "INDIVIDUAL_GROOM", "ALL_GROOMS", "REPRESENTATIVE_DEFAULT"]
-const VARIANT_NAMES := ["NO_HAIR", "COVERAGE_CONTROL", "CURRENT_MARSCHNER_BASELINE", "APPROX_KAJIYA_KAY", "BUILTIN_ALPHA_HASH_CONTROL"]
+const VARIANT_NAMES := ["NO_HAIR", "COVERAGE_CONTROL", "CURRENT_MARSCHNER_BASELINE", "APPROX_KAJIYA_KAY", "BUILTIN_ALPHA_HASH_CONTROL", "FAST_MARSCHNER_ANALYTIC", "FAST_MARSCHNER_LUT", "FAST_MARSCHNER_DUAL_SCATTER", "FAST_MARSCHNER_ENVIRONMENT", "FAST_MARSCHNER_DUAL_SCATTER_PREINTEGRATED"]
 const STATE_NAMES := ["IDLE", "PREWARM", "SETTLE", "SAMPLE", "CAPTURE", "COMPLETE"]
 
 const PREWARM_DEFAULT := 180
@@ -54,6 +59,23 @@ const CURRENT_MARSCHNER_SHADER: Shader = preload("res://benchmark/reference/base
 ## CURRENT_MARSCHNER_SHADER so the timed reference stays byte-identical.
 const BASELINE_PREVIEW_SHADER: Shader = preload("res://benchmark/reference/baseline_hair_preview.gdshader")
 const APPROX_KAJIYA_KAY_SHADER: Shader = preload("res://assets/hair/materials/shaders/hair_approx.gdshader")
+const FAST_MARSCHNER_SHADER: Shader = preload("res://assets/hair/materials/shaders/hair_marschner_fast.gdshader")
+## Committed azimuthal LUT data for the FAST_MARSCHNER_LUT variant (see
+## benchmark/tools/generate_marschner_azimuthal_lut.gd).
+const FAST_MARSCHNER_LUT_DATA: Resource = preload("res://benchmark/resources/luts/fast_marschner_azimuthal_lut_64.res")
+## Committed Stage-B preintegrated dual-scatter LUT data for the
+## FAST_MARSCHNER_DUAL_SCATTER_PREINTEGRATED variant (see
+## benchmark/tools/generate_marschner_dual_scatter_lut.gd and
+## validate_marschner_dual_scatter_lut.gd).
+const FAST_MARSCHNER_DUAL_SCATTER_LUT_DATA: Resource = preload("res://benchmark/resources/luts/fast_marschner_dual_scatter_lut_64.res")
+## The committed azimuthal LUT is numerically validated only for azimuthal
+## roughness >= this value (validate_marschner_azimuthal_lut.gd's realistic
+## gate). FAST_MARSCHNER_LUT rejects lower values at the application seam;
+## FAST_MARSCHNER_ANALYTIC is unrestricted.
+const LUT_MIN_AZIMUTHAL_ROUGHNESS := 0.3
+## Committed equirectangular environment stand-in (GradientTexture2D: dark
+## zenith, warm horizon, cool sky) for the FAST_MARSCHNER_ENVIRONMENT variant.
+const FAST_MARSCHNER_ENVIRONMENT_TEXTURE: Texture2D = preload("res://benchmark/resources/textures/environment_gradient.tres")
 const COVERAGE_WHITE_THRESHOLD: float = 0.95
 
 ## Benchmark time scale during runs. A tiny positive scale keeps Godot shader TIME
@@ -107,7 +129,7 @@ const RENDER_INFO_SHADOW := 1
 @export_category("Smoke Run")
 @export_enum("NO_HAIR", "INDIVIDUAL_GROOM", "ALL_GROOMS", "REPRESENTATIVE_DEFAULT") var benchmark_mode: int = BenchmarkMode.REPRESENTATIVE_DEFAULT
 @export var individual_groom: StringName = &"Blowout"
-@export_enum("NO_HAIR", "COVERAGE_CONTROL", "CURRENT_MARSCHNER_BASELINE", "APPROX_KAJIYA_KAY", "BUILTIN_ALPHA_HASH_CONTROL") var benchmark_variant: int = BenchmarkVariant.CURRENT_MARSCHNER_BASELINE
+@export_enum("NO_HAIR", "COVERAGE_CONTROL", "CURRENT_MARSCHNER_BASELINE", "APPROX_KAJIYA_KAY", "BUILTIN_ALPHA_HASH_CONTROL", "FAST_MARSCHNER_ANALYTIC", "FAST_MARSCHNER_LUT", "FAST_MARSCHNER_DUAL_SCATTER", "FAST_MARSCHNER_ENVIRONMENT", "FAST_MARSCHNER_DUAL_SCATTER_PREINTEGRATED") var benchmark_variant: int = BenchmarkVariant.CURRENT_MARSCHNER_BASELINE
 @export var auto_start_smoke: bool = false
 @export_range(0, 100000, 1) var prewarm_frames: int = PREWARM_DEFAULT
 @export_range(0, 100000, 1) var settle_frames: int = SETTLE_DEFAULT
@@ -252,7 +274,7 @@ func apply_preview(requested_mode: int, requested_variant: int, requested_groom:
 		return false
 
 	_active_mode = clampi(requested_mode, BenchmarkMode.NO_HAIR, BenchmarkMode.REPRESENTATIVE_DEFAULT)
-	_active_variant = clampi(requested_variant, BenchmarkVariant.NO_HAIR, BenchmarkVariant.BUILTIN_ALPHA_HASH_CONTROL)
+	_active_variant = clampi(requested_variant, BenchmarkVariant.NO_HAIR, BenchmarkVariant.FAST_MARSCHNER_DUAL_SCATTER_PREINTEGRATED)
 	if requested_groom != &"":
 		_active_individual_groom = requested_groom
 	last_start_error = ""
@@ -291,6 +313,169 @@ func _freeze_preview_bayer_phase() -> void:
 			var override_material := groom.get_surface_override_material(int(surface_data["surface_index"])) as ShaderMaterial
 			if override_material:
 				override_material.set(&"shader_parameter/freeze_bayer_phase", true)
+
+
+## Binds the committed azimuthal LUT to the live FAST_MARSCHNER_LUT surface
+## overrides: sets use_azimuthal_lut=true and the Texture3D built from the
+## committed data (declaration-gated: only the fast shader declares these
+## parameters). Timed runs that select this variant keep the same binding; the
+## analytic variant never enables it.
+## Returns false (recording a start failure) when the committed LUT data
+## cannot be built into a usable texture, so apply_preview()/benchmark starts
+## reject the LUT variant instead of silently continuing.
+func _apply_fast_lut_binding() -> bool:
+	# The LUT is validated only for azimuthal_roughness >=
+	# LUT_MIN_AZIMUTHAL_ROUGHNESS; reject any selected surface below that range
+	# (or with an invalid parameter) so apply_preview/start_case restore the
+	# original state instead of sampling out-of-range LUT cells. The check runs
+	# on the live clones, after profile/source parameters were applied.
+	for groom_data in groom_catalog:
+		var groom := groom_data["node"] as MeshInstance3D
+		if not is_instance_valid(groom):
+			continue
+		for surface_data in groom_data["surfaces"]:
+			if not bool(surface_data["selected"]):
+				continue
+			var override_material := groom.get_surface_override_material(int(surface_data["surface_index"])) as ShaderMaterial
+			if not override_material:
+				continue
+			var roughness_value: Variant = override_material.get(&"shader_parameter/azimuthal_roughness")
+			if not (roughness_value is float or roughness_value is int):
+				_record_start_failure(
+					"FAST_MARSCHNER_LUT could not be applied: groom '%s' surface %d has an invalid azimuthal_roughness (%s)."
+					% [String(groom_data["name"]), int(surface_data["surface_index"]), roughness_value]
+				)
+				return false
+			var roughness: float = float(roughness_value)
+			if roughness < LUT_MIN_AZIMUTHAL_ROUGHNESS:
+				_record_start_failure(
+					"FAST_MARSCHNER_LUT could not be applied: groom '%s' surface %d azimuthal_roughness %.3f is below the supported minimum %.1f (the LUT is validated for roughness >= 0.3; use FAST_MARSCHNER_ANALYTIC instead)."
+					% [String(groom_data["name"]), int(surface_data["surface_index"]), roughness, LUT_MIN_AZIMUTHAL_ROUGHNESS]
+				)
+				return false
+	var lut_texture: Texture3D = _material_adapter.azimuthal_lut_texture(FAST_MARSCHNER_LUT_DATA)
+	if lut_texture == null:
+		_record_start_failure("FAST_MARSCHNER_LUT could not be applied: the committed LUT data failed to build a texture.")
+		return false
+	for groom_data in groom_catalog:
+		var groom := groom_data["node"] as MeshInstance3D
+		if not is_instance_valid(groom):
+			continue
+		for surface_data in groom_data["surfaces"]:
+			if not bool(surface_data["selected"]):
+				continue
+			var override_material := groom.get_surface_override_material(int(surface_data["surface_index"])) as ShaderMaterial
+			if override_material:
+				# Variant identity is authoritative: the LUT mode never combines
+				# with dual scattering, regardless of profile fields.
+				override_material.set(&"shader_parameter/use_azimuthal_lut", true)
+				override_material.set(&"shader_parameter/use_dual_scatter", false)
+				override_material.set(&"shader_parameter/use_preintegrated_dual_scatter", false)
+				override_material.set(&"shader_parameter/use_environment", false)
+				override_material.set(&"shader_parameter/azimuthal_lut", lut_texture)
+	return true
+
+
+## Enables the local dual-scattering slice on the live FAST_MARSCHNER_DUAL_SCATTER
+## surface overrides: sets use_dual_scatter=true and forces use_azimuthal_lut=
+## false and use_preintegrated_dual_scatter=false (variant identity is
+## authoritative: variant 7 is the analytic Stage-A slice and never enables the
+## Stage-B preintegrated path; the profile-driven strength and density are
+## applied by the adapter's declaration-gated mapping). The analytic and LUT
+## variants never enable dual scattering.
+func _apply_dual_scatter_binding() -> bool:
+	for groom_data in groom_catalog:
+		var groom := groom_data["node"] as MeshInstance3D
+		if not is_instance_valid(groom):
+			continue
+		for surface_data in groom_data["surfaces"]:
+			if not bool(surface_data["selected"]):
+				continue
+			var override_material := groom.get_surface_override_material(int(surface_data["surface_index"])) as ShaderMaterial
+			if override_material:
+				override_material.set(&"shader_parameter/use_dual_scatter", true)
+				override_material.set(&"shader_parameter/use_preintegrated_dual_scatter", false)
+				override_material.set(&"shader_parameter/use_azimuthal_lut", false)
+				override_material.set(&"shader_parameter/use_environment", false)
+	return true
+
+
+## Enables the Stage-B preintegrated (LUT-backed) dual-scattering slice on the
+## live FAST_MARSCHNER_DUAL_SCATTER_PREINTEGRATED surface overrides: forces
+## use_dual_scatter=true and use_preintegrated_dual_scatter=true (variant
+## identity is authoritative) and use_azimuthal_lut=false / use_environment=false,
+## then binds the committed 2D LUT texture built from the raw data resource.
+## Returns false (recording a start failure) when the committed LUT data
+## cannot be built into a usable texture, so apply_preview()/benchmark starts
+## reject the variant instead of silently continuing.
+func _apply_preintegrated_dual_scatter_binding() -> bool:
+	var lut_texture: Texture2D = _material_adapter.dual_scatter_lut_texture(FAST_MARSCHNER_DUAL_SCATTER_LUT_DATA)
+	if lut_texture == null:
+		_record_start_failure("FAST_MARSCHNER_DUAL_SCATTER_PREINTEGRATED could not be applied: the committed LUT data failed to build a texture.")
+		return false
+	for groom_data in groom_catalog:
+		var groom := groom_data["node"] as MeshInstance3D
+		if not is_instance_valid(groom):
+			continue
+		for surface_data in groom_data["surfaces"]:
+			if not bool(surface_data["selected"]):
+				continue
+			var override_material := groom.get_surface_override_material(int(surface_data["surface_index"])) as ShaderMaterial
+			if override_material:
+				override_material.set(&"shader_parameter/use_dual_scatter", true)
+				override_material.set(&"shader_parameter/use_preintegrated_dual_scatter", true)
+				override_material.set(&"shader_parameter/use_azimuthal_lut", false)
+				override_material.set(&"shader_parameter/use_environment", false)
+				override_material.set(&"shader_parameter/dual_scatter_lut", lut_texture)
+	return true
+
+
+## Forces the full reference identity on live FAST_MARSCHNER_ANALYTIC surface
+## overrides: use_azimuthal_lut=false, use_dual_scatter=false,
+## use_preintegrated_dual_scatter=false, and use_environment=false. Variant
+## identity is authoritative — profiles can provide fields, but they must never
+## override these variant decisions.
+func _apply_analytic_flag_binding() -> void:
+	for groom_data in groom_catalog:
+		var groom := groom_data["node"] as MeshInstance3D
+		if not is_instance_valid(groom):
+			continue
+		for surface_data in groom_data["surfaces"]:
+			if not bool(surface_data["selected"]):
+				continue
+			var override_material := groom.get_surface_override_material(int(surface_data["surface_index"])) as ShaderMaterial
+			if override_material:
+				override_material.set(&"shader_parameter/use_azimuthal_lut", false)
+				override_material.set(&"shader_parameter/use_dual_scatter", false)
+				override_material.set(&"shader_parameter/use_preintegrated_dual_scatter", false)
+				override_material.set(&"shader_parameter/use_environment", false)
+
+
+## Enables the fragment-stage environment response on the live
+## FAST_MARSCHNER_ENVIRONMENT surface overrides: forces use_environment=true
+## and use_azimuthal_lut=false / use_dual_scatter=false /
+## use_preintegrated_dual_scatter=false (variant identity is authoritative),
+## and binds the committed equirectangular environment texture.
+## Returns false with a clear start failure if the texture cannot bind.
+func _apply_environment_binding() -> bool:
+	if FAST_MARSCHNER_ENVIRONMENT_TEXTURE == null or FAST_MARSCHNER_ENVIRONMENT_TEXTURE.get_width() <= 0:
+		_record_start_failure("FAST_MARSCHNER_ENVIRONMENT could not be applied: the committed environment texture failed to bind.")
+		return false
+	for groom_data in groom_catalog:
+		var groom := groom_data["node"] as MeshInstance3D
+		if not is_instance_valid(groom):
+			continue
+		for surface_data in groom_data["surfaces"]:
+			if not bool(surface_data["selected"]):
+				continue
+			var override_material := groom.get_surface_override_material(int(surface_data["surface_index"])) as ShaderMaterial
+			if override_material:
+				override_material.set(&"shader_parameter/use_environment", true)
+				override_material.set(&"shader_parameter/use_azimuthal_lut", false)
+				override_material.set(&"shader_parameter/use_dual_scatter", false)
+				override_material.set(&"shader_parameter/use_preintegrated_dual_scatter", false)
+				override_material.set(&"shader_parameter/environment_texture", FAST_MARSCHNER_ENVIRONMENT_TEXTURE)
+	return true
 
 
 ## Returns the stable groom entries used by the preview selector. The returned
@@ -346,7 +531,7 @@ func start_benchmark(requested_mode: int = -1, requested_variant: int = -1, requ
 	_begin_manual_run()
 
 	_active_mode = benchmark_mode if requested_mode < 0 else clampi(requested_mode, 0, BenchmarkMode.REPRESENTATIVE_DEFAULT)
-	_active_variant = benchmark_variant if requested_variant < 0 else clampi(requested_variant, 0, BenchmarkVariant.BUILTIN_ALPHA_HASH_CONTROL)
+	_active_variant = benchmark_variant if requested_variant < 0 else clampi(requested_variant, 0, BenchmarkVariant.FAST_MARSCHNER_DUAL_SCATTER_PREINTEGRATED)
 	_active_individual_groom = individual_groom if requested_groom == &"" else requested_groom
 	if not apply_variant(_active_variant):
 		_set_benchmark_state(BenchmarkState.IDLE)
@@ -442,7 +627,7 @@ func apply_variant(variant_id: int, preview_only: bool = false) -> bool:
 		_discover_grooms()
 	if _material_adapter == null:
 		_material_adapter = HairMaterialAdapter.new()
-	var selected_variant := clampi(variant_id, 0, BenchmarkVariant.BUILTIN_ALPHA_HASH_CONTROL)
+	var selected_variant := clampi(variant_id, 0, BenchmarkVariant.FAST_MARSCHNER_DUAL_SCATTER_PREINTEGRATED)
 	var display_mode := _active_mode
 	_restore_original_surface_state()
 	_active_variant = selected_variant
@@ -479,6 +664,41 @@ func apply_variant(variant_id: int, preview_only: bool = false) -> bool:
 				_apply_display_mode(display_mode)
 			BenchmarkVariant.APPROX_KAJIYA_KAY:
 				_apply_shader_variant(APPROX_KAJIYA_KAY_SHADER, profile)
+				_apply_display_mode(display_mode)
+			BenchmarkVariant.FAST_MARSCHNER_ANALYTIC:
+				_apply_shader_variant(FAST_MARSCHNER_SHADER, profile)
+				_apply_analytic_flag_binding()
+				_apply_display_mode(display_mode)
+			BenchmarkVariant.FAST_MARSCHNER_LUT:
+				# Same shared fast shader; the LUT path is enabled explicitly by
+				# this variant (the analytic variant keeps the default-off flag).
+				_apply_shader_variant(FAST_MARSCHNER_SHADER, profile)
+				applied = _apply_fast_lut_binding()
+				_apply_display_mode(display_mode)
+			BenchmarkVariant.FAST_MARSCHNER_DUAL_SCATTER:
+				# Same shared fast shader; the local dual-scattering slice is
+				# enabled explicitly by this variant (the analytic/LUT variants
+				# keep the default-off flag and their Karis reference path).
+				# Variant 7 is the analytic Stage-A slice; it never enables the
+				# Stage-B preintegrated path.
+				_apply_shader_variant(FAST_MARSCHNER_SHADER, profile)
+				applied = _apply_dual_scatter_binding()
+				_apply_display_mode(display_mode)
+			BenchmarkVariant.FAST_MARSCHNER_DUAL_SCATTER_PREINTEGRATED:
+				# Same shared fast shader; the Stage-B preintegrated
+				# (LUT-backed) slice is enabled explicitly by this variant,
+				# which forces dual=true, preintegrated=true, azimuthal
+				# LUT=false, and environment=false (variant identity is
+				# authoritative) and binds the committed 2D LUT.
+				_apply_shader_variant(FAST_MARSCHNER_SHADER, profile)
+				applied = _apply_preintegrated_dual_scatter_binding()
+				_apply_display_mode(display_mode)
+			BenchmarkVariant.FAST_MARSCHNER_ENVIRONMENT:
+				# Same shared fast shader; the fragment-stage environment
+				# response is enabled explicitly by this variant and forces the
+				# LUT/dual modes off (variant identity is authoritative).
+				_apply_shader_variant(FAST_MARSCHNER_SHADER, profile)
+				applied = _apply_environment_binding()
 				_apply_display_mode(display_mode)
 			BenchmarkVariant.BUILTIN_ALPHA_HASH_CONTROL:
 				applied = _apply_builtin_alpha_hash_variant(profile)
@@ -562,7 +782,7 @@ func _start_resource_case(case: Resource, expected_token: int, output_directory:
 	_active_coverage_metrics = {}
 	_suite_repeat_count = maxi(repeat_count, 1)
 	_active_mode = clampi(_resource_int(case, &"mode", BenchmarkMode.REPRESENTATIVE_DEFAULT), 0, BenchmarkMode.REPRESENTATIVE_DEFAULT)
-	_active_variant = clampi(_resource_int(case, &"variant", BenchmarkVariant.CURRENT_MARSCHNER_BASELINE), 0, BenchmarkVariant.BUILTIN_ALPHA_HASH_CONTROL)
+	_active_variant = clampi(_resource_int(case, &"variant", BenchmarkVariant.CURRENT_MARSCHNER_BASELINE), 0, BenchmarkVariant.FAST_MARSCHNER_DUAL_SCATTER_PREINTEGRATED)
 	_active_individual_groom = _resource_string_name(case, &"groom_id", &"")
 	_active_case_profile_id = _resource_string_name(case, &"profile_id", &"source_current")
 	if not apply_variant(_active_variant):
