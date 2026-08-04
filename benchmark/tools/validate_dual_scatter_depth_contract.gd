@@ -47,6 +47,10 @@ func _check_shader_contract() -> void:
 		_failures.append("shader include no longer contains the explicit deepness mapping (1 - depth)")
 	else:
 		print("CONTRACT_EVIDENCE shader_contains_deepness_mapping=true")
+	if not include_text.contains("* (1.0 - view_alignment) * 0.5;") or include_text.contains("(1.0 - abs(view_alignment))"):
+		_failures.append("dual backward scattering must peak for opposing light/view alignment without abs() suppression")
+	else:
+		print("CONTRACT_EVIDENCE backward_lobe_opposing_alignment=true")
 
 
 ## Mirrors the shader's deepness/local-density expressions exactly.

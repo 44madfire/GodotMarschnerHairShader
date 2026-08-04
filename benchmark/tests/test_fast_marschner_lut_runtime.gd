@@ -8,9 +8,9 @@ extends SceneTree
 ##
 ## Asserts: apply_preview accepts the LUT variant; the selected surface
 ## override is the fast Marschner shader with use_azimuthal_lut=true and the
-## committed 64^3 Texture3D bound; the preview renders non-black output; the
-## Bayer TIME phase moves between captures (live, not a flat fallback); and the
-## analytic FAST_MARSCHNER_ANALYTIC variant keeps the LUT flag false.
+## committed 64^3 Texture3D bound; the preview renders non-black output with a
+## frozen Bayer phase (freeze_bayer_phase, deterministic preview contract);
+## and the analytic FAST_MARSCHNER_ANALYTIC variant keeps the LUT flag false.
 
 const INDIVIDUAL_GROOM := 1
 const FAST_MARSCHNER_ANALYTIC := 5
@@ -129,13 +129,23 @@ func _run() -> void:
 	if lit_pixels < MIN_NONBLACK_PIXELS:
 		_fail("LUT preview has only %d lit pixels (threshold %d)" % [lit_pixels, MIN_NONBLACK_PIXELS])
 
+	# Second capture after enough preview frames for the Bayer TIME phase to
+	# move: interactive previews freeze the Bayer phase (freeze_bayer_phase,
+	# applied by apply_preview for every FAST_MARSCHNER_* variant), so the
+	# hashed strand pattern must stay byte-identical. A nonzero diff would mean
+	# the preview freeze regressed; the lit-pixel check above proves the
+	# variant is rendering (a flat fallback has no lit pixels).
+	var freeze_value: Variant = shader_material.get(&"shader_parameter/freeze_bayer_phase")
+	print("EVIDENCE preview_freeze_bayer_phase=%s" % freeze_value)
+	if freeze_value != true:
+		_fail("apply_preview did not freeze the Bayer phase for FAST_MARSCHNER_LUT (got %s)" % freeze_value)
 	for wait_frame in PHASE_MOVE_FRAMES:
 		await RenderingServer.frame_post_draw
 	var frame_b: Image = root.get_texture().get_image()
 	var differing_bytes := _byte_diff(frame_a, frame_b)
 	print("EVIDENCE frame_diff_bytes_after_%d_frames=%d" % [PHASE_MOVE_FRAMES, differing_bytes])
-	if differing_bytes <= 0:
-		_fail("frame diff is zero after %d frames: the LUT preview appears static" % PHASE_MOVE_FRAMES)
+	if differing_bytes > 0:
+		_fail("frame diff is %d after %d frames: the LUT preview Bayer phase should be frozen (freeze_bayer_phase)" % [differing_bytes, PHASE_MOVE_FRAMES])
 
 	# 3) Analytic variant must keep the LUT flag off (reference path unchanged).
 	var analytic_applied: bool = bool(controller.call(&"apply_preview", INDIVIDUAL_GROOM, FAST_MARSCHNER_ANALYTIC, &"Blowout"))

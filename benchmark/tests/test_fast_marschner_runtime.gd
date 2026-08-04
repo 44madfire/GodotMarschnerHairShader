@@ -6,9 +6,11 @@ extends SceneTree
 ##
 ##   godot.exe --path <project> --script res://benchmark/tests/test_fast_marschner_runtime.gd
 ##
-## The test drives the interactive preview path (Engine.time_scale stays 1.0);
-## timed benchmark runs freeze time and would fail the Bayer phase-motion
-## assertion, so no benchmark artifacts are written and no timed runs start.
+## The test drives the interactive preview path (Engine.time_scale stays 1.0).
+## Interactive previews freeze the Bayer phase (freeze_bayer_phase, applied by
+## apply_preview for every FAST_MARSCHNER_* variant), so the hashed strand
+## pattern is deterministic; the test asserts that freeze. No benchmark
+## artifacts are written and no timed runs start.
 ## The known unrelated `util/light_controller.gd:36` Camera3D `_current_mode`
 ## script warning may appear in the harness; it is not a test failure.
 
@@ -117,15 +119,22 @@ func _run() -> void:
 		_fail("first capture has only %d lit pixels (threshold %d); the variant is not rendering hair" % [lit_pixels_a, MIN_NONBLACK_PIXELS])
 
 	# Second capture after enough preview frames for the Bayer TIME phase to
-	# move: a flat fallback material is static, a live discard shifts every
-	# frame, so a nonzero diff proves the preview is alive.
+	# move: interactive previews freeze the Bayer phase (freeze_bayer_phase,
+	# applied by apply_preview for every FAST_MARSCHNER_* variant), so the
+	# hashed strand pattern must stay byte-identical. A nonzero diff would mean
+	# the preview freeze regressed; the lit-pixel check above proves the
+	# variant is rendering (a flat fallback has no lit pixels).
+	var freeze_value: Variant = shader_material.get(&"shader_parameter/freeze_bayer_phase")
+	print("EVIDENCE preview_freeze_bayer_phase=%s" % freeze_value)
+	if freeze_value != true:
+		_fail("apply_preview did not freeze the Bayer phase for FAST_MARSCHNER_ANALYTIC (got %s)" % freeze_value)
 	for wait_frame in PHASE_MOVE_FRAMES:
 		await RenderingServer.frame_post_draw
 	var frame_b: Image = root.get_texture().get_image()
 	var differing_bytes := _byte_diff(frame_a, frame_b)
 	print("EVIDENCE frame_diff_bytes_after_%d_frames=%d" % [PHASE_MOVE_FRAMES, differing_bytes])
-	if differing_bytes <= 0:
-		_fail("frame diff is zero after %d frames: the preview appears to be a static flat fallback" % PHASE_MOVE_FRAMES)
+	if differing_bytes > 0:
+		_fail("frame diff is %d after %d frames: the preview Bayer phase should be frozen (freeze_bayer_phase)" % [differing_bytes, PHASE_MOVE_FRAMES])
 
 	_finish()
 

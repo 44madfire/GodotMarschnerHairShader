@@ -267,7 +267,13 @@ func start_smoke() -> void:
 ## Selects and applies a non-timed preview. This is the public bridge for tools
 ## that need to compare variants without entering PREWARM/SAMPLE or writing any
 ## benchmark artifacts. Material construction remains entirely in apply_variant().
-func apply_preview(requested_mode: int, requested_variant: int, requested_groom: StringName = &"") -> bool:
+## Selects and applies a non-timed preview. This is the public bridge for tools
+## that need to compare variants without entering PREWARM/SAMPLE or writing any
+## benchmark artifacts. The optional settings dictionary drives the UI's single
+## FAST_MARSCHNER entry (variant 5): canonical-shader combinations are applied
+## directly to the live fast overrides; all existing 3-argument callers and the
+## internal timed benchmark paths are unchanged.
+func apply_preview(requested_mode: int, requested_variant: int, requested_groom: StringName = &"", settings: Dictionary = {}) -> bool:
 	if _is_timed_state():
 		_record_start_failure("Preview changes are disabled while a benchmark is running.")
 		preview_applied.emit(false)
@@ -280,12 +286,20 @@ func apply_preview(requested_mode: int, requested_variant: int, requested_groom:
 	last_start_error = ""
 	last_persistence_error = ""
 	var applied := apply_variant(_active_variant, true)
-	# Interactive previews freeze the Bayer phase of the TIME-discard shaders
-	# (custom coverage control and the frozen Marschner baseline) so the strand
-	# pattern is deterministic while previewing. Timed runs re-apply fresh
-	# clones from the source materials (uniform default false), so benchmark
-	# behavior and timing semantics are unchanged.
-	if applied and (_active_variant == BenchmarkVariant.COVERAGE_CONTROL or _active_variant == BenchmarkVariant.CURRENT_MARSCHNER_BASELINE):
+	# Settings-driven preview seam: the UI's FAST_MARSCHNER entry applies the
+	# canonical fast shader (variant 5) and then settings directly on the live
+	# overrides. A failure restores the original surface state.
+	if applied and _active_variant == BenchmarkVariant.FAST_MARSCHNER_ANALYTIC and not settings.is_empty():
+		applied = _apply_preview_settings(settings)
+		if not applied:
+			_restore_original_surface_state()
+	# Interactive previews freeze the Bayer phase of every TIME-discard shader
+	# (custom coverage control, the frozen Marschner baseline, and all
+	# FAST_MARSCHNER_* tier-2 variants) so the strand pattern is deterministic
+	# while previewing. Timed runs re-apply fresh clones from the source
+	# materials (uniform default false), so benchmark behavior and timing
+	# semantics are unchanged.
+	if applied and _variant_freezes_preview_bayer():
 		_freeze_preview_bayer_phase()
 	_set_benchmark_state(BenchmarkState.IDLE)
 	if applied:
@@ -297,11 +311,97 @@ func apply_preview(requested_mode: int, requested_variant: int, requested_groom:
 	return applied
 
 
-## Sets freeze_bayer_phase on the live COVERAGE_CONTROL / CURRENT_MARSCHNER_BASELINE
-## surface overrides so the interactive preview's alpha-coverage pattern is
-## deterministic. Only selected surfaces are touched; the uniform exists solely
-## on those two TIME-discard shaders (Kajiya and built-in alpha hash are not
-## frozen; timed runs leave it at the shader default).
+## Applies a preview settings dictionary directly to the live
+## FAST_MARSCHNER_ANALYTIC overrides (the UI settings seam). Supported keys:
+## use_azimuthal_lut, use_dual_scatter, use_preintegrated_dual_scatter,
+## use_environment, dual_scatter_strength, dual_scatter_density,
+## environment_strength. use_preintegrated_dual_scatter implies
+## use_dual_scatter=true. Requested LUTs/textures are built through the
+## adapter's cached builders; if any requested resource cannot be built the
+## method records a clear start failure and returns false so the caller
+## restores the original surface state. Strength/density values are clamped to
+## their shader hint ranges.
+func _apply_preview_settings(settings: Dictionary) -> bool:
+	var use_lut := bool(settings.get(&"use_azimuthal_lut", false))
+	var use_dual := bool(settings.get(&"use_dual_scatter", false))
+	var use_preintegrated := bool(settings.get(&"use_preintegrated_dual_scatter", false))
+	var use_environment := bool(settings.get(&"use_environment", false))
+	if use_preintegrated:
+		use_dual = true
+
+	var lut_texture: Texture3D = null
+	if use_lut:
+		lut_texture = _material_adapter.azimuthal_lut_texture(FAST_MARSCHNER_LUT_DATA)
+		if lut_texture == null:
+			_record_start_failure("Preview settings could not be applied: the azimuthal LUT failed to build a texture.")
+			return false
+	var dual_lut_texture: Texture2D = null
+	if use_preintegrated:
+		dual_lut_texture = _material_adapter.dual_scatter_lut_texture(FAST_MARSCHNER_DUAL_SCATTER_LUT_DATA)
+		if dual_lut_texture == null:
+			_record_start_failure("Preview settings could not be applied: the preintegrated dual-scatter LUT failed to build a texture.")
+			return false
+	if use_environment and (FAST_MARSCHNER_ENVIRONMENT_TEXTURE == null or FAST_MARSCHNER_ENVIRONMENT_TEXTURE.get_width() <= 0):
+		_record_start_failure("Preview settings could not be applied: the environment texture failed to bind.")
+		return false
+
+	var dual_strength := clampf(float(settings.get(&"dual_scatter_strength", 0.5)), 0.0, 2.0)
+	var dual_density := clampf(float(settings.get(&"dual_scatter_density", 0.5)), 0.0, 1.0)
+	var env_strength := clampf(float(settings.get(&"environment_strength", 1.0)), 0.0, 2.0)
+
+	for groom_data in groom_catalog:
+		var groom := groom_data["node"] as MeshInstance3D
+		if not is_instance_valid(groom):
+			continue
+		for surface_data in groom_data["surfaces"]:
+			if not bool(surface_data["selected"]):
+				continue
+			var override_material := groom.get_surface_override_material(int(surface_data["surface_index"])) as ShaderMaterial
+			if not override_material:
+				continue
+			override_material.set(&"shader_parameter/use_azimuthal_lut", use_lut)
+			override_material.set(&"shader_parameter/use_dual_scatter", use_dual)
+			override_material.set(&"shader_parameter/use_preintegrated_dual_scatter", use_preintegrated)
+			override_material.set(&"shader_parameter/use_environment", use_environment)
+			override_material.set(&"shader_parameter/dual_scatter_strength", dual_strength)
+			override_material.set(&"shader_parameter/dual_scatter_density", dual_density)
+			override_material.set(&"shader_parameter/environment_strength", env_strength)
+			if lut_texture:
+				override_material.set(&"shader_parameter/azimuthal_lut", lut_texture)
+				override_material.set(&"shader_parameter/azimuthal_lut_eta", float(FAST_MARSCHNER_LUT_DATA.get(&"eta")))
+			if dual_lut_texture:
+				override_material.set(&"shader_parameter/dual_scatter_lut", dual_lut_texture)
+				override_material.set(&"shader_parameter/dual_scatter_lut_eta", float(FAST_MARSCHNER_DUAL_SCATTER_LUT_DATA.get(&"eta")))
+			if use_environment:
+				override_material.set(&"shader_parameter/environment_texture", FAST_MARSCHNER_ENVIRONMENT_TEXTURE)
+	return true
+
+
+## Returns true when the active variant's live overrides carry the opt-in
+## freeze_bayer_phase preview uniform: COVERAGE_CONTROL, the frozen
+## CURRENT_MARSCHNER_BASELINE preview shader, and every FAST_MARSCHNER_* tier-2
+## variant share the same TIME-driven Bayer discard. The Kajiya and built-in
+## alpha-hash variants are not frozen.
+func _variant_freezes_preview_bayer() -> bool:
+	match _active_variant:
+		BenchmarkVariant.COVERAGE_CONTROL, \
+		BenchmarkVariant.CURRENT_MARSCHNER_BASELINE, \
+		BenchmarkVariant.FAST_MARSCHNER_ANALYTIC, \
+		BenchmarkVariant.FAST_MARSCHNER_LUT, \
+		BenchmarkVariant.FAST_MARSCHNER_DUAL_SCATTER, \
+		BenchmarkVariant.FAST_MARSCHNER_ENVIRONMENT, \
+		BenchmarkVariant.FAST_MARSCHNER_DUAL_SCATTER_PREINTEGRATED:
+			return true
+		_:
+			return false
+
+
+## Sets freeze_bayer_phase on the live preview surface overrides so the
+## interactive preview's alpha-coverage pattern is deterministic. Only selected
+## surfaces are touched; the uniform exists solely on the TIME-discard preview
+## shaders (coverage control, the frozen baseline, and every FAST_MARSCHNER_*
+## tier-2 variant; Kajiya and built-in alpha hash are not frozen; timed runs
+## leave it at the shader default).
 func _freeze_preview_bayer_phase() -> void:
 	for groom_data in groom_catalog:
 		var groom := groom_data["node"] as MeshInstance3D
@@ -373,6 +473,7 @@ func _apply_fast_lut_binding() -> bool:
 				override_material.set(&"shader_parameter/use_preintegrated_dual_scatter", false)
 				override_material.set(&"shader_parameter/use_environment", false)
 				override_material.set(&"shader_parameter/azimuthal_lut", lut_texture)
+				override_material.set(&"shader_parameter/azimuthal_lut_eta", float(FAST_MARSCHNER_LUT_DATA.get(&"eta")))
 	return true
 
 
@@ -427,6 +528,7 @@ func _apply_preintegrated_dual_scatter_binding() -> bool:
 				override_material.set(&"shader_parameter/use_azimuthal_lut", false)
 				override_material.set(&"shader_parameter/use_environment", false)
 				override_material.set(&"shader_parameter/dual_scatter_lut", lut_texture)
+				override_material.set(&"shader_parameter/dual_scatter_lut_eta", float(FAST_MARSCHNER_DUAL_SCATTER_LUT_DATA.get(&"eta")))
 	return true
 
 

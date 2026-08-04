@@ -21,7 +21,7 @@ ambient_light_energy = 0.65
 [node name="BenchmarkController" type="Node" parent="." unique_id=1082283408]
 script = ExtResource("2_controller")
 
-[node name="BenchmarkCLI" type="Node" parent="." unique_id=333246982]
+[node name="BenchmarkCLI" type="Node" parent="." unique_id=1949133483]
 script = ExtResource("3_cli")
 
 [node name="PreviewUILayer" type="CanvasLayer" parent="." unique_id=208745547]
@@ -47,7 +47,7 @@ shadow_blur = 2.0
 directional_shadow_mode = 0
 directional_shadow_max_distance = 2.0
 
-[node name="CaseLightingRigHost" type="Node3D" parent="." unique_id=2021908396]
+[node name="CaseLightingRigHost" type="Node3D" parent="." unique_id=1856695449]
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=1630577377]
 environment = SubResource("Environment_benchmark")

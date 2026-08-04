@@ -22,6 +22,14 @@ uniform bool show_hair_cards = false;
 uniform bool show_hashed_strands = false;
 group_uniforms;
 
+group_uniforms Preview;
+/** Freezes the Bayer phase for deterministic interactive previews. Default false
+ *  preserves the production TIME-driven behavior for benchmark runs. */
+uniform bool freeze_bayer_phase = false;
+/** Presentation-only gain used by the standalone visual comparison. */
+uniform float comparison_exposure_gain : hint_range(0.25, 8.0) = 1.0;
+group_uniforms;
+
 #include "./hair_kajiya_kay.gdshaderinc"
 
 varying vec3 vertex_world;
@@ -66,7 +74,8 @@ void fragment() {
 		vec4( 3.0, 11.0,  1.0,  9.0),
 		vec4(15.0,  7.0, 13.0,  5.0)) / 16.0;
 
-	ivec2 id = ivec2(FRAGCOORD.xy + UV.xy*vec2(textureSize(attributes_texture, 0)*2) + TIME*500.0); // FIXME: uh oh! this code is ass!
+	float bayer_time = freeze_bayer_phase ? 0.0 : TIME;
+	ivec2 id = ivec2(FRAGCOORD.xy + UV.xy*vec2(textureSize(attributes_texture, 0)*2) + bayer_time*500.0); // FIXME: uh oh! this code is ass!
 	float dist = length((CAMERA_POSITION_WORLD - vertex_world) / MODEL_MATRIX[0].xyz) / tan(PI/6.0) / PROJECTION_MATRIX[1][1];
 	float bias = max((1.0 - clamp((dist - 1.0)*0.5, 0.0, 1.0))*(1.0 - depth*depth), 0.1);
 	if (!show_hair_cards && pow(coverage, bias) < bayer4x4[id.x % 4][id.y % 4]) discard;
@@ -108,13 +117,13 @@ void light() {
 	// them vec3 in the shader language but generates them as scalar floats in
 	// the light stage, so only a construction in place keeps both the source
 	// and the generated code compilable on the NVIDIA driver.
-	DIFFUSE_LIGHT += ALBEDO * diffuse * LIGHT_COLOR * ATTENUATION
+	DIFFUSE_LIGHT += comparison_exposure_gain * ALBEDO * diffuse * LIGHT_COLOR * ATTENUATION
 		* (LIGHT_IS_AREA ? vec3(LIGHT_AREA_DIFFUSE_MULTIPLIER) : vec3(1.0)) / PI;
 
 	vec3 specular_light = ALBEDO * (
 		primary_color * primary_lobe * primary_strength * primary_debug_scale
 		+ secondary_color * secondary_lobe * secondary_strength * secondary_debug_scale
 	);
-	SPECULAR_LIGHT += specular_light * LIGHT_COLOR * ATTENUATION
+	SPECULAR_LIGHT += comparison_exposure_gain * specular_light * LIGHT_COLOR * ATTENUATION
 		* (LIGHT_IS_AREA ? vec3(LIGHT_AREA_SPECULAR_MULTIPLIER) : vec3(1.0)) * specular;
 }

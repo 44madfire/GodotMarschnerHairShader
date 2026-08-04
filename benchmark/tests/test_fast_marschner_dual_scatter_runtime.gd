@@ -13,7 +13,8 @@ extends SceneTree
 ## profile-driven strength/density controls bound; the Stage-B variant also
 ## forces use_preintegrated_dual_scatter=true, keeps use_azimuthal_lut=false
 ## and use_environment=false, and binds a valid 64x64 committed LUT texture;
-## both previews render non-black output with live frame changes; and variant
+## both previews render non-black output with a frozen Bayer phase
+## (freeze_bayer_phase, deterministic preview contract); and variant
 ## identity is authoritative — the analytic/LUT/environment/Stage-A variants
 ## force the preintegrated flag off regardless of the profile, while the
 ## Stage-B variant forces dual+preintegrated on and azimuthal LUT/environment
@@ -119,7 +120,7 @@ func _run() -> void:
 	if env_flag != false:
 		_fail("use_environment must stay false on the dual variant, got %s" % env_flag)
 
-	# 2) Non-black output and live preview frame changes (Stage A).
+	# 2) Non-black output and deterministic preview (Stage A).
 	var stage_a_frame_a: Image = root.get_texture().get_image()
 	if stage_a_frame_a == null:
 		_fail("viewport image capture failed")
@@ -134,13 +135,23 @@ func _run() -> void:
 	if stage_a_lit < MIN_NONBLACK_PIXELS:
 		_fail("dual preview has only %d lit pixels (threshold %d)" % [stage_a_lit, MIN_NONBLACK_PIXELS])
 
+	# Second capture after enough preview frames for the Bayer TIME phase to
+	# move: interactive previews freeze the Bayer phase (freeze_bayer_phase,
+	# applied by apply_preview for every FAST_MARSCHNER_* variant), so the
+	# hashed strand pattern must stay byte-identical. A nonzero diff would mean
+	# the preview freeze regressed; the lit-pixel check above proves the
+	# variant is rendering (a flat fallback has no lit pixels).
+	var stage_a_freeze: Variant = shader_material.get(&"shader_parameter/freeze_bayer_phase")
+	print("EVIDENCE stage_a preview_freeze_bayer_phase=%s" % stage_a_freeze)
+	if stage_a_freeze != true:
+		_fail("apply_preview did not freeze the Bayer phase for FAST_MARSCHNER_DUAL_SCATTER (got %s)" % stage_a_freeze)
 	for wait_frame in PHASE_MOVE_FRAMES:
 		await RenderingServer.frame_post_draw
 	var stage_a_frame_b: Image = root.get_texture().get_image()
 	var stage_a_diff := _byte_diff(stage_a_frame_a, stage_a_frame_b)
 	print("EVIDENCE stage_a frame_diff_bytes_after_%d_frames=%d" % [PHASE_MOVE_FRAMES, stage_a_diff])
-	if stage_a_diff <= 0:
-		_fail("frame diff is zero after %d frames: the dual preview appears static" % PHASE_MOVE_FRAMES)
+	if stage_a_diff > 0:
+		_fail("frame diff is %d after %d frames: the dual preview Bayer phase should be frozen (freeze_bayer_phase)" % [stage_a_diff, PHASE_MOVE_FRAMES])
 
 	# 3) Stage-B preintegrated variant (9): accepted, dual+preintegrated flags
 	# on, azimuthal LUT/environment forced off, committed LUT bound.
@@ -184,20 +195,30 @@ func _run() -> void:
 	if not (pre_density is float) or not (float(pre_density) > 0.0):
 		_fail("dual_scatter_density must be bound to the profile value (> 0), got %s" % pre_density)
 
-	# 4) Non-black output and live preview frame changes (Stage B).
+	# 4) Non-black output and deterministic preview (Stage B).
 	var stage_b_frame_a: Image = root.get_texture().get_image()
 	var stage_b_lit := _count_lit_pixels(stage_b_frame_a)
 	print("EVIDENCE stage_b frame_size=%dx%d lit_pixels=%d" % [stage_b_frame_a.get_width(), stage_b_frame_a.get_height(), stage_b_lit])
 	if stage_b_lit < MIN_NONBLACK_PIXELS:
 		_fail("preintegrated dual preview has only %d lit pixels (threshold %d)" % [stage_b_lit, MIN_NONBLACK_PIXELS])
 
+	# Second capture after enough preview frames for the Bayer TIME phase to
+	# move: interactive previews freeze the Bayer phase (freeze_bayer_phase,
+	# applied by apply_preview for every FAST_MARSCHNER_* variant), so the
+	# hashed strand pattern must stay byte-identical. A nonzero diff would mean
+	# the preview freeze regressed; the lit-pixel check above proves the
+	# variant is rendering (a flat fallback has no lit pixels).
+	var stage_b_freeze: Variant = preintegrated_material.get(&"shader_parameter/freeze_bayer_phase")
+	print("EVIDENCE stage_b preview_freeze_bayer_phase=%s" % stage_b_freeze)
+	if stage_b_freeze != true:
+		_fail("apply_preview did not freeze the Bayer phase for FAST_MARSCHNER_DUAL_SCATTER_PREINTEGRATED (got %s)" % stage_b_freeze)
 	for wait_frame in PHASE_MOVE_FRAMES:
 		await RenderingServer.frame_post_draw
 	var stage_b_frame_b: Image = root.get_texture().get_image()
 	var stage_b_diff := _byte_diff(stage_b_frame_a, stage_b_frame_b)
 	print("EVIDENCE stage_b frame_diff_bytes_after_%d_frames=%d" % [PHASE_MOVE_FRAMES, stage_b_diff])
-	if stage_b_diff <= 0:
-		_fail("frame diff is zero after %d frames: the preintegrated dual preview appears static" % PHASE_MOVE_FRAMES)
+	if stage_b_diff > 0:
+		_fail("frame diff is %d after %d frames: the preintegrated dual preview Bayer phase should be frozen (freeze_bayer_phase)" % [stage_b_diff, PHASE_MOVE_FRAMES])
 
 	# 5) Variant identity is authoritative: with a profile that enables every
 	# opt-in mode, the analytic variant forces all off, the LUT variant forces

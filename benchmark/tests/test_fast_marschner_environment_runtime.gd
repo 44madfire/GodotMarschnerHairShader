@@ -11,7 +11,8 @@ extends SceneTree
 ## override is the fast Marschner shader with use_environment=true, the LUT and
 ## dual flags forced false (identity authoritative), and the committed
 ## environment texture + profile-driven strength bound; the preview renders
-## non-black output with live frame changes; the environment term is
+## non-black output with a frozen Bayer phase (freeze_bayer_phase,
+## deterministic preview contract); the environment term is
 ## fragment-only (non-black under a zero-light environment_only rig, i.e.
 ## light-count invariant); and the analytic variant forces use_environment=false.
 
@@ -127,13 +128,23 @@ func _run() -> void:
 	if lit_pixels < MIN_NONBLACK_PIXELS:
 		_fail("environment preview has only %d lit pixels (threshold %d)" % [lit_pixels, MIN_NONBLACK_PIXELS])
 
+	# Second capture after enough preview frames for the Bayer TIME phase to
+	# move: interactive previews freeze the Bayer phase (freeze_bayer_phase,
+	# applied by apply_preview for every FAST_MARSCHNER_* variant), so the
+	# hashed strand pattern must stay byte-identical. A nonzero diff would mean
+	# the preview freeze regressed; the lit-pixel check above proves the
+	# variant is rendering (a flat fallback has no lit pixels).
+	var freeze_value: Variant = shader_material.get(&"shader_parameter/freeze_bayer_phase")
+	print("EVIDENCE preview_freeze_bayer_phase=%s" % freeze_value)
+	if freeze_value != true:
+		_fail("apply_preview did not freeze the Bayer phase for FAST_MARSCHNER_ENVIRONMENT (got %s)" % freeze_value)
 	for wait_frame in PHASE_MOVE_FRAMES:
 		await RenderingServer.frame_post_draw
 	var frame_b: Image = root.get_texture().get_image()
 	var differing_bytes := _byte_diff(frame_a, frame_b)
 	print("EVIDENCE frame_diff_bytes_after_%d_frames=%d" % [PHASE_MOVE_FRAMES, differing_bytes])
-	if differing_bytes <= 0:
-		_fail("frame diff is zero after %d frames: the environment preview appears static" % PHASE_MOVE_FRAMES)
+	if differing_bytes > 0:
+		_fail("frame diff is %d after %d frames: the environment preview Bayer phase should be frozen (freeze_bayer_phase)" % [differing_bytes, PHASE_MOVE_FRAMES])
 
 	# 3) Light-count invariance: with the legacy key light off and the
 	# environment_only rig instantiated (zero light nodes), the fragment-stage

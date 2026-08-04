@@ -28,6 +28,19 @@ uniform bool show_hair_cards = false;
 uniform bool show_hashed_strands = false;
 group_uniforms;
 
+group_uniforms Preview;
+/** Freezes the Bayer phase for deterministic interactive previews. Default false
+ *  preserves the production TIME-driven behavior for benchmark runs. */
+uniform bool freeze_bayer_phase = false;
+/** Presentation-only gain used by the standalone visual comparison. */
+uniform float comparison_exposure_gain : hint_range(0.25, 8.0) = 1.0;
+group_uniforms;
+
+group_uniforms Validation;
+/** Diagnostic parity switch; default true preserves normal area-light behavior. */
+uniform bool use_area_light_multipliers = true;
+group_uniforms;
+
 #include "./hair_marschner_fast.gdshaderinc"
 
 varying vec3 vertex_world;
@@ -38,12 +51,15 @@ varying mat3 inv_tangent_matrix; // inverse TBN Matrix
 // fragment(), so they carry exact per-fragment values, not interpolated ones.
 varying vec3 omega_o;          // strand-space view vector
 varying vec3 view_yz;          // x = cos(theta_o), yz = normalized omega_o.yz (Karis)
-varying vec3 lobe_tilt_sin;    // sin of the per-lobe cuticle tilts (R/TT/TRT)
-varying vec3 lobe_tilt_cos;    // cos of the per-lobe cuticle tilts (R/TT/TRT)
-varying vec3 beta_m_inv;       // inverse longitudinal per-lobe widths
+varying float view_theta_o;    // theta_o = asin(omega_o.x), strand-space view elevation
+varying vec3 lobe_alpha;       // theta_h lobe centers (R/TT/TRT cuticle tilts)
+varying vec3 lobe_variance;    // theta_h per-lobe variances ((w*beta)^2, hoisted)
+varying float lobe_cuticle_tilt; // cuticle_tilt_offset (radians): FM_LONGITUDINAL_MODE 1 cone rotation scalar
+varying float lobe_beta_m;     // reparameterized longitudinal roughness beta_M: FM_LONGITUDINAL_MODE 1 width scalar
 varying vec2 azimuthal_s_inv;  // TT/TRT logistic inverse azimuthal widths
 varying vec2 logistic_b;       // TT/TRT logistic normalization exp(-2*sqrt(TAU)*s_inv)
 varying float lut_azimuthal_width; // light-invariant LUT width axis (0..1)
+varying float lut_azimuthal_compatible; // 1.0 = derived beta_N inside the LUT beta axis [0.001, 1.0], else analytic fallback
 varying float strand_depth;        // packed attributes depth (0 = deep, 1 = shallow; dual deepness proxy = 1 - depth)
 
 /** Returns a random vec3 in [0, 1) using PCG hash. */
@@ -84,7 +100,8 @@ void fragment() {
 		vec4( 3.0, 11.0,  1.0,  9.0),
 		vec4(15.0,  7.0, 13.0,  5.0)) / 16.0;
 
-	ivec2 id = ivec2(FRAGCOORD.xy + UV.xy*vec2(textureSize(attributes_texture, 0)*2) + TIME*500.0); // FIXME: uh oh! this code is ass!
+	float bayer_time = freeze_bayer_phase ? 0.0 : TIME;
+	ivec2 id = ivec2(FRAGCOORD.xy + UV.xy*vec2(textureSize(attributes_texture, 0)*2) + bayer_time*500.0); // FIXME: uh oh! this code is ass!
 	float dist = length((CAMERA_POSITION_WORLD - vertex_world) / MODEL_MATRIX[0].xyz) / tan(PI/6.0) / PROJECTION_MATRIX[1][1];
 	float bias = max((1.0 - clamp((dist - 1.0)*0.5, 0.0, 1.0))*(1.0 - depth*depth), 0.1);
 	if (!show_hair_cards && pow(coverage, bias) < bayer4x4[id.x % 4][id.y % 4]) discard;
@@ -114,12 +131,24 @@ void fragment() {
 	// canonical per-fiber sigma_a used by the Beer-Lambert attenuation.
 	sigma_a = fm_absorption_coefficient(albedo, beta.y);
 
+	// --- Reparameterization ---
+	// Source: "A Practical and Controllable Hair and Fur Model for Production Path Tracing" (Chiang et al., 2016)
+	// ROUGHNESS, frizz, and sigma_a above use the raw artist-facing beta; the
+	// reparameterized beta below feeds the per-lobe scattering widths, matching
+	// the production baseline formula exactly (M = longitudinal, N = azimuthal),
+	// including the per-seed mix(0.8, 1.2, seed) roughness variation and the
+	// 1e-3 floor.
+	beta = max(vec2(1e-3), mix(0.8, 1.2, seed)*vec2(
+		0.726*beta.x + 0.812*beta.x*beta.x + 3.700*pow(beta.x, 20),
+		0.265*beta.y + 1.194*beta.y*beta.y + 5.372*pow(beta.y, 22)));
+
 	// --- Hoisted light-invariant scattering setup ---
 	// Everything below depends only on the view, the strand basis, and the
 	// material uniforms, so it is computed once per fragment (after discard)
 	// instead of once per light. Values and clamp/order semantics match the
 	// previous per-light computations exactly.
 	omega_o = inv_tangent_matrix * VIEW;
+	view_theta_o = asin(clamp(omega_o.x, -0.999999, 0.999999));
 
 	// cos(theta_o) and the normalized omega_o.yz used by the Karis term. The
 	// branch threshold (length squared > 1e-8) matches the previous code.
@@ -130,23 +159,44 @@ void fragment() {
 		: vec2(0.0, 1.0);
 	view_yz = vec3(view_cos_theta, view_yz_normalized.x, view_yz_normalized.y);
 
-	// Per-lobe cuticle tilt sin/cos: R = -alpha, TT = +0.5*alpha, TRT = +1.5*alpha.
-	vec3 alpha_m = vec3(-1.0, 0.5, 1.5) * cuticle_tilt_offset;
-	lobe_tilt_sin = sin(alpha_m);
-	lobe_tilt_cos = cos(alpha_m);
+	// Per-lobe theta_h centers under the shipping baseline cuticle-tilt
+	// convention (FM_CUTICLE_TILT_CONVENTION = 0): a positive artist-facing
+	// cuticle_tilt_offset denotes an outward tilt, so R = +alpha,
+	// TT = -0.5*alpha, TRT = -1.5*alpha. The Unity diagnostic convention
+	// (FM_CUTICLE_TILT_CONVENTION = 1) keeps the previous sign pattern.
+#if FM_CUTICLE_TILT_CONVENTION == 1
+	lobe_alpha = vec3(-1.0, 0.5, 1.5) * cuticle_tilt_offset;
+#else
+	lobe_alpha = vec3(1.0, -0.5, -1.5) * cuticle_tilt_offset;
+#endif
 
-	// Bounded roughness feeding the inverse longitudinal per-lobe widths
-	// (R = beta, TT = 0.5*beta, TRT = 2.0*beta) and the TT/TRT logistic inverse
-	// azimuthal widths. The clamps mirror the previous per-light math.
-	vec2 beta_safe = clamp(beta, vec2(1e-3), vec2(1.0));
-	beta_m_inv = 1.0 / (vec3(1.0, 0.5, 2.0) * max(beta_safe.x, 1e-3));
-	azimuthal_s_inv = vec2(sqrt(2.0) / beta_safe.y, 0.5 * sqrt(2.0) / beta_safe.y);
+	// Derived roughness feeding the theta_h per-lobe variances
+	// (R = beta, TT = 0.5*beta, TRT = 2.0*beta; squared with a positive floor)
+	// and the TT/TRT logistic inverse azimuthal widths. Only the 1e-3 lower
+	// floor is applied: the actual derived beta values drive the analytic
+	// widths with no upper clamp. The azimuthal LUT path alone is restricted
+	// to its baked beta domain [0.001, 1.0] via lut_azimuthal_compatible.
+	vec2 beta_floored = max(beta, vec2(1e-3));
+	lobe_variance = pow(vec3(1.0, 0.5, 2.0) * beta_floored.x, vec3(2.0));
+	azimuthal_s_inv = vec2(sqrt(2.0) / beta_floored.y, 0.5 * sqrt(2.0) / beta_floored.y);
+
+	// FM_LONGITUDINAL_MODE 1 diagnostic scalars: the cone rotation magnitude
+	// (artist-facing cuticle tilt, radians) and the reparameterized
+	// longitudinal roughness beta_M. Mode 0 (shipping default) never reads
+	// them; they exist so the diagnostic branch needs no public uniform API.
+	lobe_cuticle_tilt = cuticle_tilt_offset;
+	lobe_beta_m = beta_floored.x;
 
 	// Logistic normalization exp(-2*sqrt(TAU)*s_inv), light-invariant per lobe.
 	logistic_b = exp(-2.0 * sqrt(TAU) * azimuthal_s_inv);
 
-	// LUT width axis, matching the generator's beta axis [0.001, 1.0].
-	lut_azimuthal_width = clamp((beta_safe.y - 0.001) * (1.0 / 0.999), 0.0, 1.0);
+	// LUT width axis, matching the generator's beta axis [0.001, 1.0]. The
+	// width derives from the actual beta_N without clamping; beta_N outside
+	// the domain is flagged incompatible below so light() uses the analytic
+	// azimuthal model instead of silently clamping the roughness into the LUT
+	// domain.
+	lut_azimuthal_compatible = (beta.y >= 0.001 && beta.y <= 1.0) ? 1.0 : 0.0;
+	lut_azimuthal_width = (beta.y - 0.001) * (1.0 / 0.999);
 
 	// --- Environment (FAST_MARSCHNER_ENVIRONMENT, fragment-stage only) ---
 	// One representative direction per fragment: the reflected view vector in
@@ -170,22 +220,30 @@ void fragment() {
 		vec3 env_sample = texture(environment_texture, env_uv).rgb;
 		vec3 r_tint = max(ALBEDO, vec3(0.0));
 		vec3 trt_tint = max(ALBEDO, vec3(0.0)) * exp(-max(sigma_a, vec3(0.0)) * 0.5);
-		EMISSION += (r_tint + trt_tint) * env_sample * max(environment_strength, 0.0);
+		EMISSION += comparison_exposure_gain * (r_tint + trt_tint) * env_sample * max(environment_strength, 0.0);
 	}
 }
 
 
 void light() {
-	// omega_i is the only light-dependent strand-space vector; omega_o and the
-	// per-lobe tilt/width setup were hoisted into fragment().
+	// omega_i is the only light-dependent strand-space vector; omega_o,
+	// view_theta_o, and the per-lobe center/variance setup were hoisted into
+	// fragment().
 	vec3 omega_i = inv_tangent_matrix * LIGHT;
 
 	vec3 single_scattering;
-	if (use_azimuthal_lut) {
-		single_scattering = fm_hair_bsdf_lut(omega_i, omega_o, view_yz.x, lobe_tilt_sin, lobe_tilt_cos, beta_m_inv, azimuthal_s_inv, logistic_b, sigma_a, ior, lut_azimuthal_width, azimuthal_lut);
+	// The LUT path also requires the derived beta_N to fall inside the baked
+	// beta axis [0.001, 1.0] (lut_azimuthal_compatible); outside it the
+	// analytic model is used rather than clamping the material roughness
+	// into the LUT domain.
+	bool azimuthal_lut_compatible = abs(ior - azimuthal_lut_eta) <= 0.0005;
+	if (use_azimuthal_lut && azimuthal_lut_compatible && lut_azimuthal_compatible > 0.5) {
+		single_scattering = fm_hair_bsdf_lut(omega_i, omega_o, view_yz.x, view_theta_o, lobe_alpha, lobe_variance, azimuthal_s_inv, logistic_b, sigma_a, ior, lut_azimuthal_width, azimuthal_lut, lobe_cuticle_tilt, lobe_beta_m);
 	} else {
-		// Analytic d'Eon azimuthal model: the reference path, unchanged.
-		single_scattering = fm_hair_bsdf(omega_i, omega_o, view_yz.x, lobe_tilt_sin, lobe_tilt_cos, beta_m_inv, azimuthal_s_inv, logistic_b, sigma_a, ior);
+		// Analytic fallback is required when the runtime IOR differs from the
+		// baked LUT IOR (which would mix incompatible Fresnel terms) or when
+		// the derived beta_N lies outside the LUT's baked beta axis.
+		single_scattering = fm_hair_bsdf(omega_i, omega_o, view_yz.x, view_theta_o, lobe_alpha, lobe_variance, azimuthal_s_inv, logistic_b, sigma_a, ior, lobe_cuticle_tilt, lobe_beta_m);
 	}
 	// Area lights scale the final direct-light accumulations. The built-ins are
 	// applied in place with an explicit vec3() construction (never assigned to
@@ -193,18 +251,25 @@ void light() {
 	// generates them as scalar floats in the light stage, so only this form
 	// keeps both the source and the generated code compilable on the NVIDIA
 	// driver. Non-area lights multiply by vec3(1.0), exactly as before.
-	SPECULAR_LIGHT += single_scattering * LIGHT_COLOR * ATTENUATION * specular
-		* (LIGHT_IS_AREA ? vec3(LIGHT_AREA_SPECULAR_MULTIPLIER) : vec3(1.0));
+	vec3 area_specular_multiplier = (LIGHT_IS_AREA && use_area_light_multipliers)
+		? vec3(LIGHT_AREA_SPECULAR_MULTIPLIER)
+		: vec3(1.0);
+	SPECULAR_LIGHT += comparison_exposure_gain * single_scattering * LIGHT_COLOR * ATTENUATION * specular
+		* area_specular_multiplier;
 
 	// Multiple scattering: the dual variants replace the Karis approximation
 	// (never add on top of it); analytic and LUT variants keep Karis as the
 	// reference path. The Stage-B preintegrated slice (variant 9) samples the
-	// committed 2D LUT; Stage A (variant 7) stays analytic. Area multipliers
-	// stay at this final accumulation.
+	// committed 2D LUT only when the runtime IOR matches the baked
+	// dual_scatter_lut_eta within 0.0005; otherwise it evaluates the analytic
+	// Contract B formula with the runtime IOR/F0 (the Stage-A slice is a
+	// separate variant and is never used for this parity fallback). Stage A
+	// (variant 7) stays analytic. Area multipliers stay at this final
+	// accumulation.
 	vec3 multiple_scattering;
 	if (use_dual_scatter) {
 		if (use_preintegrated_dual_scatter) {
-			multiple_scattering = fm_dual_scattering_preintegrated(ALBEDO, omega_i, view_yz.yz, sigma_a, strand_depth, dual_scatter_strength, dual_scatter_density, dual_scatter_lut, ATTENUATION);
+			multiple_scattering = fm_dual_scattering_preintegrated(ALBEDO, omega_i, view_yz.yz, sigma_a, strand_depth, dual_scatter_strength, dual_scatter_density, dual_scatter_lut, ior, dual_scatter_lut_eta, ATTENUATION);
 		} else {
 			multiple_scattering = fm_dual_scattering(ALBEDO, omega_i, view_yz.yz, sigma_a, strand_depth, dual_scatter_strength, dual_scatter_density, ATTENUATION);
 		}
@@ -213,6 +278,9 @@ void light() {
 		// the current high-tier shader. Not physically based.
 		multiple_scattering = fm_karis_multiple_scattering(ALBEDO, omega_i, view_yz.yz, ATTENUATION);
 	}
-	DIFFUSE_LIGHT += multiple_scattering * LIGHT_COLOR
-		* (LIGHT_IS_AREA ? vec3(LIGHT_AREA_DIFFUSE_MULTIPLIER) : vec3(1.0)) / PI;
+	vec3 area_diffuse_multiplier = (LIGHT_IS_AREA && use_area_light_multipliers)
+		? vec3(LIGHT_AREA_DIFFUSE_MULTIPLIER)
+		: vec3(1.0);
+	DIFFUSE_LIGHT += comparison_exposure_gain * multiple_scattering * LIGHT_COLOR
+		* area_diffuse_multiplier / PI;
 }

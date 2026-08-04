@@ -54,6 +54,72 @@ The known unrelated `util/light_controller.gd:36` Camera3D `_current_mode`
 script warning may appear while the harness runs; it is fixture noise and not a
 test failure.
 
+## Tier-2 Fast Marschner energy contract
+
+The Fast Marschner **analytic core** is validated as a coherent, fixed-exposure
+approximation of the baseline—not as an energy-parity replacement. Validation
+covers one Blowout material/IOR and five incoming angles; it excludes LUT,
+dual-scatter, environment, and full Karis-energy behavior. Exposure and lobe
+scales stay at 1.0, and no compensation is applied. The deterministic
+angular-integrated validator is:
+
+```text
+/mnt/c/Tools/Godot/godot.exe --headless --path "//wsl.localhost/Ubuntu/home/jeffreymwang/godot-hair-shader" --script res://benchmark/tools/validate_fast_marschner_energy.gd
+```
+
+The validator intentionally exits with `FAIL` against the rejected historical
+parity gates; that result is expected for the accepted approximation contract.
+The current reference run converges from a 128- to 512-sample grid with
+`0.000723` maximum drift. Fast/baseline integrated energy is `0.8625x` overall
+(R `0.5902x`, TT `0.9156x`, TRT `1.0700x`), with per-incoming-angle totals
+from `0.3931x` to `1.7227x`. These angle-dependent results intentionally remain
+documented evidence of approximation behavior; they do not justify a global
+exposure or lobe multiplier. The timed baseline/reference shader and harness
+timing/output paths remain unchanged; the Fast candidate remains subject to the
+normal benchmark comparison process.
+
+### Second-pass convention checks
+
+The shipping Fast path now uses the baseline-compatible artist-facing cuticle
+tilt convention (`R = +alpha`, `TT = -0.5*alpha`, `TRT = -1.5*alpha`). The
+validator's CPU port matches that convention and accepts `--cuticle=0` for an
+isolated zero-tilt control. At the material tilt, the 512-grid result remains
+`0.8625x` overall (R `0.5902x`, TT `0.9156x`, TRT `1.0700x`); zero tilt gives
+`0.8848x` on the same five-angle diagnostic, so the sign correction changes
+angular placement more than aggregate energy.
+
+`FM_LONGITUDINAL_MODE 1` and
+`--longitudinal=baseline` provide a separately measured, baseline-compatible
+separable `sin(theta_o)` Gaussian diagnostic. It compiles, but its aggregate
+result is only `0.5398x` (R `0.3840x`, TT `0.5701x`, TRT `0.6587x`), so it is
+not the shipping default. The Unity-standard theta-h mode remains
+`FM_LONGITUDINAL_MODE 0` until a full non-separable R/longitudinal correction is
+implemented and validated.
+
+The opt-in `FM_R_LONGITUDINAL_MODE 1` /
+`--r-longitudinal=nonseparable` diagnostic applies the cheap phi-dependent R
+width/tilt approximation while leaving TT/TRT unchanged. At the 256-grid
+reference it worsens R to `0.4262x` and total energy to `0.8329x`, so it also
+remains non-shipping pending a fuller d'Eon-compatible model.
+
+The validator now reports absolute errors and applies a diagnostic `1e-3`
+baseline-energy ratio mask. All five reference angles remain valid; the
+standard Unity-mode 256-grid audit reports weighted ratio `0.8626x`, total-ratio
+range `0.3620–1.7226`, RMS absolute total error `1.9771`, and maximum absolute
+total error `3.1889`. These metrics do not alter the unmasked acceptance gate.
+
+Analytic roughness now keeps the full reparameterized beta after its `1e-3`
+floor. The azimuthal LUT treats derived beta-N outside `[0.001, 1.0]` as a
+resource incompatibility and falls back to the analytic path instead of
+silently clamping the material into the LUT domain. The Gaussian helper also
+enforces its own positive variance floor.
+
+Remaining baseline differences are intentional and documented: Fast uses a
+clamped Schlick Fresnel path, fixed representative azimuthal `h` values, and
+the Unity fixed-`h` attenuation Fresnel argument. Matching the full baseline
+requires its non-separable d'Eon widths/tilts and is deferred; no compensation
+is inferred from the current five-angle dataset.
+
 ## Tier-2 azimuthal LUT
 
 The `FAST_MARSCHNER_LUT` variant (enum 6) is a separately selectable,
@@ -297,6 +363,21 @@ Benchmark hash timing is deterministic: before rendering starts the controller s
 The positive scale (instead of an exact `0.0`) keeps the engine frame delta positive, so the imgui-godot addon's `NewFrame` receives a nonzero delta and does not log its `IM_ASSERT (DeltaTime > 0)` error. The overlay content is still suppressed during runs (`DebugManager.should_render_imgui = false`), so ImGui does not appear in captures or measurements.
 
 Variant artifacts generated before the material-override precedence repair are invalid for comparison because groom-level overrides could hide the intended per-surface shader variants. Rerun the replacement smoke suite; those post-marker results are the first trustworthy baseline/control/Kajiya comparisons. The checked-in `smoke_suite.tres` runs the Blowout smoke matrix (8 cases, 1920x1080 viewport target, default 180/30/300 warmup/settle/sample timing): five front cases use the three-quarter camera with the single directional key light — `COVERAGE_CONTROL`, the frozen baseline, approximate Kajiya–Kay, `BUILTIN_ALPHA_HASH_CONTROL`, and the `NO_HAIR` empty-scene case — and three rear/backlit cases repeat the core comparison variants (`COVERAGE_CONTROL`, the frozen baseline, approximate Kajiya–Kay) under the `rear_backlit` camera with the cool `rear_spot` rim light to exercise backlit coverage and translucency-sensitive rendering.
+
+## Settings-driven Fast Marschner preview
+
+The preview UI exposes a single `FAST_MARSCHNER` entry that maps to the
+internal `FAST_MARSCHNER_ANALYTIC` variant (5) and passes a settings dictionary
+to `BenchmarkController.apply_preview(mode, variant, groom, settings)`.
+Supported keys: `use_azimuthal_lut`, `use_dual_scatter`,
+`use_preintegrated_dual_scatter`, `use_environment`, `dual_scatter_strength`,
+`dual_scatter_density`, and `environment_strength`.
+`use_preintegrated_dual_scatter` implies `use_dual_scatter=true`; requested
+LUTs/textures are built through the adapter's cached builders, strength/density
+values are clamped to the shader ranges, and any failure to build a requested
+resource returns false and restores the original surface state. Timed
+resource-backed cases are unaffected: they keep their internal variant IDs
+(5-9) and exclusive `apply_variant` semantics.
 
 ## Command line
 

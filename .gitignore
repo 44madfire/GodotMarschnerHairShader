@@ -7,3 +7,6 @@
 .slim/worktrees/
 .slim/worktrees.json
 # END oh-my-opencode-slim worktrees
+
+# imgui-godot build temp files
+addons/imgui-godot/bin/~*

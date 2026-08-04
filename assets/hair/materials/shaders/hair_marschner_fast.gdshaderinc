@@ -4,16 +4,44 @@
 // slice (FAST_MARSCHNER_DUAL_SCATTER_PREINTEGRATED). The Stage-A analytic
 // fallback fm_dual_scattering() stays intact and is the default.
 //
-// Longitudinal scattering is a normalized Gaussian in sin(theta) space with the
-// fixed Marschner (2003) lobe tilts/widths specified by the Tier 2 plan:
+// Longitudinal scattering is selected by the single numeric compile-time
+// selector FM_LONGITUDINAL_MODE below. Mode 0 (shipping default,
+// Unity-standard) is a normalized variance-form Gaussian evaluated at
+// theta_h = 0.5*(theta_i + theta_o) in theta space:
 //
-//   Cuticle tilt (alpha):    R = -alpha,  TT = +0.5*alpha,  TRT = +1.5*alpha
-//   Longitudinal roughness:  R = beta,    TT = 0.5*beta,    TRT = 2.0*beta
+//   Lobe centers (theta_h):  R = +alpha,  TT = -0.5*alpha,  TRT = -1.5*alpha
+//   Lobe variances:          R = beta^2,  TT = (0.5*beta)^2, TRT = (2.0*beta)^2
+//
+// The mode-0 lobe centers follow the baseline-compatible cuticle-tilt
+// convention (FM_CUTICLE_TILT_CONVENTION below): a positive artist-facing
+// cuticle_tilt_offset denotes an outward cuticle tilt.
+//
+// Mode 1 (diagnostic, never the default) is a baseline-compatible separable
+// sin(theta_o)-space Gaussian around the cone rotations vec3(-2, 1, 3)*alpha
+// with standard deviations vec3(1.5, 0.75, 3.0)*beta_M. It is a separable
+// diagnostic approximation of the baseline cone-tilt contract, NOT the full
+// non-separable d'Eon 2014 baseline (no non-separable widths/tilts, no
+// derived compensation, no LUT redesign).
+//
+// R-only longitudinal override (FM_R_LONGITUDINAL_MODE, default 0): mode 1 is
+// a cheap NON-separable R diagnostic that overrides ONLY m_p[FM_R] after the
+// shared fm_longitudinal_scattering call in both the analytic and LUT BSDFs.
+// It approximates the baseline R cone in sin(theta_o) space with
+// z_r = cos_phi_half, beta_r = sqrt(2)*z_r*beta_m (positive floor), and
+// sin_theta_cone_r = clamp(-sin_theta_i + 2*z_r*cuticle_tilt_value, -1, 1);
+// because z_r depends on the relative azimuth, the width and tilt are
+// non-separable. This is a cheap diagnostic, NOT the full non-separable
+// d'Eon 2014 baseline (no full widths/tilts, no derived compensation), and
+// mode 0 remains the shipping default. TT/TRT are never touched.
 //
 // Azimuthal scattering is the analytic d'Eon et al. (2011) model already used
 // by the high-tier include (Fresnel + Beer-Lambert attenuation with logistic
-// distributions), evaluated with the fixed representative cross-section offsets
-// from the Tier 2 plan: h_TT = 0 and h_TRT = sqrt(3)/2. No LUT is required.
+// distributions). Attenuation uses the Unity-style fixed-h family
+// (FM_ATTENUATION_UNITY_FIXED_H, the shipping default) with the fixed
+// representative cross-section offsets h_TT = 0 and h_TRT = sqrt(3)/2. The
+// shipping branch uses the outgoing/view Snell convention; the named legacy
+// branch retains the incoming/light convention for diagnosis.
+// No LUT is required.
 
 // --- Compile-time lobe configuration ---
 // Comment out a lobe define to strip that lobe from the compiled shader
@@ -22,6 +50,62 @@
 #define FM_LOBE_R
 #define FM_LOBE_TT
 #define FM_LOBE_TRT
+
+// --- Compile-time model configuration ---
+// Shipping defaults are defined below; the legacy/diagnostic branches are
+// opt-in and must never be combined with their shipping counterpart (the
+// code selects the legacy branch first, so defining one silently overrides
+// the shipping default rather than mixing conventions).
+// Longitudinal model: single numeric selector (no boolean/legacy macros).
+// 0 = Unity-standard theta_h Gaussian (shipping default, current behavior
+// unchanged); 1 = baseline-compatible separable sin(theta_o) Gaussian
+// (diagnostic comparison mode; a separable approximation of the baseline
+// cone-tilt contract, NOT the full non-separable baseline). Defined as a
+// literal so the #if in fm_longitudinal_scattering never depends on nested
+// macro expansion.
+#define FM_LONGITUDINAL_MODE 0
+
+// R longitudinal model: single numeric selector for the R lobe only, applied
+// in both the analytic and LUT BSDF functions after the shared
+// fm_longitudinal_scattering call. 0 = shipping default: the R lobe keeps the
+// shared longitudinal path selected by FM_LONGITUDINAL_MODE (current behavior
+// unchanged). 1 = diagnostic: overrides ONLY m_p[FM_R] with a cheap
+// non-separable R approximation in sin(theta_o) space (z_r = cos_phi_half,
+// beta_r = sqrt(2.0)*z_r*beta_m with a positive floor, and
+// sin_theta_cone_r = clamp(-sin_theta_i + 2.0*z_r*cuticle_tilt_value, -1.0,
+// 1.0)). This is a cheap diagnostic, NOT the full non-separable d'Eon 2014
+// baseline (no full widths/tilts, no derived compensation), and 0 remains the
+// shipping default. TT/TRT are never modified in either mode.
+#define FM_R_LONGITUDINAL_MODE 0
+
+#define FM_ATTENUATION_UNITY_FIXED_H
+// Legacy diagnostic attenuation (previous folded-constant d'Eon-style fixed h):
+// #define FM_ATTENUATION_DEON_FIXED_H
+#ifdef FM_ATTENUATION_DEON_FIXED_H
+#define FM_ATTENUATION_MODEL_DEON
+#else
+#define FM_ATTENUATION_MODEL_UNITY
+#endif
+
+// --- Compile-time cuticle tilt convention ---
+// Numeric selector naming the sign contract of the artist-facing
+// cuticle_tilt_offset uniform, so the sign is never embedded without a
+// contract. 0 = baseline-compatible (shipping default): a positive offset
+// denotes an outward cuticle tilt, giving theta_h lobe centers
+// R = +alpha, TT = -0.5*alpha, TRT = -1.5*alpha. 1 = Unity diagnostic mode:
+// the previous sign pattern (R = -alpha, TT = +0.5*alpha, TRT = +1.5*alpha).
+// Both the analytic and LUT BSDFs consume the same lobe_alpha varying, so the
+// selector recompiles the sign consistently across variants.
+#define FM_CUTICLE_TILT_BASELINE 0
+#define FM_CUTICLE_TILT_UNITY 1
+// The selector itself is defined as the literal value (not as a macro alias)
+// so the #if in the shader never depends on nested macro expansion.
+#define FM_CUTICLE_TILT_CONVENTION 0
+
+// --- Fixed cross-section offsets (fixed-h attenuation family) ---
+// Single source of truth for the fixed-h family: h_TT = 0 and h_TRT = sqrt(3)/2.
+#define FM_H_TT 0.0
+#define FM_H_TRT (0.5 * sqrt(3.0))
 
 // --- Lobes (Modes) ---
 #define FM_R   0 // (p=0) Paths where light reflects (R) off the front surface of the fiber.
@@ -65,18 +149,26 @@ uniform float dual_scatter_density : hint_range(0.0, 1.0) = 0.5;
  *  (variant identity forces both); light() then samples the committed 2D LUT
  *  instead of the analytic Stage-A fallback. Default false keeps Stage A. */
 uniform bool use_preintegrated_dual_scatter = false;
-/** 64x64 RGBAF scalar one-/three-event attenuation/energy terms (see
+/** 64x64 RGBAF scalar density/event-proxy weights (see
  *  benchmark/tools/generate_marschner_dual_scatter_lut.gd and
- *  validate_marschner_dual_scatter_lut.gd). Axes: U = scalar optical depth
- *  tau = sigma * local path in [0, 16] (texel centers at (i + 0.5) / N),
+ *  validate_marschner_dual_scatter_lut.gd). Axes: U = scalar density/event
+ *  proxy tau_d = 4 * local_density in [0, 16] (texel centers at (i + 0.5) / N),
  *  V = scattering cosine c (light/view alignment) in [-1, 1] -> 0.5 + 0.5*c.
- *  Channels: R = one-event forward, G = one-event backward, B = three-event
- *  forward, A = three-event backward. The stored terms are scalar: runtime
- *  sigma_a stays RGB and the LUT is sampled once per color channel at that
- *  channel's own optical depth, so no single hair color is baked in. Linear
- *  filtering with repeat disabled; both axes are half-texel clamped into the
- *  interior texel-center range so the clamped sample never wraps. */
+ *  Channels are aggregate event weights: P1 = 1 - exp(-tau_d) (R/G, one
+ *  event) and P3 = 1 - exp(-1.5 * tau_d) (B/A, three events), split
+ *  forward/backward by the cosine and scaled by the F0 baked at
+ *  dual_scatter_lut_eta (1.55). The runtime samples the LUT once at the
+ *  scalar tau_d, then applies the RGB absorption separately as
+ *  T1 = exp(-sigma_a) and T3 = exp(-1.5 * sigma_a): no RGB LUT fetch and no
+ *  double absorption. Linear filtering with repeat disabled; both axes are
+ *  half-texel clamped into the interior texel-center range so the clamped
+ *  sample never wraps. */
 uniform sampler2D dual_scatter_lut : filter_linear, repeat_disable;
+/** IOR baked into dual_scatter_lut (the F0 in the stored event weights);
+ *  a runtime ior outside abs(ior - dual_scatter_lut_eta) <= 0.0005 evaluates
+ *  the analytic Contract B fallback with the runtime F0 instead of sampling
+ *  the LUT. */
+uniform float dual_scatter_lut_eta : hint_range(1.0, 2.0) = 1.55;
 group_uniforms;
 
 group_uniforms Environment;
@@ -106,6 +198,8 @@ uniform bool use_azimuthal_lut = false;
  *  fract() and texel centers over [-PI, PI]), while V and W are half-texel
  *  clamped so repeat never wraps those axes. */
 uniform sampler3D azimuthal_lut : filter_linear, repeat_enable;
+/** IOR baked into azimuthal_lut; incompatible runtime IORs fall back to analytic. */
+uniform float azimuthal_lut_eta : hint_range(1.0, 2.0) = 1.55;
 group_uniforms;
 
 
@@ -117,9 +211,13 @@ float power(float x, float t) {
 }
 
 
-/** Normalized Gaussian in sin(theta) space with a bounded inverse width. */
-vec3 fm_gaussian(vec3 theta, vec3 beta_inv) {
-	return exp(-0.5 * theta * theta * beta_inv * beta_inv) * beta_inv * inversesqrt(TAU);
+/** Normalized variance-form Gaussian with a positive variance floor. The
+ *  internal floor (1e-3 squared, matching the shader's beta floor) keeps the
+ *  helper finite for any external variance input, including callers that do
+ *  not pre-floor their variances. */
+vec3 fm_gaussian_variance(vec3 theta, vec3 variance) {
+	vec3 safe_variance = max(variance, vec3(1e-6));
+	return exp(-0.5 * theta * theta / safe_variance) * inversesqrt(TAU * safe_variance);
 }
 
 
@@ -158,7 +256,9 @@ float fm_azimuthal_angular_offset(int mode, float cos_phi, float sin_phi, float 
 
 /** TT attenuation with the fixed h_TT = 0 and mode = 1 constants folded in:
  *  Fresnel input cos(theta_d), Beer-Lambert path factor 4.0, and
- *  (1 - F)^2 * transmittance. */
+ *  (1 - F)^2 * transmittance. Legacy diagnostic branch used only by
+ *  FM_ATTENUATION_DEON_FIXED_H; the shipping FM_ATTENUATION_UNITY_FIXED_H
+ *  helper fm_att_fixed_h() is the explicit equivalent. */
 vec3 fm_tt_attenuation(float cos_theta_t, float cos_theta_d, vec3 sigma_a, float eta) {
 	float f = fm_fresnel(cos_theta_d, eta);
 	// Beer-Lambert law; the TT path length is 4.0 * (1 - eta'^-2 * 0^2) * 1.
@@ -169,7 +269,10 @@ vec3 fm_tt_attenuation(float cos_theta_t, float cos_theta_d, vec3 sigma_a, float
 
 /** TRT attenuation with the fixed h_TRT = sqrt(3)/2 and mode = 2 constants
  *  folded in: Fresnel input cos(theta_d)*0.5 (sqrt(1 - h*h) = 0.5), Beer-Lambert
- *  path factor 8.0*(1.0 - 0.75*eta'^-2), and (1 - F)^2 * F * transmittance. */
+ *  path factor 8.0*(1.0 - 0.75*eta'^-2), and (1 - F)^2 * F * transmittance.
+ *  Legacy diagnostic branch used only by FM_ATTENUATION_DEON_FIXED_H; the
+ *  shipping FM_ATTENUATION_UNITY_FIXED_H helper fm_att_fixed_h() is the
+ *  explicit equivalent. */
 vec3 fm_trt_attenuation(float cos_theta_t, float cos_theta_d, vec3 sigma_a, float eta_prime_inv, float eta) {
 	float f = fm_fresnel(cos_theta_d * 0.5, eta);
 	// Beer-Lambert law; the TRT path length is 4.0 * (1 - eta'^-2 * 0.75) * 2.
@@ -178,14 +281,109 @@ vec3 fm_trt_attenuation(float cos_theta_t, float cos_theta_d, vec3 sigma_a, floa
 }
 
 
-/** Gaussian longitudinal scattering for R, TT, and TRT with the Tier 2 plan's
- *  fixed per-lobe tilt and roughness defaults. The per-lobe tilt sin/cos and
- *  inverse widths are precomputed once per fragment and passed in instead of
- *  being recomputed per light. */
-vec3 fm_longitudinal_scattering(float sin_theta_i, float cos_theta_i, float sin_theta_o, vec3 sin_alpha_m, vec3 cos_alpha_m, vec3 beta_m_inv) {
-	vec3 sin_theta_cone = -cos_theta_i * sin_alpha_m - sin_theta_i * cos_alpha_m;
-	return fm_gaussian(sin_theta_o - sin_theta_cone, beta_m_inv);
+/** Unity-style fixed-h attenuation for TT/TRT, the shipping default.
+ *  The fixed representative h values are explicit and the two internal TRT
+ *  traversals are represented by a second transmittance factor. The outgoing
+ *  longitudinal angle supplies cos_theta_o; the transmitted angle uses the
+ *  documented Snell convention supplied by the caller. */
+vec3 fm_att_fixed_h(int mode, float cos_theta_o, float cos_theta_d, float cos_theta_t, float eta_prime, vec3 sigma_a, float eta) {
+#ifdef FM_ATTENUATION_MODEL_DEON
+	// Legacy diagnostic branch: preserve the previous folded-constant d'Eon
+	// family under an explicit name rather than silently mixing conventions.
+	float legacy_eta_prime_inv = 1.0 / max(eta_prime, 1e-4);
+	if (mode == FM_TT) {
+		return fm_tt_attenuation(cos_theta_t, cos_theta_d, sigma_a, eta);
+	}
+	return fm_trt_attenuation(cos_theta_t, cos_theta_d, sigma_a, legacy_eta_prime_inv, eta);
+#else
+	float h = (mode == FM_TRT) ? FM_H_TRT : FM_H_TT;
+	float h2 = h * h;
+	float cos_gamma_o = sqrt(max(0.0, 1.0 - h2));
+	float fresnel_cos = clamp(cos_theta_o * cos_gamma_o, 0.0, 1.0);
+	float f = fm_fresnel(fresnel_cos, eta);
+	float safe_eta_prime = max(eta_prime, 1e-4);
+	float sin_gamma_t = clamp(h / safe_eta_prime, -0.999999, 0.999999);
+	float cos_gamma_t = sqrt(max(0.0, 1.0 - sin_gamma_t * sin_gamma_t));
+	vec3 transmittance = exp(-max(sigma_a, vec3(0.0))
+		* (2.0 * cos_gamma_t / max(cos_theta_t, 1e-4)));
+	float one_minus_f = 1.0 - f;
+	if (mode == FM_TT) {
+		return one_minus_f * one_minus_f * transmittance;
+	}
+	return one_minus_f * one_minus_f * f * transmittance * transmittance;
+#endif
 }
+
+
+/** Longitudinal scattering for R, TT, and TRT, selected by the numeric
+ *  compile-time selector FM_LONGITUDINAL_MODE.
+ *
+ *  Mode 0 (shipping default, Unity-standard): normalized variance-form
+ *  Gaussian in theta space evaluated at theta_h = 0.5*(theta_i + theta_o),
+ *  with the per-lobe centers/variances hoisted from fragment(): centers
+ *  vec3(1.0, -0.5, -1.5)*alpha under the shipping baseline cuticle-tilt
+ *  convention (FM_CUTICLE_TILT_CONVENTION 0; the Unity diagnostic convention
+ *  flips them to vec3(-1.0, 0.5, 1.5)*alpha) and variances
+ *  vec3(1.0, 0.5, 2.0)^2 * beta_M^2, both with a positive variance floor
+ *  inside fm_gaussian_variance.
+ *
+ *  Mode 1 (diagnostic, baseline-compatible): separable sin(theta_o)-space
+ *  Gaussian around the cone rotations vec3(-2.0, 1.0, 3.0) *
+ *  cuticle_tilt_offset, with sin_theta_cone = -cos(theta_i)*sin(rotation)
+ *  - sin(theta_i)*cos(rotation) and standard deviations
+ *  vec3(1.5, 0.75, 3.0) * beta_m converted to variances (positive floor
+ *  inside fm_gaussian_variance). This is a separable diagnostic
+ *  approximation of the baseline cone-tilt contract, NOT the full
+ *  non-separable baseline (no d'Eon 2014 widths/tilts, no derived
+ *  compensation). The additional scalars (cuticle tilt and beta_M) are
+ *  passed from the shader call sites; mode 0 ignores them.
+ *
+ *  Both the analytic and LUT BSDF functions call this exact helper, so the
+ *  two variants can never drift apart. */
+vec3 fm_longitudinal_scattering(float theta_i, float theta_o, vec3 lobe_alpha, vec3 lobe_variance, float cuticle_tilt_value, float beta_m_value) {
+#if FM_LONGITUDINAL_MODE == 1
+	// Diagnostic branch (baseline-compatible): separable Gaussian in
+	// sin(theta_o) space around the rotated cone
+	// sin_theta_cone = -sin(theta_i + rotation), where
+	// sin(theta_i + rotation) = sin(theta_i)*cos(rotation) + cos(theta_i)*sin(rotation).
+	vec3 rotation = vec3(-2.0, 1.0, 3.0) * cuticle_tilt_value;
+	vec3 sin_theta_cone = -vec3(cos(theta_i)) * sin(rotation) - vec3(sin(theta_i)) * cos(rotation);
+	vec3 stddev = vec3(1.5, 0.75, 3.0) * max(beta_m_value, 0.0);
+	return fm_gaussian_variance(sin(theta_o) - sin_theta_cone, stddev * stddev);
+#else
+	// Shipping branch (FM_LONGITUDINAL_MODE 0, Unity-standard): normalized
+	// variance-form Gaussian in theta space.
+	float theta_h = 0.5 * (theta_i + theta_o);
+	return fm_gaussian_variance(theta_h - lobe_alpha, lobe_variance);
+#endif
+}
+
+
+#if FM_R_LONGITUDINAL_MODE == 1
+/** Cheap non-separable R longitudinal diagnostic (FM_R_LONGITUDINAL_MODE 1):
+ *  overrides ONLY m_p[FM_R] after the shared fm_longitudinal_scattering call
+ *  in both the analytic and LUT BSDFs. Non-separable because both the width
+ *  and the cone tilt depend on the relative azimuth through z_r = cos_phi_half:
+ *
+ *    z_r = cos_phi_half
+ *    beta_r = sqrt(2.0) * z_r * beta_m  (positive floor 1e-3, matching the
+ *             shader's beta floor; fm_gaussian_variance re-floors the variance)
+ *    sin_theta_cone_r = clamp(-sin_theta_i + 2.0 * z_r * cuticle_tilt_value,
+ *                             -1.0, 1.0)
+ *    result = fm_gaussian_variance(vec3(sin_theta_o - sin_theta_cone_r),
+ *                                  vec3(beta_r * beta_r)).x
+ *
+ *  Cheap diagnostic approximation of the baseline R cone, NOT the full
+ *  non-separable d'Eon 2014 baseline (no full widths/tilts, no derived
+ *  compensation). TT/TRT and FM_R_LONGITUDINAL_MODE 0 (shipping default) are
+ *  untouched. */
+float fm_r_longitudinal_nonseparable(float sin_theta_i, float sin_theta_o, float cos_phi_half, float cuticle_tilt_value, float beta_m_value) {
+	float z_r = cos_phi_half;
+	float beta_r = max(sqrt(2.0) * z_r * max(beta_m_value, 0.0), 1e-3);
+	float sin_theta_cone_r = clamp(-sin_theta_i + 2.0 * z_r * cuticle_tilt_value, -1.0, 1.0);
+	return fm_gaussian_variance(vec3(sin_theta_o - sin_theta_cone_r), vec3(beta_r * beta_r)).x;
+}
+#endif
 
 
 /** Chiang et al. (2016) albedo-to-absorption reparameterization, matching the
@@ -260,71 +458,105 @@ vec3 fm_dual_scattering(vec3 base_color, vec3 omega_i, vec2 omega_o_yz_normalize
 		* (view_alignment + 1.0) * 0.5;
 
 	// Backward-scattered component: peaks for opposing light/view directions.
+	// Do not use abs() here: that would also suppress the physically important
+	// opposing-direction lobe at view_alignment = -1.
 	vec3 backward_scatter = exp(-max(sigma_a, vec3(0.0)) * max(local_density, 1e-4) * 0.5)
-		* (1.0 - abs(view_alignment)) * 0.5;
+		* (1.0 - view_alignment) * 0.5;
 
 	return (forward_scatter + backward_scatter) * max(base_color, vec3(0.0)) * safe_strength
 		* smoothstep(-0.5, 1.0, attenuation);
 }
 
 
-/** Upper bound of the preintegrated LUT's scalar optical-depth axis (tau).
- *  exp(-16) is below 1.2e-7, so the far end of the axis is effectively black
- *  and the runtime clamp at this bound keeps all lookups inside the domain. */
+/** Upper bound of the preintegrated LUT's scalar density/event-proxy axis
+ *  (tau_d = 4 * local_density). At tau_d = 16 the event weights saturate:
+ *  P1 = 1 - exp(-16) and P3 = 1 - exp(-24) are within 1.2e-7 of the available
+ *  one-/three-event energy, so the far end of the axis is effectively
+ *  saturated and the runtime clamp at this bound keeps all lookups inside
+ *  the domain. */
 const float FM_DUAL_SCATTER_TAU_MAX = 16.0;
 
 
 /** Stage-B preintegrated local dual scattering (opt-in, replaces the Karis
  *  diffuse term exactly like Stage A - never adds on top of it). The committed
- *  2D LUT stores scalar one-/three-event attenuation/energy terms over a
- *  scalar optical-depth/cosine domain (see the dual_scatter_lut uniform).
- *  The LUT stores aggregate local-scattering energy: zero local density produces
- *  zero secondary energy and increasing density saturates toward the available
- *  one-/three-event energy. Runtime sigma_a remains RGB and is applied as
- *  separate Beer-Lambert tinting for the one- and three-event path lengths, so
- *  the LUT never bakes a single hair color. Inputs are bounded (deepness,
- *  density, view alignment, and tau clamped to [0, FM_DUAL_SCATTER_TAU_MAX]),
- *  the LUT terms are bounded in [0, 1] with monotone energy growth in tau, and
- *  ATTENUATION enters only as the direct-light visibility ramp - it is never
- *  part of the LUT math. */
-vec3 fm_dual_scattering_preintegrated(vec3 base_color, vec3 omega_i, vec2 omega_o_yz_normalized, vec3 sigma_a, float depth, float strength, float density, sampler2D lut_texture, float attenuation) {
+ *  2D LUT stores scalar density/event-proxy weights over the tau_d/cosine
+ *  domain (see the dual_scatter_lut uniform): P1 = 1 - exp(-tau_d) and
+ *  P3 = 1 - exp(-1.5 * tau_d), split forward/backward by the scattering
+ *  cosine with the F0 baked at the LUT eta (dual_scatter_lut_eta, 1.55). Zero
+ *  local density produces zero secondary energy and increasing density
+ *  saturates toward the available one-/three-event energy. The LUT is sampled
+ *  once at the scalar tau_d; runtime sigma_a stays RGB and is applied
+ *  separately as T1 = exp(-sigma_a) and T3 = exp(-1.5 * sigma_a), so the LUT
+ *  never bakes a hair color and there is no double absorption. Outside the
+ *  baked-IOR tolerance (abs(ior - dual_scatter_lut_eta) <= 0.0005) the same
+ *  Contract B formula is evaluated analytically with the runtime eta/F0
+ *  instead of sampling the LUT; the Stage-A slice fm_dual_scattering() is a
+ *  separate variant and is never used as this parity fallback. Inputs are
+ *  bounded (deepness, density, view alignment, and tau_d clamped to
+ *  [0, FM_DUAL_SCATTER_TAU_MAX]), the stored weights are bounded in [0, 1]
+ *  with monotone growth in tau_d, and ATTENUATION enters only as the
+ *  direct-light visibility ramp - it is never part of the LUT math. */
+vec3 fm_dual_scattering_preintegrated(vec3 base_color, vec3 omega_i, vec2 omega_o_yz_normalized, vec3 sigma_a, float depth, float strength, float density, sampler2D lut_texture, float eta, float lut_eta, float attenuation) {
 	float safe_strength = max(strength, 0.0);
 	// Deepness mapping matches Stage A: depth 0 (deep) -> deepness 1.
 	float deepness = 1.0 - clamp(depth, 0.0, 1.0);
 	float local_density = deepness * clamp(density, 0.0, 1.0);
 	float view_alignment = clamp(dot(omega_i.yz, omega_o_yz_normalized), -1.0, 1.0);
 
-	// Square LUT; the half-texel inset keeps clamped samples on texel centers
-	// so the repeat-disabled sampler can never wrap either axis.
-	float texel_scale = 1.0 / float(textureSize(lut_texture, 0).x);
-	float half_texel = 0.5 * texel_scale;
-	float v_domain = clamp(0.5 + 0.5 * view_alignment, 0.0, 1.0);
-	float v_uv = mix(half_texel, 1.0 - half_texel, v_domain);
+	// Scalar density/event proxy: density controls how much secondary energy
+	// is generated (tau_d = 4 * local_density). RGB sigma_a is never an axis
+	// of this LUT; it is applied separately below.
+	float tau_d = clamp(local_density * 4.0, 0.0, FM_DUAL_SCATTER_TAU_MAX);
 
-	// Scalar local-scattering optical depth: density controls how much secondary
-	// energy is generated, while RGB sigma_a is applied separately below.
-	float tau = clamp(local_density * 4.0, 0.0, FM_DUAL_SCATTER_TAU_MAX);
-	float u_domain = clamp(tau * (1.0 / FM_DUAL_SCATTER_TAU_MAX), 0.0, 1.0);
-	float u_uv = mix(half_texel, 1.0 - half_texel, u_domain);
-	vec4 events = texture(lut_texture, vec2(u_uv, v_uv));
+	// RGB one-/three-event absorption, applied once per event count on both
+	// the LUT and the analytic fallback paths (no double absorption).
 	vec3 one_event_transmittance = exp(-max(sigma_a, vec3(0.0)));
 	vec3 three_event_transmittance = exp(-max(sigma_a, vec3(0.0)) * 1.5);
-	vec3 energy = vec3(events.r + events.g) * one_event_transmittance
-		+ vec3(events.b + events.a) * three_event_transmittance;
+
+	vec3 energy = vec3(0.0);
+	if (abs(eta - lut_eta) <= 0.0005) {
+		// Square LUT; the half-texel inset keeps clamped samples on texel
+		// centers so the repeat-disabled sampler can never wrap either axis.
+		float texel_scale = 1.0 / float(textureSize(lut_texture, 0).x);
+		float half_texel = 0.5 * texel_scale;
+		float v_domain = clamp(0.5 + 0.5 * view_alignment, 0.0, 1.0);
+		float v_uv = mix(half_texel, 1.0 - half_texel, v_domain);
+		float u_domain = clamp(tau_d * (1.0 / FM_DUAL_SCATTER_TAU_MAX), 0.0, 1.0);
+		float u_uv = mix(half_texel, 1.0 - half_texel, u_domain);
+		vec4 events = texture(lut_texture, vec2(u_uv, v_uv));
+		energy = vec3(events.r + events.g) * one_event_transmittance
+			+ vec3(events.b + events.a) * three_event_transmittance;
+	} else {
+		// Analytic Contract B fallback for a runtime IOR outside the baked-LUT
+		// tolerance: the same P1/P3 event weights and forward/backward split
+		// with F0 evaluated at the runtime eta, at the same scalar tau_d.
+		float f0 = (1.0 - eta) * (1.0 - eta) / ((1.0 + eta) * (1.0 + eta));
+		float one_event_fresnel = (1.0 - f0) * (1.0 - f0);
+		float three_event_fresnel = one_event_fresnel * f0;
+		float forward_lobe = 0.5 * (1.0 + view_alignment);
+		float backward_lobe = 0.5 * (1.0 - view_alignment);
+		float one_event_weight = 1.0 - exp(-tau_d);
+		float three_event_weight = 1.0 - exp(-1.5 * tau_d);
+		energy = (forward_lobe + backward_lobe) * one_event_fresnel * one_event_weight * one_event_transmittance
+			+ (forward_lobe + backward_lobe) * three_event_fresnel * three_event_weight * three_event_transmittance;
+	}
 
 	return energy * max(base_color, vec3(0.0)) * safe_strength
 		* smoothstep(-0.5, 1.0, attenuation);
 }
 
 
-/** Fast analytic Marschner BSDF: Gaussian longitudinal R/TT/TRT and the
- *  analytic d'Eon azimuthal model with the fixed cross-section offsets from
- *  the Tier 2 plan. All inputs are in strand space:
+/** Fast analytic Marschner BSDF: FM_LONGITUDINAL_MODE-selected Gaussian
+ *  longitudinal R/TT/TRT and the analytic d'Eon azimuthal model
+ *  with Unity-style fixed-h attenuation (FM_ATTENUATION_UNITY_FIXED_H). All
+ *  inputs are in strand space:
  *  [sin(theta), cos(theta)*cos(phi), cos(theta)*sin(phi)].
- *  The light-invariant view/tilt/width values are precomputed once per
- *  fragment in fragment() and passed in; only omega_i and the angle
- *  combinations below vary per light. */
-vec3 fm_hair_bsdf(vec3 omega_i, vec3 omega_o, float view_cos_theta, vec3 sin_alpha_m, vec3 cos_alpha_m, vec3 beta_m_inv, vec2 azimuthal_s_inv, vec2 logistic_b, vec3 sigma_a, float eta) {
+ *  The light-invariant view/lobe values (view_cos_theta, view_theta_o,
+ *  lobe_alpha, lobe_variance) are precomputed once per fragment in fragment()
+ *  and passed in; only omega_i and the angle combinations below vary per
+ *  light. cuticle_tilt_offset and beta_m are the extra scalars consumed by
+ *  the FM_LONGITUDINAL_MODE 1 diagnostic branch (ignored in mode 0). */
+vec3 fm_hair_bsdf(vec3 omega_i, vec3 omega_o, float view_cos_theta, float view_theta_o, vec3 lobe_alpha, vec3 lobe_variance, vec2 azimuthal_s_inv, vec2 logistic_b, vec3 sigma_a, float eta, float cuticle_tilt_value, float beta_m_value) {
 	float sin_theta_i = omega_i.x;
 	float sin_theta_o = omega_o.x;
 	float cos_theta_i = length(omega_i.yz);
@@ -340,19 +572,32 @@ vec3 fm_hair_bsdf(vec3 omega_i, vec3 omega_o, float view_cos_theta, vec3 sin_alp
 	float cos_theta_d = sqrt(0.5 + 0.5 * cos_theta);
 	float sin_theta_d = sqrt(0.5 - 0.5 * cos_theta) * sign(sin_theta_o * cos_theta_i - cos_theta_o * sin_theta_i);
 
-	// sin(theta_i) = eta * sin(theta_t) (Snell's law, longitudinal inclination)
+	// Snell transmitted-angle convention: the Unity fixed-h branch uses the
+	// outgoing/view longitudinal angle; the legacy d'Eon branch retains the
+	// incoming/light convention for controlled diagnosis.
+#ifdef FM_ATTENUATION_MODEL_UNITY
+	float cos_theta_t = sqrt(max(0.0, 1.0 - sin_theta_o * sin_theta_o / (eta * eta)));
+#else
 	float cos_theta_t = sqrt(max(0.0, 1.0 - sin_theta_i * sin_theta_i / (eta * eta)));
+#endif
 
 	// 'Effective' index of refraction and its reciprocal, both bounded.
 	float eta_prime = sqrt(max(eta * eta - sin_theta_d * sin_theta_d, 1e-6)) / max(cos_theta_d, 1e-6);
 	float eta_prime_inv = 1.0 / eta_prime;
 
-	// Fixed representative cross-section offsets for fast attenuation (Tier 2
-	// plan): h_TT = 0 and h_TRT = sqrt(3)/2. h_R is unused because the R lobe's
-	// attenuation is the plain Fresnel term below.
-	vec3 h = vec3(0.0, 0.0, 0.5 * sqrt(3.0));
+	// Fixed representative cross-section offsets for the azimuthal angular
+	// offsets and the fixed-h attenuation family (Tier 2 plan): h_TT = 0 and
+	// h_TRT = sqrt(3)/2. h_R is unused because the R lobe's attenuation is the
+	// plain Fresnel term below.
+	vec3 h = vec3(0.0, FM_H_TT, FM_H_TRT);
 
-	vec3 m_p = fm_longitudinal_scattering(sin_theta_i, cos_theta_i, sin_theta_o, sin_alpha_m, cos_alpha_m, beta_m_inv);
+	vec3 m_p = fm_longitudinal_scattering(asin(clamp(sin_theta_i, -0.999999, 0.999999)), view_theta_o, lobe_alpha, lobe_variance, cuticle_tilt_value, beta_m_value);
+#if FM_R_LONGITUDINAL_MODE == 1
+	// Diagnostic override: cheap non-separable R only (see
+	// fm_r_longitudinal_nonseparable). TT/TRT keep the shared path, and
+	// mode 0 emits nothing here.
+	m_p[FM_R] = fm_r_longitudinal_nonseparable(sin_theta_i, sin_theta_o, cos_phi_half, cuticle_tilt_value, beta_m_value);
+#endif
 
 	vec3 result = vec3(0.0);
 #ifdef FM_LOBE_R
@@ -362,12 +607,12 @@ vec3 fm_hair_bsdf(vec3 omega_i, vec3 omega_o, float view_cos_theta, vec3 sin_alp
 #endif
 #ifdef FM_LOBE_TT
 	result += fm_logistic(fm_azimuthal_angular_offset(FM_TT, cos_phi, sin_phi, eta_prime_inv, h[FM_TT]), azimuthal_s_inv.x, logistic_b.x)
-		* fm_tt_attenuation(cos_theta_t, cos_theta_d, sigma_a, eta)
+		* fm_att_fixed_h(FM_TT, cos_theta_o, cos_theta_d, cos_theta_t, eta_prime, sigma_a, eta)
 		* vec3(m_p[FM_TT] * lobe_scales[FM_TT]);
 #endif
 #ifdef FM_LOBE_TRT
 	result += fm_logistic(fm_azimuthal_angular_offset(FM_TRT, cos_phi, sin_phi, eta_prime_inv, h[FM_TRT]), azimuthal_s_inv.y, logistic_b.y)
-		* fm_trt_attenuation(cos_theta_t, cos_theta_d, sigma_a, eta_prime_inv, eta)
+		* fm_att_fixed_h(FM_TRT, cos_theta_o, cos_theta_d, cos_theta_t, eta_prime, sigma_a, eta)
 		* vec3(m_p[FM_TRT] * lobe_scales[FM_TRT]);
 #endif
 	return result;
@@ -376,12 +621,17 @@ vec3 fm_hair_bsdf(vec3 omega_i, vec3 omega_o, float view_cos_theta, vec3 sin_alp
 
 /** LUT-backed fast Marschner BSDF: the azimuthal R/TT/TRT terms are sampled
  *  per light from the committed 3D LUT (u = normalized relative azimuth phi,
- *  v = cos_theta_d, w = hoisted azimuthal width); the Beer-Lambert
- *  attenuation, longitudinal Gaussian terms, and per-lobe scales stay
- *  analytic and match fm_hair_bsdf exactly. The LUT R channel includes the
- *  azimuthal Fresnel factor. The sample is light-dependent; only the width
- *  axis (lut_width) is light-invariant and hoisted to fragment(). */
-vec3 fm_hair_bsdf_lut(vec3 omega_i, vec3 omega_o, float view_cos_theta, vec3 sin_alpha_m, vec3 cos_alpha_m, vec3 beta_m_inv, vec2 azimuthal_s_inv, vec2 logistic_b, vec3 sigma_a, float eta, float lut_width, sampler3D lut_texture) {
+ *  v = cos_theta_d, w = hoisted azimuthal width); the Unity-style fixed-h
+ *  attenuation, the FM_LONGITUDINAL_MODE-selected longitudinal Gaussian terms
+ *  (shared with fm_hair_bsdf through fm_longitudinal_scattering), and
+ *  per-lobe scales stay analytic and match fm_hair_bsdf exactly. The LUT R
+ *  channel includes the azimuthal Fresnel factor. The sample is
+ *  light-dependent; only the width axis (lut_width) is light-invariant and
+ *  hoisted to fragment(). Callers must only invoke this with a lut_width
+ *  derived from a beta_N inside the generator's beta axis [0.001, 1.0];
+ *  light() falls back to fm_hair_bsdf otherwise (lut_azimuthal_compatible)
+ *  instead of clamping the roughness. */
+vec3 fm_hair_bsdf_lut(vec3 omega_i, vec3 omega_o, float view_cos_theta, float view_theta_o, vec3 lobe_alpha, vec3 lobe_variance, vec2 azimuthal_s_inv, vec2 logistic_b, vec3 sigma_a, float eta, float lut_width, sampler3D lut_texture, float cuticle_tilt_value, float beta_m_value) {
 	float sin_theta_i = omega_i.x;
 	float sin_theta_o = omega_o.x;
 	float cos_theta_i = length(omega_i.yz);
@@ -397,7 +647,11 @@ vec3 fm_hair_bsdf_lut(vec3 omega_i, vec3 omega_o, float view_cos_theta, vec3 sin
 	float sin_theta_d = sqrt(0.5 - 0.5 * cos_theta) * sign(sin_theta_o * cos_theta_i - cos_theta_o * sin_theta_i);
 
 	// Snell and effective index, matching the analytic attenuation inputs.
+#ifdef FM_ATTENUATION_MODEL_UNITY
+	float cos_theta_t = sqrt(max(0.0, 1.0 - sin_theta_o * sin_theta_o / (eta * eta)));
+#else
 	float cos_theta_t = sqrt(max(0.0, 1.0 - sin_theta_i * sin_theta_i / (eta * eta)));
+#endif
 	float eta_prime = sqrt(max(eta * eta - sin_theta_d * sin_theta_d, 1e-6)) / max(cos_theta_d, 1e-6);
 	float eta_prime_inv = 1.0 / eta_prime;
 
@@ -415,7 +669,15 @@ vec3 fm_hair_bsdf_lut(vec3 omega_i, vec3 omega_o, float view_cos_theta, vec3 sin
 		clamp(lut_width, half_texel, 1.0 - half_texel));
 	vec3 azimuthal = texture(lut_texture, lut_uvw).rgb;
 
-	vec3 m_p = fm_longitudinal_scattering(sin_theta_i, cos_theta_i, sin_theta_o, sin_alpha_m, cos_alpha_m, beta_m_inv);
+	vec3 m_p = fm_longitudinal_scattering(asin(clamp(sin_theta_i, -0.999999, 0.999999)), view_theta_o, lobe_alpha, lobe_variance, cuticle_tilt_value, beta_m_value);
+#if FM_R_LONGITUDINAL_MODE == 1
+	// Diagnostic override: cheap non-separable R only, matching the analytic
+	// BSDF exactly. cos_phi_half is derived from the existing local cos_phi
+	// (the LUT R channel already carries the azimuthal R term; only the
+	// longitudinal R factor changes). TT/TRT keep the shared path.
+	float cos_phi_half = max(1e-6, sqrt(0.5 + 0.5 * cos_phi));
+	m_p[FM_R] = fm_r_longitudinal_nonseparable(sin_theta_i, sin_theta_o, cos_phi_half, cuticle_tilt_value, beta_m_value);
+#endif
 
 	vec3 result = vec3(0.0);
 #ifdef FM_LOBE_R
@@ -423,10 +685,10 @@ vec3 fm_hair_bsdf_lut(vec3 omega_i, vec3 omega_o, float view_cos_theta, vec3 sin
 	result += azimuthal.r * m_p[FM_R] * lobe_scales[FM_R];
 #endif
 #ifdef FM_LOBE_TT
-	result += azimuthal.g * fm_tt_attenuation(cos_theta_t, cos_theta_d, sigma_a, eta) * m_p[FM_TT] * lobe_scales[FM_TT];
+	result += azimuthal.g * fm_att_fixed_h(FM_TT, cos_theta_o, cos_theta_d, cos_theta_t, eta_prime, sigma_a, eta) * m_p[FM_TT] * lobe_scales[FM_TT];
 #endif
 #ifdef FM_LOBE_TRT
-	result += azimuthal.b * fm_trt_attenuation(cos_theta_t, cos_theta_d, sigma_a, eta_prime_inv, eta) * m_p[FM_TRT] * lobe_scales[FM_TRT];
+	result += azimuthal.b * fm_att_fixed_h(FM_TRT, cos_theta_o, cos_theta_d, cos_theta_t, eta_prime, sigma_a, eta) * m_p[FM_TRT] * lobe_scales[FM_TRT];
 #endif
 	return result;
 }

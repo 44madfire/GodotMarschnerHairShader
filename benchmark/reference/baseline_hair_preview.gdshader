@@ -1,6 +1,6 @@
 // Preview-only variant of baseline_hair.gdshader: identical rendering
-// code and material interface, plus the opt-in freeze_bayer_phase uniform
-// used by interactive previews. Timed benchmarks keep using the original
+// code and material interface, plus opt-in preview controls for deterministic
+// phase and presentation calibration. Timed benchmarks keep using the original
 // baseline shader so its bytes and behavior never change.
 shader_type spatial;
 render_mode cull_disabled, world_vertex_coords;
@@ -49,6 +49,8 @@ group_uniforms Preview;
 /** Freezes the Bayer phase for deterministic interactive previews. Default false
  *  preserves the production TIME-driven behavior for benchmark runs. */
 uniform bool freeze_bayer_phase = false;
+/** Presentation-only gain used by the standalone visual comparison. */
+uniform float comparison_exposure_gain : hint_range(0.25, 8.0) = 1.0;
 group_uniforms;
 
 #include "./hair.gdshaderinc"
@@ -154,11 +156,11 @@ void light() {
 	vec3 omega_o = inv_tangent_matrix * VIEW;  // [sin(θ_o),  cos(θ_o)*cos(φ_o), cos(θ_o)*sin(φ_o)]
 
 	vec3 single_scattering = hair_BSDF(omega_i, omega_o, -cuticle_tilt_offset, beta, absorbtion_coefficient);
-	SPECULAR_LIGHT += single_scattering * LIGHT_COLOR * ATTENUATION * specular;
+	SPECULAR_LIGHT += comparison_exposure_gain * single_scattering * LIGHT_COLOR * ATTENUATION * specular;
 
 	// Fake multiple scattering approximation. Not physically-based.
 	// Source: "Physically Based Hair Shading in Unreal" (Karis, 2016)
 	float luminance = dot(ALBEDO, vec3(0.299, 0.587, 0.114));
 	vec3 multiple_scattering = 0.25 * sqrt(ALBEDO)*(dot(omega_i.yz, normalize(omega_o.yz)) + 1.0) * pow(ALBEDO / luminance, vec3(ATTENUATION));
-	DIFFUSE_LIGHT += multiple_scattering * smoothstep(-0.5, 1.0, ATTENUATION) * LIGHT_COLOR / PI;
+	DIFFUSE_LIGHT += comparison_exposure_gain * multiple_scattering * smoothstep(-0.5, 1.0, ATTENUATION) * LIGHT_COLOR / PI;
 }

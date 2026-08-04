@@ -152,10 +152,26 @@ func _apply_tier2_parameters(material: ShaderMaterial, profile: Resource) -> voi
 		var lut_texture: Texture3D = azimuthal_lut_texture(profile.get(&"azimuthal_lut_data"))
 		if lut_texture != null:
 			material.set(&"shader_parameter/azimuthal_lut", lut_texture)
+	# The baked-IOR guards mirror the shader's 0.0005 tolerance: each eta
+	# uniform is populated from the committed LUT data whenever it is declared
+	# and the data resource carries an eta, so the guard never silently relies
+	# on the shader default.
+	if declared_uniforms.has(&"azimuthal_lut_eta"):
+		var azimuthal_data: Variant = profile.get(&"azimuthal_lut_data")
+		if azimuthal_data != null:
+			var azimuthal_eta: Variant = azimuthal_data.get(&"eta")
+			if azimuthal_eta is float:
+				material.set(&"shader_parameter/azimuthal_lut_eta", azimuthal_eta)
 	if declared_uniforms.has(&"dual_scatter_lut") and bool(profile.get(&"use_preintegrated_dual_scatter")):
 		var dual_lut_texture: Texture2D = dual_scatter_lut_texture(profile.get(&"dual_scatter_lut_data"))
 		if dual_lut_texture != null:
 			material.set(&"shader_parameter/dual_scatter_lut", dual_lut_texture)
+	if declared_uniforms.has(&"dual_scatter_lut_eta"):
+		var dual_scatter_data: Variant = profile.get(&"dual_scatter_lut_data")
+		if dual_scatter_data != null:
+			var dual_scatter_eta: Variant = dual_scatter_data.get(&"eta")
+			if dual_scatter_eta is float:
+				material.set(&"shader_parameter/dual_scatter_lut_eta", dual_scatter_eta)
 
 
 
