@@ -29,6 +29,7 @@ const TIER2_PROFILE_PARAMETERS := [
 	&"melanin_absorption_scale",
 	&"ior",
 ]
+const SOURCE_TEXTURE_PARAMETERS := [&"coords_texture", &"attributes_texture"]
 
 var _failures: PackedStringArray = []
 
@@ -101,6 +102,7 @@ func _run() -> void:
 	if shader_path != EXPECTED_SHADER_PATH:
 		_fail("shader path is '%s', expected '%s'" % [shader_path, EXPECTED_SHADER_PATH])
 	_assert_tier2_profile_parameters(shader_material)
+	_assert_source_material_parameters(shader_material)
 
 	# First capture: must have usable dimensions and lit (non-background) pixels.
 	var frame_a: Image = root.get_texture().get_image()
@@ -117,6 +119,20 @@ func _run() -> void:
 	print("EVIDENCE lit_pixels_first_capture=%d" % lit_pixels_a)
 	if lit_pixels_a < MIN_NONBLACK_PIXELS:
 		_fail("first capture has only %d lit pixels (threshold %d); the variant is not rendering hair" % [lit_pixels_a, MIN_NONBLACK_PIXELS])
+
+	# Include-declared debug uniforms must reach the GPU, not merely remain in
+	# ShaderMaterial's parameter dictionary. Toggle the debug albedo hash and
+	# require a rendered-frame change; this catches wrapper/include uniform
+	# binding regressions that texture-presence checks cannot detect.
+	shader_material.set_shader_parameter(&"show_hashed_strands", true)
+	await RenderingServer.frame_post_draw
+	var hashed_frame: Image = root.get_texture().get_image()
+	var hashed_diff := _byte_diff(frame_a, hashed_frame)
+	print("EVIDENCE show_hashed_strands_frame_diff_bytes=%d" % hashed_diff)
+	if hashed_diff <= 0:
+		_fail("show_hashed_strands did not change the rendered Fast frame; include-declared uniforms are not reaching the GPU")
+	shader_material.set_shader_parameter(&"show_hashed_strands", false)
+	await RenderingServer.frame_post_draw
 
 	# Second capture after enough preview frames for the Bayer TIME phase to
 	# move: interactive previews freeze the Bayer phase (freeze_bayer_phase,
@@ -155,6 +171,20 @@ func _assert_tier2_profile_parameters(shader_material: ShaderMaterial) -> void:
 		print("EVIDENCE tier2_profile_%s=%s" % [parameter_name, actual])
 		if not matches:
 			_fail("Tier-2 profile parameter %s is %s, expected %s" % [parameter_name, actual, expected])
+
+
+func _assert_source_material_parameters(shader_material: ShaderMaterial) -> void:
+	for parameter_name in SOURCE_TEXTURE_PARAMETERS:
+		var texture := shader_material.get_shader_parameter(parameter_name) as Texture2D
+		print("EVIDENCE source_%s_bound=%s" % [parameter_name, texture != null])
+		if texture == null or texture.get_width() <= 0 or texture.get_height() <= 0:
+			_fail("Fast source parameter %s is not bound to a usable texture" % parameter_name)
+	var albedo: Variant = shader_material.get_shader_parameter(&"albedo")
+	var specular: Variant = shader_material.get_shader_parameter(&"specular")
+	var cuticle: Variant = shader_material.get_shader_parameter(&"cuticle_tilt_offset")
+	print("EVIDENCE source_albedo=%s specular=%s cuticle_tilt_offset=%s" % [albedo, specular, cuticle])
+	if albedo == null or specular == null or cuticle == null:
+		_fail("Fast source-compatible material uniforms were not rebound after shader swap")
 
 
 func _count_lit_pixels(image: Image) -> int:

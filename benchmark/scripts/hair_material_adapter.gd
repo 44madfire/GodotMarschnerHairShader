@@ -47,6 +47,27 @@ const FAST_MARSCHNER_UNIFORMS: Array[StringName] = [
 	&"lobe_scales",
 ]
 
+## The Fast wrapper's public interface arrives through a shared .gdshaderinc,
+## which Godot does not expose through Shader.get_shader_uniform_list(). Rebind
+## these source-compatible values explicitly after swapping the shader so the
+## renderer receives the source groom's textures, color, coverage/debug flags,
+## and preview controls instead of silently using include defaults.
+const FAST_MARSCHNER_SOURCE_UNIFORMS: Array[StringName] = [
+	&"albedo",
+	&"longitudinal_roughness",
+	&"azimuthal_roughness",
+	&"specular",
+	&"cuticle_tilt_offset",
+	&"coords_texture",
+	&"attributes_texture",
+	&"show_hair_cards",
+	&"show_hashed_strands",
+	&"freeze_bayer_phase",
+	&"comparison_exposure_gain",
+	&"use_area_light_multipliers",
+	&"lobe_scales",
+]
+
 var _alpha_hash_texture_cache: Dictionary = {}
 var _azimuthal_lut_texture_cache: Dictionary = {}
 var _dual_scatter_lut_texture_cache: Dictionary = {}
@@ -75,7 +96,14 @@ func make_shader_variant_material(source_material: ShaderMaterial, benchmark_sha
 	var cloned_material := source_material.duplicate() as ShaderMaterial
 	if cloned_material == null:
 		return null
+	var source_parameters: Dictionary = {}
+	for parameter_name in FAST_MARSCHNER_SOURCE_UNIFORMS:
+		var source_value: Variant = source_material.get_shader_parameter(parameter_name)
+		if source_value != null:
+			source_parameters[parameter_name] = source_value
 	cloned_material.shader = benchmark_shader
+	for parameter_name in source_parameters:
+		cloned_material.set("shader_parameter/%s" % String(parameter_name), source_parameters[parameter_name])
 	apply_profile_parameters(cloned_material, profile)
 	return cloned_material
 
@@ -166,6 +194,8 @@ func _apply_tier2_parameters(material: ShaderMaterial, profile: Resource) -> voi
 	var shader_path := material.shader.resource_path
 	if shader_path.begins_with("res://assets/hair/materials/shaders/hair_marschner_fast"):
 		for uniform_name in FAST_MARSCHNER_UNIFORMS:
+			declared_uniforms[uniform_name] = true
+		for uniform_name in FAST_MARSCHNER_SOURCE_UNIFORMS:
 			declared_uniforms[uniform_name] = true
 	var tier2_parameters := {
 		&"absorption_mode": profile.get(&"absorption_mode"),

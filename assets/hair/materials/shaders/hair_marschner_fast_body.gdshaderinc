@@ -1,45 +1,7 @@
-shader_type spatial;
-render_mode cull_disabled, world_vertex_coords;
-
-/** The averaged reflectance/multiple-scattering color of the hair. */
-uniform vec3 albedo : source_color = vec3(0.1);
-
-/** Controls the highlight width (in radians) [i]along[/i] hair strands. */
-uniform float longitudinal_roughness : hint_range(0.0, 1.0) = 0.3;
-
-/** Controls the highlight width (in radians) [i]around[/i] hair strands. */
-uniform float azimuthal_roughness : hint_range(0.0, 1.0) = 0.8;
-
-/** Adjusts the single-scattering (highlight) strength of the hair. */
-uniform float specular : hint_range(0.0, 1.0) = 1.0;
-
-/** Adjusts the angled offset (in radians) of cuticle scales—a positive value denotes an outward tilt. */
-uniform float cuticle_tilt_offset : hint_range(0.0, 0.5) = 0.1;
-
-group_uniforms textures;
-/** Texture containing tangent direction in RGB and root-to-tip U in A. */
-uniform sampler2D coords_texture : filter_nearest;
-/** Texture containing coverage in R, depth in G, and per-strand seed in B. */
-uniform sampler2D attributes_texture : filter_nearest;
-group_uniforms;
-
-group_uniforms Debug;
-uniform bool show_hair_cards = false;
-uniform bool show_hashed_strands = false;
-group_uniforms;
-
-group_uniforms Preview;
-/** Freezes the Bayer phase for deterministic interactive previews. Default false
- *  preserves the production TIME-driven behavior for benchmark runs. */
-uniform bool freeze_bayer_phase = false;
-/** Presentation-only gain used by the standalone visual comparison. */
-uniform float comparison_exposure_gain : hint_range(0.25, 8.0) = 1.0;
-group_uniforms;
-
-group_uniforms Validation;
-/** Diagnostic parity switch; default true preserves normal area-light behavior. */
-uniform bool use_area_light_multipliers = true;
-group_uniforms;
+// Interface uniforms are declared directly in each top-level wrapper. Godot
+// 4.7 compiles declarations from includes but does not expose them reliably to
+// ShaderMaterial's runtime uniform binding. This file owns the shared varyings,
+// functions, and vertex/fragment/light implementation below.
 
 #include "./hair_marschner_fast.gdshaderinc"
 
