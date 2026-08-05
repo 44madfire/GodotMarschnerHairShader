@@ -147,6 +147,48 @@ Timed Fast benchmark runs explicitly force `comparison_exposure_gain=1.0`,
 values under `timed_material_contract` in `run_manifest.json`. Preview-only
 flows retain their diagnostic presentation controls.
 
+### Unity HDRP R-lobe attribution study
+
+The benchmark-only `--r-study` selector attributes the R discrepancy as
+`M_R*N_R*A_R` without changing the shipping shader. Supported modes are:
+
+- `current`: current Fast M/N/A control.
+- `unity_fresnel`: current M/N with Unity's half-vector Fresnel A.
+- `unity_nf`: current M with Unity's direct 20-sample preintegrated N_R and
+  Unity Fresnel A.
+- `baseline_m_unity_nf`: existing high-tier baseline M_R with Unity N_R/A_R.
+- `unity_exact`: Unity standard raw-roughness Gaussian M_R with Unity N_R/A_R.
+
+All non-current modes require `--contract=report`; TT/TRT and the shipping
+shader remain unchanged. Unity R never uses Beer-Lambert absorption. The
+standalone reference checks cover N_R normalization, symmetry, periodicity,
+roughness broadening, and R absorption independence:
+
+```text
+/mnt/c/Tools/Godot/godot.exe --headless --path "//wsl.localhost/Ubuntu/home/jeffreymwang/godot-hair-shader" --script res://benchmark/tests/test_fast_marschner_unity_r_reference.gd
+python3 benchmark/tools/run_fast_marschner_r_study.py --grid 128 --coarse 64 --out benchmark/results/unity_r_study_128.json
+```
+
+The study runner emits aggregate and per-incoming-angle R ratios, RMS and
+maximum total errors, grid drift, and attribution multipliers. It is an
+exploratory evidence path; no shader implementation should be selected from
+the output until the angular results are reviewed.
+
+The final 512/128 study measured these aggregate Fast/baseline R ratios:
+
+| R study | R ratio | total ratio | incoming-angle R range |
+| --- | ---: | ---: | ---: |
+| `current` | `0.5902x` | `0.8625x` | `0.2088–1.8398x` |
+| `unity_fresnel` | `0.5275x` | `0.8512x` | `0.1904–1.6668x` |
+| `unity_nf` | `0.6901x` | `0.8806x` | `0.2322–2.2872x` |
+| `baseline_m_unity_nf` | `1.2271x` | `0.9777x` | `1.0967–1.4797x` |
+| `unity_exact` | `0.6654x` | `0.8761x` | `0.2906–2.2117x` |
+
+Attribution multipliers relative to the preceding substitution are `0.8937x`
+for Unity Fresnel, `1.3083x` for Unity N_R, and `1.7781x` for the baseline M
+substitution. Unity N_R is the strongest isolated improvement, but the broad
+angular range means this result does not justify a shipping shader change yet.
+
 ## Tier-2 azimuthal LUT
 
 The `FAST_MARSCHNER_LUT` variant (enum 6) is a separately selectable,
