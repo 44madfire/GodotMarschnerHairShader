@@ -12,13 +12,20 @@ extends SceneTree
 ## override is the fast Marschner shader with use_dual_scatter=true and the
 ## profile-driven strength/density controls bound; the Stage-B variant also
 ## forces use_preintegrated_dual_scatter=true, keeps use_azimuthal_lut=false
-## and use_environment=false, and binds a valid 64x64 committed LUT texture;
-## both previews render non-black output with a frozen Bayer phase
-## (freeze_bayer_phase, deterministic preview contract); and variant
-## identity is authoritative — the analytic/LUT/environment/Stage-A variants
-## force the preintegrated flag off regardless of the profile, while the
-## Stage-B variant forces dual+preintegrated on and azimuthal LUT/environment
-## off.
+## and use_environment=false, and binds a valid 64x64 committed LUT texture
+## with the resource metadata propagated to the IOR guard
+## (dual_scatter_lut_eta ~= 1.55) and the U-axis domain guard
+## (dual_scatter_lut_tau_max == 4.0, so the runtime never silently claims a
+## wider domain); both previews render non-black output with a frozen Bayer
+## phase (freeze_bayer_phase, deterministic preview contract); a deterministic
+## CPU directional proof reconstructs the four LUT channels with the
+## per-direction path responses and colored absorption, showing the
+## forward/backward split survives at the alignment endpoints c = -1 / 0 / +1
+## while the pure-forward endpoint matches the naive summed reconstruction;
+## and variant identity is authoritative — the analytic/LUT/environment/
+## Stage-A variants force the preintegrated flag off regardless of the
+## profile, while the Stage-B variant forces dual+preintegrated on and
+## azimuthal LUT/environment off.
 
 const INDIVIDUAL_GROOM := 1
 const FAST_MARSCHNER_ANALYTIC := 5
@@ -175,6 +182,8 @@ func _run() -> void:
 	var pre_lut := pre_lut_value as Texture2D
 	var pre_strength: Variant = preintegrated_material.get(&"shader_parameter/dual_scatter_strength")
 	var pre_density: Variant = preintegrated_material.get(&"shader_parameter/dual_scatter_density")
+	var pre_eta: Variant = preintegrated_material.get(&"shader_parameter/dual_scatter_lut_eta")
+	var pre_tau_max: Variant = preintegrated_material.get(&"shader_parameter/dual_scatter_lut_tau_max")
 	print("EVIDENCE stage_b use_dual_scatter=%s use_preintegrated_dual_scatter=%s use_azimuthal_lut=%s use_environment=%s dual_scatter_strength=%s dual_scatter_density=%s" % [pre_dual, pre_flag, pre_lut_flag, pre_env_flag, pre_strength, pre_density])
 	if pre_dual != true:
 		_fail("use_dual_scatter must be true on the preintegrated variant, got %s" % pre_dual)
@@ -190,6 +199,14 @@ func _run() -> void:
 		print("EVIDENCE stage_b dual_scatter_lut=%s %dx%d" % [pre_lut.resource_path, pre_lut.get_width(), pre_lut.get_height()])
 		if pre_lut.get_width() != 64 or pre_lut.get_height() != 64:
 			_fail("dual_scatter_lut must be the committed 64x64 LUT, got %dx%d" % [pre_lut.get_width(), pre_lut.get_height()])
+	# The IOR guard and the U-axis domain guard must carry the committed
+	# resource metadata: eta ~= 1.55 (so the LUT branch is active at the
+	# default runtime IOR) and tau_max == 4.0 (the reachable domain, so the
+	# runtime never silently claims a wider baked domain).
+	if not (pre_eta is float) or absf(float(pre_eta) - 1.55) > 0.0005:
+		_fail("dual_scatter_lut_eta must be the resource's baked eta ~= 1.55, got %s" % pre_eta)
+	if not (pre_tau_max is float) or float(pre_tau_max) != 4.0:
+		_fail("dual_scatter_lut_tau_max must be the resource's tau_max == 4.0, got %s" % pre_tau_max)
 	if not (pre_strength is float) or float(pre_strength) <= 0.0:
 		_fail("dual_scatter_strength must be bound to the profile value (> 0), got %s" % pre_strength)
 	if not (pre_density is float) or not (float(pre_density) > 0.0):
@@ -220,7 +237,36 @@ func _run() -> void:
 	if stage_b_diff > 0:
 		_fail("frame diff is %d after %d frames: the preintegrated dual preview Bayer phase should be frozen (freeze_bayer_phase)" % [stage_b_diff, PHASE_MOVE_FRAMES])
 
-	# 5) Variant identity is authoritative: with a profile that enables every
+	# 5) Deterministic directional proof (CPU side, no rendering dependency):
+	# the Stage-B runtime reconstructs the four LUT channels separately with
+	# the per-direction path responses and colored absorption, so the
+	# forward/backward split the committed LUT stores must survive at the
+	# alignment endpoints c = -1 / 0 / +1, while the pure-forward endpoint
+	# c = +1 must reproduce the naive summed R+G / B+A reconstruction exactly.
+	# This replicates the shader's bilinear sampling and Contract B math over
+	# the committed data bytes.
+	var lut_data: Resource = load(EXPECTED_LUT_PATH)
+	if lut_data == null:
+		_fail("committed dual LUT data failed to load for the directional proof")
+	else:
+		var data_bytes: Variant = lut_data.get(&"data")
+		var size_value: Variant = lut_data.get(&"size")
+		var eta_value: Variant = lut_data.get(&"eta")
+		var tau_max_value: Variant = lut_data.get(&"tau_max")
+		var contract_value: Variant = lut_data.get(&"contract")
+		print("EVIDENCE directional_proof lut=%s size=%s eta=%s tau_max=%s contract=%s" % [EXPECTED_LUT_PATH, size_value, eta_value, tau_max_value, contract_value])
+		if not (data_bytes is PackedByteArray) or not (size_value is int):
+			_fail("committed dual LUT data resource has an invalid layout for the directional proof")
+		elif not (eta_value is float) or absf(float(eta_value) - 1.55) > 0.0005:
+			_fail("committed dual LUT metadata eta must be ~= 1.55, got %s" % eta_value)
+		elif not (tau_max_value is float) or float(tau_max_value) != 4.0:
+			_fail("committed dual LUT metadata tau_max must be 4.0 (reachable domain), got %s" % tau_max_value)
+		elif String(contract_value) != "dual_scatter_contract_b_v2":
+			_fail("committed dual LUT contract identifier must be dual_scatter_contract_b_v2, got %s" % contract_value)
+		else:
+			_directional_proof(data_bytes, size_value)
+
+	# 6) Variant identity is authoritative: with a profile that enables every
 	# opt-in mode, the analytic variant forces all off, the LUT variant forces
 	# LUT on and the rest off, the Stage-A dual variant forces dual on and the
 	# Stage-B preintegrated path off, the environment variant forces
@@ -371,6 +417,100 @@ func _byte_diff(image_a: Image, image_b: Image) -> int:
 		if bytes_a[byte_index] != bytes_b[byte_index]:
 			differing += 1
 	return differing
+
+
+## Deterministic CPU directional proof of the Stage-B four-path contract over
+## the committed LUT bytes (no rendering dependency): bilinearly samples the
+## LUT exactly like the shader (half-texel inset, edge clamp, tau_max domain)
+## at the alignment endpoints c = -1 / 0 / +1 at a mid-domain tau_d = 2.0,
+## applies the four per-direction path responses with the colored sigma_a
+## (0.02, 0.15, 0.6, matching the validator's probe), and verifies:
+##   - the four-path energy differs between c = +1 and c = -1 and c = 0 is
+##     distinct from both endpoints (directional non-cancellation);
+##   - at c = -1 the four-path reconstruction differs from the naive summed
+##     R+G / B+A reconstruction (the split is not cancelled at runtime);
+##   - at c = +1 the four-path reconstruction equals the summed reconstruction
+##     exactly (only the forward channels are active there);
+##   - the forward channels dominate at c = +1 and the backward channels at
+##     c = -1.
+func _directional_proof(data_bytes: PackedByteArray, size: int) -> void:
+	var tau := 2.0
+	var sigma_a := Vector3(0.02, 0.15, 0.6)
+	var t1_forward := Vector3(exp(-sigma_a.x), exp(-sigma_a.y), exp(-sigma_a.z))
+	var t1_backward := Vector3(exp(-0.5 * sigma_a.x), exp(-0.5 * sigma_a.y), exp(-0.5 * sigma_a.z))
+	var t3_forward := Vector3(exp(-1.5 * sigma_a.x), exp(-1.5 * sigma_a.y), exp(-1.5 * sigma_a.z))
+	var t3_backward := Vector3(exp(-0.75 * sigma_a.x), exp(-0.75 * sigma_a.y), exp(-0.75 * sigma_a.z))
+	var directional_by_cosine := {}
+	var summed_by_cosine := {}
+	for cosine in [-1.0, 0.0, 1.0]:
+		var events := Vector4(
+			_sample_lut_channel(data_bytes, size, tau, cosine, 0),
+			_sample_lut_channel(data_bytes, size, tau, cosine, 1),
+			_sample_lut_channel(data_bytes, size, tau, cosine, 2),
+			_sample_lut_channel(data_bytes, size, tau, cosine, 3))
+		var directional := events.x * t1_forward + events.y * t1_backward \
+			+ events.z * t3_forward + events.w * t3_backward
+		var summed := (events.x + events.y) * t1_forward + (events.z + events.w) * t3_forward
+		directional_by_cosine[cosine] = directional
+		summed_by_cosine[cosine] = summed
+		print("EVIDENCE directional_proof tau_d=%.1f c=%+.1f four_path=(%.6f %.6f %.6f) summed=(%.6f %.6f %.6f)" % [tau, cosine, directional.x, directional.y, directional.z, summed.x, summed.y, summed.z])
+	var forward_energy: Vector3 = directional_by_cosine[1.0]
+	var backward_energy: Vector3 = directional_by_cosine[-1.0]
+	var zero_energy: Vector3 = directional_by_cosine[0.0]
+	if forward_energy.distance_to(backward_energy) < 1e-3:
+		_fail("four-path energy must differ between c=+1 and c=-1 at tau_d=%.1f (forward %s, backward %s)" % [tau, forward_energy, backward_energy])
+	if zero_energy.distance_to(forward_energy) < 1e-3 or zero_energy.distance_to(backward_energy) < 1e-3:
+		_fail("four-path energy at c=0 must differ from both endpoints at tau_d=%.1f (c=0 %s)" % [tau, zero_energy])
+	var summed_backward: Vector3 = summed_by_cosine[-1.0]
+	if backward_energy.distance_to(summed_backward) < 1e-3:
+		_fail("four-path reconstruction must differ from the summed R+G / B+A reconstruction at c=-1 (four_path %s, summed %s)" % [backward_energy, summed_backward])
+	var summed_forward: Vector3 = summed_by_cosine[1.0]
+	if forward_energy.distance_to(summed_forward) > 1e-6:
+		_fail("four-path reconstruction must equal the summed reconstruction at the pure-forward endpoint c=+1 (four_path %s, summed %s)" % [forward_energy, summed_forward])
+	var forward_events := Vector4(
+		_sample_lut_channel(data_bytes, size, tau, 1.0, 0),
+		_sample_lut_channel(data_bytes, size, tau, 1.0, 1),
+		_sample_lut_channel(data_bytes, size, tau, 1.0, 2),
+		_sample_lut_channel(data_bytes, size, tau, 1.0, 3))
+	var backward_events := Vector4(
+		_sample_lut_channel(data_bytes, size, tau, -1.0, 0),
+		_sample_lut_channel(data_bytes, size, tau, -1.0, 1),
+		_sample_lut_channel(data_bytes, size, tau, -1.0, 2),
+		_sample_lut_channel(data_bytes, size, tau, -1.0, 3))
+	if forward_events.x < forward_events.y - 1e-6 or forward_events.z < forward_events.w - 1e-6:
+		_fail("forward channels must dominate at c=+1 at tau_d=%.1f (%s)" % [tau, forward_events])
+	if backward_events.y < backward_events.x - 1e-6 or backward_events.w < backward_events.z - 1e-6:
+		_fail("backward channels must dominate at c=-1 at tau_d=%.1f (%s)" % [tau, backward_events])
+	print("EVIDENCE directional_proof ok=true")
+
+
+## GPU-matching bilinear sample of one channel over the committed RGBAF data
+## bytes: texel centers at (i + 0.5) / N, half-texel inset, edge clamping, and
+## the resource tau_max domain (4.0), replicating the shader's sampling.
+func _sample_lut_channel(data: PackedByteArray, size: int, tau: float, cosine: float, channel: int) -> float:
+	var tau_max := 4.0
+	var half: float = 0.5 / float(size)
+	var u: float = lerpf(half, 1.0 - half, clampf(tau / tau_max, 0.0, 1.0))
+	var v: float = lerpf(half, 1.0 - half, clampf(0.5 + 0.5 * cosine, 0.0, 1.0))
+	var pu: float = u * float(size) - 0.5
+	var pv: float = v * float(size) - 0.5
+	var x0 := int(floor(pu))
+	var y0 := int(floor(pv))
+	var tx: float = pu - float(x0)
+	var ty: float = pv - float(y0)
+	var result := 0.0
+	for dy in 2:
+		for dx in 2:
+			var texel_x: int = clampi(x0 + dx, 0, size - 1)
+			var texel_y: int = clampi(y0 + dy, 0, size - 1)
+			var weight := (tx if dx == 1 else 1.0 - tx) * (ty if dy == 1 else 1.0 - ty)
+			result += _texel_channel(data, size, texel_x, texel_y, channel) * weight
+	return result
+
+
+func _texel_channel(data: PackedByteArray, size: int, x: int, y: int, channel: int) -> float:
+	var byte_offset := (y * size + x) * 16 + channel * 4
+	return data.decode_float(byte_offset)
 
 
 func _fail(message: String) -> void:

@@ -243,6 +243,18 @@ func _set_uniform_if_declared(material: ShaderMaterial, shader: Shader, uniform_
 			continue
 		material.set("shader_parameter/%s" % String(uniform_name), value)
 		return
+	# Godot's uniform introspection does not expose declarations that arrive
+	# through a shared .gdshaderinc on every import path. The Fast wrapper
+	# (hair_marschner_fast.gdshader) declares no uniforms of its own: its whole
+	# interface comes from hair_marschner_fast_body.gdshaderinc and the fast
+	# common include, so freeze/gain settings would silently not bind on paths
+	# where introspection misses them. Use the adapter's canonical Fast list as
+	# a narrow fallback for that wrapper only; other comparison shaders remain
+	# gated by get_shader_uniform_list() as before.
+	var shader_path := shader.resource_path
+	if shader_path.begins_with("res://assets/hair/materials/shaders/hair_marschner_fast") \
+			and HairMaterialAdapter.FAST_MARSCHNER_UNIFORMS.has(uniform_name):
+		material.set("shader_parameter/%s" % String(uniform_name), value)
 
 
 func _build_interface() -> void:

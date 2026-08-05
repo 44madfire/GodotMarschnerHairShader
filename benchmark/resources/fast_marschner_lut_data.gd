@@ -17,7 +17,7 @@ class_name FastMarschnerLUTData
 ## validation.
 
 @export var size: int = 32
-@export var format: int = 22  # Image.FORMAT_RGBAF
+@export var format: int = Image.FORMAT_RGBAF
 @export var eta: float = 1.55
 @export var notes: String = ""
 @export var data: PackedByteArray = PackedByteArray()

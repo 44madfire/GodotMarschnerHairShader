@@ -6,7 +6,10 @@ extends SceneTree
 ## fast_marschner_dual_scatter_lut_64.res), bilinearly samples it exactly like
 ## the GPU sampler does (texel centers at (i + 0.5) / N, edge clamping, linear
 ## filtering), and validates:
-##   - committed metadata: the baked eta must be ~= 1.55 within 0.0005;
+##   - committed metadata: the baked eta must be ~= 1.55 within 0.0005, the
+##     tau_max domain must be 4.0 (the reachable [0, 4] domain for
+##     tau_d = 4 * local_density), and the contract identifier must match the
+##     generator's revision;
 ##   - finite/bounded data: every texel channel is finite and within [0, 1],
 ##     and the summed channel energy per texel stays within [0, 1];
 ##   - zero-density behavior: every channel is exactly zero at tau_d = 0
@@ -19,12 +22,22 @@ extends SceneTree
 ##     non-increasing, and the three-event weights never exceed the one-event
 ##     weights of the same direction (R >= B, G >= A) at every texel;
 ##   - max/RMS error against the generator's analytic formulas at a
-##     deterministic grid.
+##     deterministic grid;
+##   - directional non-cancellation: the four LUT channels are reconstructed
+##     separately at runtime with the per-direction path responses
+##     (T1f/T1b/T3f/T3b with a colored sigma_a), so the forward/backward split
+##     the LUT stores must survive at the alignment endpoints c = -1 / 0 / +1,
+##     while the pure-forward endpoint c = +1 must reproduce the naive summed
+##     reconstruction exactly.
 ##
 ## Run with: godot --headless --path <project> --script res://benchmark/tools/validate_marschner_dual_scatter_lut.gd
 
 const LUT_PATH := "res://benchmark/resources/luts/fast_marschner_dual_scatter_lut_64.res"
-const TAU_MAX := 16.0
+const ETA_EXPECTED := 1.55
+## Reachable tau_d domain upper bound (tau_d = 4 * local_density).
+const TAU_MAX := 4.0
+## Generator/runtime contract revision identifier carried by the resource.
+const CONTRACT_ID := "dual_scatter_contract_b_v2"
 const ONE_EVENT_PATH := 1.0
 const THREE_EVENT_PATH := 1.5
 ## Bilinear interpolation error of the smooth exp() channels is a fraction of a
@@ -61,14 +74,33 @@ func _initialize() -> void:
 	_size = lut_data.size
 	_data = lut_data.data
 	_eta = lut_data.eta
+	var tau_max: float = lut_data.tau_max
+	var contract_id: String = lut_data.contract
 
 	# 1) Committed metadata: the F0 baked into the texels must be the plan's
-	# fixed eta 1.55 (the shader guards LUT use with the same 0.0005 tolerance).
-	if absf(_eta - 1.55) > 0.0005:
-		push_error("LUT baked eta %.4f must be ~= 1.55 within 0.0005" % _eta)
+	# fixed eta 1.55 (the shader guards LUT use with the same 0.0005 tolerance),
+	# the tau_max domain must be the reachable 4.0 (the runtime maps the U axis
+	# with the resource's own tau_max via dual_scatter_lut_tau_max and must
+	# never silently claim a wider domain), and the contract identifier must
+	# match the generator's revision.
+	if absf(_eta - ETA_EXPECTED) > 0.0005:
+		push_error("LUT baked eta %.4f must be ~= %.2f within 0.0005" % [_eta, ETA_EXPECTED])
 		quit(1)
 		return
-	print("LUT_ETA eta=%.4f expected=1.55 tolerance=0.0005" % _eta)
+	if not is_finite(tau_max) or tau_max <= 0.0:
+		push_error("LUT tau_max %.4f must be finite and > 0" % tau_max)
+		quit(1)
+		return
+	if absf(tau_max - TAU_MAX) > 0.0005:
+		push_error("LUT tau_max %.4f must be ~= %.1f (the reachable tau_d = 4 * local_density domain)" % [tau_max, TAU_MAX])
+		quit(1)
+		return
+	if contract_id != CONTRACT_ID:
+		push_error("LUT contract identifier '%s' must be '%s'" % [contract_id, CONTRACT_ID])
+		quit(1)
+		return
+	print("LUT_ETA eta=%.4f expected=%.2f tolerance=0.0005" % [_eta, ETA_EXPECTED])
+	print("LUT_METADATA tau_max=%.1f contract=%s" % [tau_max, contract_id])
 
 	# 2) Finite / bounded data over the full texel grid.
 	var finite_ok := true
@@ -117,9 +149,9 @@ func _initialize() -> void:
 	var edge_ok := true
 	var edge_probes: Array = [
 		[Vector2(0.0, 0.0), Vector2(-1.0, 0.0)],
-		[Vector2(16.0, 0.0), Vector2(17.0, 0.0)],
-		[Vector2(4.0, -1.0), Vector2(4.0, -2.0)],
-		[Vector2(4.0, 1.0), Vector2(4.0, 2.0)],
+		[Vector2(4.0, 0.0), Vector2(5.0, 0.0)],
+		[Vector2(2.0, -1.0), Vector2(2.0, -2.0)],
+		[Vector2(2.0, 1.0), Vector2(2.0, 2.0)],
 	]
 	for probe in edge_probes:
 		var inside: Vector2 = probe[0]
@@ -144,7 +176,7 @@ func _initialize() -> void:
 	var sample_count := 0
 	var gated_count := 0
 	var worst_point := {"channel": -1, "tau_d": 0.0, "cosine": 0.0, "error": 0.0}
-	var taus: Array = [0.0, 0.125, 0.25, 0.5, 1.0, 2.0, 4.0, 8.0, 12.0, 16.0]
+	var taus: Array = [0.0, 0.125, 0.25, 0.5, 1.0, 2.0, 3.0, 3.5, 4.0]
 	var cosines: Array = [-1.0, -0.9, -0.75, -0.5, 0.0, 0.5, 0.75, 0.9, 1.0]
 	for tau_value in taus:
 		var tau: float = tau_value
@@ -186,8 +218,83 @@ func _initialize() -> void:
 		push_error("LUT interior-range max error exceeds the allowed threshold")
 		quit(1)
 		return
+
+	# 7) Directional non-cancellation evidence: the runtime reconstructs the
+	# four LUT channels separately with the per-direction path responses
+	# (Contract B four-path contract with a colored sigma_a), so the
+	# forward/backward split the LUT stores must survive at the alignment
+	# endpoints c = -1 / 0 / +1, while the pure-forward endpoint c = +1 must
+	# reproduce the naive summed reconstruction exactly (the backward channels
+	# are zero there, so the two reconstructions coincide).
+	var directional_ok := _check_directional_channels()
+	if not directional_ok:
+		push_error("LUT directional non-cancellation evidence failed")
+		quit(1)
+		return
 	print("DUAL_SCATTER_LUT_VALIDATION_OK")
 	quit(0)
+
+
+## Directional non-cancellation evidence for the four-path runtime contract:
+## samples the LUT at the alignment endpoints c = -1 / 0 / +1 at a mid-domain
+## tau_d (2.0), applies the per-direction path responses with a colored
+## sigma_a (0.02, 0.15, 0.6, matching the deterministic probe colors), and
+## verifies:
+##   - the four-path energy differs between c = -1 and c = +1 and c = 0 is
+##     distinct from both endpoints (the directional channels carry energy the
+##     old R+G / B+A summation cancelled);
+##   - at c = -1 the four-path reconstruction differs from the naive summed
+##     reconstruction, proving the split is not cancelled at runtime;
+##   - at c = +1 the four-path reconstruction equals the summed reconstruction
+##     exactly (only the forward channels are active there), proving the
+##     four-path reconstruction is a strict generalization of the summed one.
+func _check_directional_channels() -> bool:
+	var ok := true
+	var tau := 2.0
+	var sigma_a := Vector3(0.02, 0.15, 0.6)
+	var t1_forward := Vector3(exp(-sigma_a.x), exp(-sigma_a.y), exp(-sigma_a.z))
+	var t1_backward := Vector3(exp(-0.5 * sigma_a.x), exp(-0.5 * sigma_a.y), exp(-0.5 * sigma_a.z))
+	var t3_forward := Vector3(exp(-1.5 * sigma_a.x), exp(-1.5 * sigma_a.y), exp(-1.5 * sigma_a.z))
+	var t3_backward := Vector3(exp(-0.75 * sigma_a.x), exp(-0.75 * sigma_a.y), exp(-0.75 * sigma_a.z))
+	var directional_by_cosine := {}
+	var summed_by_cosine := {}
+	for cosine in [-1.0, 0.0, 1.0]:
+		var events := _sample_lut(tau, cosine)
+		var directional := events.x * t1_forward + events.y * t1_backward \
+			+ events.z * t3_forward + events.w * t3_backward
+		var summed := (events.x + events.y) * t1_forward + (events.z + events.w) * t3_forward
+		directional_by_cosine[cosine] = directional
+		summed_by_cosine[cosine] = summed
+		print("LUT_DIRECTIONAL tau_d=%.1f c=%+.1f four_path=(%.6f %.6f %.6f) summed=(%.6f %.6f %.6f)" % [tau, cosine, directional.x, directional.y, directional.z, summed.x, summed.y, summed.z])
+	var forward_energy: Vector3 = directional_by_cosine[1.0]
+	var backward_energy: Vector3 = directional_by_cosine[-1.0]
+	var zero_energy: Vector3 = directional_by_cosine[0.0]
+	if forward_energy.distance_to(backward_energy) < 1e-3:
+		ok = false
+		push_error("four-path energy must differ between c=+1 and c=-1 at tau_d=%.1f (forward %s, backward %s)" % [tau, forward_energy, backward_energy])
+	if zero_energy.distance_to(forward_energy) < 1e-3 or zero_energy.distance_to(backward_energy) < 1e-3:
+		ok = false
+		push_error("four-path energy at c=0 must differ from both endpoints at tau_d=%.1f (c=0 %s)" % [tau, zero_energy])
+	var summed_backward: Vector3 = summed_by_cosine[-1.0]
+	if backward_energy.distance_to(summed_backward) < 1e-3:
+		ok = false
+		push_error("four-path reconstruction must differ from the summed R+G / B+A reconstruction at c=-1 (four_path %s, summed %s)" % [backward_energy, summed_backward])
+	var summed_forward: Vector3 = summed_by_cosine[1.0]
+	if forward_energy.distance_to(summed_forward) > 1e-6:
+		ok = false
+		push_error("four-path reconstruction must equal the summed reconstruction at the pure-forward endpoint c=+1 (four_path %s, summed %s)" % [forward_energy, summed_forward])
+	# Channel-level directional dominance at the endpoints: at c=+1 the forward
+	# weights dominate (R >= G, B >= A), at c=-1 the backward weights dominate.
+	var forward_events := _sample_lut(tau, 1.0)
+	var backward_events := _sample_lut(tau, -1.0)
+	if forward_events.x < forward_events.y - 1e-6 or forward_events.z < forward_events.w - 1e-6:
+		ok = false
+		push_error("forward channels must dominate at c=+1 at tau_d=%.1f (%s)" % [tau, forward_events])
+	if backward_events.y < backward_events.x - 1e-6 or backward_events.w < backward_events.z - 1e-6:
+		ok = false
+		push_error("backward channels must dominate at c=-1 at tau_d=%.1f (%s)" % [tau, backward_events])
+	print("LUT_DIRECTIONAL ok=%s" % ok)
+	return ok
 
 
 ## Texel-grid monotonicity checks with a float32-noise tolerance:

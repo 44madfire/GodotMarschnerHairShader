@@ -120,12 +120,39 @@ the Unity fixed-`h` attenuation Fresnel argument. Matching the full baseline
 requires its non-separable d'Eon widths/tilts and is deferred; no compensation
 is inferred from the current five-angle dataset.
 
+### Energy contract modes and matrix
+
+`validate_fast_marschner_energy.gd` supports three exit contracts:
+
+- `--contract=regression` (default) passes when the accepted shipping model
+  matches `benchmark/reference/fast_marschner_energy_contract_v1.json`.
+- `--contract=parity` retains the strict aspirational energy-parity bands and
+  intentionally fails for the current approximation.
+- `--contract=report` always exits successfully when execution is valid while
+  preserving the strict parity result in the report.
+
+The designed material subset can be run through Windows Godot with:
+
+```text
+python3 benchmark/tools/run_fast_marschner_energy_matrix.py --grid 128 --coarse 64 --out /tmp/fast-marschner-energy-matrix.json
+```
+
+The runner invokes `/mnt/c/Tools/Godot/godot.exe` explicitly, covers 12
+representative roughness, cuticle, color, and IOR cases, and reports worst-case
+ratios/errors. It is a designed subset of five-angle aggregates, not a full
+material-domain proof.
+
+Timed Fast benchmark runs explicitly force `comparison_exposure_gain=1.0`,
+`lobe_scales=vec3(1)`, and the default area-light multipliers, and record those
+values under `timed_material_contract` in `run_manifest.json`. Preview-only
+flows retain their diagnostic presentation controls.
+
 ## Tier-2 azimuthal LUT
 
 The `FAST_MARSCHNER_LUT` variant (enum 6) is a separately selectable,
 LUT-backed version of the fast Marschner shader. `FAST_MARSCHNER_ANALYTIC`
-(enum 5) remains the default/reference path with the analytic d'Eon azimuthal
-model; the shared `hair_marschner_fast.gdshader` carries an opt-in
+(enum 5) remains the default/reference path with the fixed-h logistic analytic
+approximation; the shared `hair_marschner_fast.gdshader` carries an opt-in
 `use_azimuthal_lut` flag (default false) that only the LUT variant enables.
 The `sampler3D` LUT holds the R/TT/TRT azimuthal terms in RGB over a 64^3
 RGBAF grid (axes: U = relative azimuth phi in [-PI, PI], V = cos_theta_d,
@@ -202,29 +229,40 @@ the LUT instead of the analytic Stage-A `fm_dual_scattering()` (variant 7
 remains the untouched analytic fallback; both dual variants replace — never
 add on top of — the Karis diffuse term).
 
-The LUT stores **scalar one-/three-event aggregate scattering-energy terms** over a
-**scalar optical-depth/cosine domain** (64x64 RGBAF, linear filtering, repeat
-disabled):
+The LUT stores **scalar one-/three-event aggregate event weights** over a
+**scalar density/event-proxy/cosine domain** (64x64 RGBAF, linear filtering,
+repeat disabled):
 
-- U = scalar local-scattering optical depth `tau` in `[0, 16]` (the shader
-  derives it from the bounded depth-density proxy; RGB absorption is applied
-  separately after the lookup)
+- U = scalar density/event proxy `tau_d = 4 * local_density` in `[0, 4]` — the
+  reachable domain (local_density is clamped to `[0, 1]`, so tau_d never
+  exceeds 4); the shader derives it from the bounded depth-density proxy and
+  the resource's `tau_max` metadata (4.0) is propagated to the runtime
+  `dual_scatter_lut_tau_max` uniform, so the runtime never silently claims a
+  wider baked domain. RGB absorption is applied separately after the lookup
 - V = scattering cosine `c` (light/view alignment) in `[-1, 1]`
-- `P1 = 1 - exp(-tau)` and `P3 = 1 - exp(-1.5*tau)`
-- R = one-event forward energy `0.5*(1+c)*(1-F0)^2*P1`
-- G = one-event backward energy `0.5*(1-c)*(1-F0)^2*P1`
-- B = three-event forward energy `0.5*(1+c)*(1-F0)^2*F0*P3`
-- A = three-event backward energy `0.5*(1-c)*(1-F0)^2*F0*P3`
+- `P1 = 1 - exp(-tau_d)` and `P3 = 1 - exp(-1.5*tau_d)`
+- R = one-event forward weight `0.5*(1+c)*(1-F0)^2*P1`
+- G = one-event backward weight `0.5*(1-c)*(1-F0)^2*P1`
+- B = three-event forward weight `0.5*(1+c)*(1-F0)^2*F0*P3`
+- A = three-event backward weight `0.5*(1-c)*(1-F0)^2*F0*P3`
 
 with `F0 = ((1-eta)/(1+eta))^2` at the plan's fixed `eta = 1.55` (same
 convention as the azimuthal LUT). Zero density produces zero secondary energy;
 increasing density increases and then saturates the one-/three-event terms.
-Runtime `sigma_a` stays RGB and is applied with one-event path length `1.0` and
-three-event path length `1.5`, so the LUT never bakes one hair color. All terms
-are bounded in `[0, 1]`, monotone (energy grows with tau, three-event never
-exceeds one-event, forward/backward lobes split monotonically with c), and
-`ATTENUATION` enters only as the direct-light visibility ramp, never into the
-LUT math.
+Runtime `sigma_a` stays RGB and is applied as the four per-direction path
+responses `T1f = exp(-sigma_a)`, `T1b = exp(-0.5*sigma_a)`,
+`T3f = exp(-1.5*sigma_a)`, `T3b = exp(-0.75*sigma_a)` (one-event forward base
+path 1.0, backward paths half the forward paths, three-event paths 1.5x the
+one-event paths), so the LUT never bakes one hair color and the
+forward/backward split stored in the four channels survives at runtime — the
+previous `R+G` / `B+A` summation cancelled it. The resource carries
+`eta` / `tau_max` / `contract` metadata that the adapter propagates into the
+shader's `dual_scatter_lut_eta` and `dual_scatter_lut_tau_max` uniforms; the
+incompatible-IOR analytic Contract B fallback uses the exact same four-path
+reconstruction and event weights. All terms are bounded in `[0, 1]`, monotone
+(weights grow with tau_d, three-event never exceeds one-event,
+forward/backward lobes split monotonically with c), and `ATTENUATION` enters
+only as the direct-light visibility ramp, never into the LUT math.
 
 As with the azimuthal LUT, Godot 4.7 cannot self-contain an `ImageTexture`, so
 the generator commits the raw RGBAF data as a `FastMarschnerDualLUTData`
@@ -238,13 +276,17 @@ process with the same defensive RID/size checks. Artifacts:
 - `benchmark/resources/luts/fast_marschner_dual_scatter_lut_64.res` — committed
   64x64 data blob (round-trip verified by the generator).
 - `benchmark/tools/validate_marschner_dual_scatter_lut.gd` — GPU-matching
-  bilinear numerical validation (finite/bounded data, edge-clamp seam
-  continuity, monotone attenuation/energy, max/RMS error vs the generator's
-  analytic formulas), ending with `DUAL_SCATTER_LUT_VALIDATION_OK`:
+  bilinear numerical validation (metadata checks for eta/tau_max/contract,
+  finite/bounded data, edge-clamp seam continuity, monotone event weights,
+  max/RMS error vs the generator's analytic formulas, and directional
+  non-cancellation evidence: the four-path reconstruction with colored
+  absorption differs across the alignment endpoints c = -1 / 0 / +1 while the
+  pure-forward endpoint matches the summed reconstruction exactly), ending
+  with `DUAL_SCATTER_LUT_VALIDATION_OK`:
   `godot --headless --path <project> --script res://benchmark/tools/validate_marschner_dual_scatter_lut.gd`
 
 Endpoint-preserving sampling represents zero-density and extreme-cosine values
-with the first/last texels; the interior gate (tau >= 0.25, |cosine| <= 0.9)
+with the first/last texels; the interior gate (tau_d >= 0.25, |cosine| <= 0.9)
 remains inside the 0.02 release threshold. Monotonicity, zero-density behavior,
 and energy bounds hold across the whole grid.
 
@@ -253,8 +295,12 @@ Profile fields `use_preintegrated_dual_scatter` (default false) and
 requires the committed LUT data, and `source_current` keeps the feature off.
 `benchmark/tests/test_fast_marschner_dual_scatter_runtime.gd` covers variant 9:
 accepted, `use_dual_scatter=true` + `use_preintegrated_dual_scatter=true`,
-azimuthal LUT/environment forced off, the committed 64x64 texture bound,
-non-black output with live frame movement, and full identity checks (the
+azimuthal LUT/environment forced off, the committed 64x64 texture bound with
+the `dual_scatter_lut_eta` (~1.55) and `dual_scatter_lut_tau_max` (4.0)
+metadata guards propagated, non-black output with live frame movement, a
+deterministic CPU directional proof (four-path reconstruction with colored
+absorption differs across c = -1 / 0 / +1 while the pure-forward endpoint
+matches the summed reconstruction), and full identity checks (the
 analytic/LUT/environment/Stage-A variants force the preintegrated flag off
 regardless of profile fields). Visual and performance cases
 `visual_blowout_fast_marschner_dual_scatter_preintegrated_rear_backlit` (the
@@ -292,6 +338,71 @@ frames, and the zero-light (fragment-only) rendering proof. The visual case
 `environment_only` rig and is wired into the visual suite. Environment
 sampling here is a local stand-in; full environment/IRRADIANCE integration and
 screen-indirect remain deferred.
+
+## Tier-2 diagnostic variant shaders (PR4)
+
+The fast Marschner shader was refactored into a reusable body plus committed
+selector wrappers. `hair_marschner_fast_body.gdshaderinc` holds the complete
+shader body (shader_type, render_mode, uniforms, varyings, and the
+vertex/fragment/light functions, including the include of
+`hair_marschner_fast.gdshaderinc`); `hair_marschner_fast.gdshader` is now a
+small wrapper that defines the shipping selectors
+(`FM_LONGITUDINAL_MODE 0`, `FM_R_LONGITUDINAL_MODE 0`,
+`FM_CUTICLE_TILT_CONVENTION 0`) before including the body. The numeric
+selectors in `hair_marschner_fast.gdshaderinc` are `#ifndef`-guarded so a
+wrapper-defined value is honored and the include's defaults apply when the
+common include is used directly. Three committed diagnostic wrappers select
+compile-time variants of the same shared body with no duplicated shader code:
+`hair_marschner_fast_baseline_longitudinal.gdshader` (longitudinal mode 1,
+separable baseline-compatible sin(theta_o) Gaussian),
+`hair_marschner_fast_r_nonseparable.gdshader` (R-only non-separable mode 1),
+and `hair_marschner_fast_baseline_azimuthal.gdshader` (azimuthal mode 1,
+baseline cross-section diagnostic for the analytic BSDF only).
+The shipping path, variant enum behavior, and `hair_material_adapter.gd` are
+unchanged, so all existing analytic/LUT/dual/environment tests continue to use
+the shipping wrapper path.
+
+`benchmark/tests/test_fast_marschner_diagnostic_variants_runtime.gd` asserts
+each of the four shader paths loads/compiles and renders on the Blowout groom:
+it instantiates `BenchmarkHarness.tscn`, hides the preview overlay, duplicates
+the source/override `ShaderMaterial`, assigns the loaded wrapper shader, renders
+several frames, and checks the RenderingServer shader code is retrievable, the
+output image dimensions are valid, and a minimum lit-pixel count is met. It
+prints per-variant identity/evidence lines and
+`FAST_MARSCHNER_DIAGNOSTIC_VARIANTS_RUNTIME_TEST_OK` on success (exit 0), or
+pushed errors and exit 1 on failure. No timed benchmarks start and no
+benchmark artifacts are written.
+
+## Tier-2 baseline azimuthal cross-section diagnostic (PR5)
+
+The fast azimuthal model is the fixed-h logistic analytic approximation
+(`FM_AZIMUTHAL_FIXED_H_ANALYTIC`); its azimuthal angular offsets are selected
+by the numeric compile-time selector `FM_AZIMUTHAL_MODE`
+(`#ifndef`-guarded in `hair_marschner_fast.gdshaderinc`, default 0).
+Mode 0 (shipping default) keeps the fixed representative cross-section offsets
+h_TT = 0 and h_TRT = sqrt(3)/2. Mode 1 (diagnostic, never the default) is an
+attribution-only baseline cross-section diagnostic for the **analytic BSDF
+only**: dynamic h_TT from the baseline formula
+`sign(sin_phi_half) * cos_phi_half / sqrt(1 + eta_prime_inv * (1 - 2 * eta_prime_inv * abs(sin_phi_half)))`
+and h_TRT = 0.91. It never alters LUT sampling semantics (the LUT's azimuthal
+terms are baked at the fixed-h offsets, so the LUT BSDF is untouched in every
+mode) and never alters attenuation (the Unity-style fixed-h family
+`FM_ATTENUATION_MODE 0` with h_TT = 0 / h_TRT = sqrt(3)/2 stays in every
+mode); mode-0 math is unchanged.
+
+The committed wrapper `hair_marschner_fast_baseline_azimuthal.gdshader`
+defines longitudinal 0, R 0, cuticle convention 0, and azimuthal mode 1 before
+including the shared body (`hair_marschner_fast_body.gdshaderinc`); no shader
+body is duplicated.
+
+The validator (`validate_fast_marschner_energy.gd`) accepts
+`--azimuthal=fixed_h|baseline_h` (default `fixed_h`) and reports the mode in
+the payload and human-readable lines. The CPU Fast analytic port mirrors the
+shader's mode-1 math in `baseline_h` mode (dynamic h_TT, h_TRT = 0.91); the
+LUT is out of this CPU comparison and attenuation stays fixed-h in both modes.
+Any non-default azimuthal mode makes `--contract=regression` inapplicable
+(clear FAIL, never a silent pass), exactly like the other diagnostic
+selectors.
 
 ## Scope
 

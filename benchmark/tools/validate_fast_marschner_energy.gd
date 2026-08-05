@@ -57,8 +57,16 @@ extends SceneTree
 ##     self-check, NOT the energy gate: image-space Karis screenshots are
 ##     modulated by coverage, alpha hashing, tone mapping, and shadow
 ##     ATTENUATION, so screenshot ratios cannot gate BSDF energy.
-##   - Single fixed parameter set (Blowout clone material, eta 1.55) and the
-##     five theta_i values required by Phase 4.
+##   - Default single parameter set (Blowout clone material, eta 1.55), with
+##     CLI-selectable material inputs (--eta, --beta-m, --beta-n, --albedo,
+##     --cuticle) whose defaults are identical; any non-default material makes
+##     --contract=regression inapplicable. The five theta_i values required by
+##     Phase 4.
+##   - --decomposition=full|m|n|a|mn|ma subsets the per-lobe M*N*A factors
+##     (m = longitudinal, n = azimuthal distribution, a = RGB attenuation;
+##     R has n = Fresnel/cosine lobe and a = 1) as diagnostic/report-only
+##     measurements. "full" reproduces the shipping byte-for-byte; non-full
+##     decompositions never pass --contract=regression.
 ##
 ## Run with (Windows Godot only, never the Linux binary):
 ##   /mnt/c/Tools/Godot/godot.exe --headless \
@@ -67,15 +75,62 @@ extends SceneTree
 ## Optional user args: --grid=512 (fine grid per axis), --coarse=128,
 ## --cuticle=<radians> (runtime cuticle tilt; default CUTICLE_TILT, pass 0.0
 ## for the alpha=0 control run without editing the source),
+## --eta=<float> (runtime refractive index; default 1.55),
+## --beta-m=<float>, --beta-n=<float> (runtime artist-facing roughnesses;
+## defaults 0.2 and 0.75),
+## --albedo=r,g,b (runtime RGB base color; default
+## 0.24774602,0.12215338,0.09630052),
+## --decomposition=full|m|n|a|mn|ma (per-lobe factor subset; default full =
+## shipping M*N*A byte-equivalent. m = longitudinal only (N=1, A=1), n =
+## azimuthal distribution only (M=1, A=1), a = RGB attenuation only (M=1,
+## N=1), mn = M*N (A=1), ma = M*A (N=1). R's n is its scalar Fresnel/cosine
+## lobe and a = 1; TT/TRT split the logistic distribution from the RGB
+## attenuation before combining. Diagnostic/report-only: any non-full
+## decomposition fails --contract=regression as inapplicable),
 ## --longitudinal=unity|baseline (fast longitudinal model; default unity =
 ## FM_LONGITUDINAL_MODE 0 theta_h Gaussian, baseline = FM_LONGITUDINAL_MODE 1
 ## baseline-compatible separable sin(theta_o) cone Gaussian diagnostic),
 ## --r-longitudinal=standard|nonseparable (fast R longitudinal model; default
 ## standard = FM_R_LONGITUDINAL_MODE 0 shared longitudinal R path, nonseparable
 ## = FM_R_LONGITUDINAL_MODE 1 cheap non-separable R-only diagnostic override,
-## NOT the full d'Eon 2014 non-separable baseline; no compensation).
+## NOT the full d'Eon 2014 non-separable baseline; no compensation),
+## --azimuthal=fixed_h|baseline_h (fast azimuthal cross-section model for the
+## CPU analytic port; default fixed_h = FM_AZIMUTHAL_MODE 0 shipping fixed-h
+## logistic analytic approximation with h_TT = 0 and h_TRT = sqrt(3)/2,
+## baseline_h = FM_AZIMUTHAL_MODE 1 diagnostic with the baseline dynamic
+## h_TT = sign(sin_phi_half) * cos_phi_half / sqrt(1 + eta_prime_inv * (1 -
+## 2 * eta_prime_inv * abs(sin_phi_half))) and h_TRT = 0.91. Diagnostic/
+## report-only: baseline_h makes --contract=regression inapplicable. The LUT is
+## out of this CPU comparison (no LUT path exists in the harness) and
+## attenuation keeps the shipping fixed-h family in both modes),
+## --contract=parity|regression|report (acceptance gate; default regression =
+## compare the current run against the checked-in JSON reference
+## benchmark/reference/fast_marschner_energy_contract_v1.json, pass when the
+## measured total/R/TT/TRT ratios match expected within ratio_absolute and the
+## grid drift is <= grid_drift_max, nonzero exit on mismatch or invalid
+## execution; parity = the strict Phase-4 bands below with a nonzero exit on
+## failure; report = run and report, always exit 0 when execution/report
+## generation succeeds, with the parity fields reported unweakened),
+## --reference=<path> (regression reference override; default the checked-in
+## contract v1 file). Regression mode additionally verifies the reference's
+## model contract selectors/parameters against the running configuration
+## (longitudinal_mode 0/unity, r_longitudinal_mode 0/standard, azimuthal_mode
+## fixed_h, cuticle convention 0/baseline, attenuation unity_fixed_h, eta 1.55,
+## raw beta M/N 0.2/0.75, cuticle 0.087, default albedo, unit exposure/lobe
+## scales, no compensation), so unsupported CLI overrides
+## (--longitudinal=baseline, --r-longitudinal=nonseparable,
+## --azimuthal=baseline_h, --cuticle != 0.087, --eta != 1.55,
+## --beta-m != 0.2, --beta-n != 0.75, --albedo != default,
+## --decomposition != full) FAIL clearly as inapplicable instead of silently
+## accepting a different shader mode.
 
 # --- Shared material / model parameters (Blowout clone, deterministic) ---
+# These constants are the SHIPPING DEFAULTS: the runtime vars below (_eta,
+# _albedo, _beta_m_raw, _beta_n_raw, _cuticle_tilt, ...) are seeded from them
+# and the CLI-selectable ones can be overridden. Every port, derivation and
+# report reads the runtime vars, never the constants, so a non-default
+# material propagates everywhere and --contract=regression stays pinned to
+# the default reference configuration.
 const ETA := 1.55
 const ALBEDO := Vector3(0.24774602, 0.12215338, 0.09630052)
 const BETA_M_RAW := 0.2   # longitudinal_roughness (artist-facing)
@@ -107,6 +162,26 @@ const TOTAL_RATIO_MAX := 1.02
 const LOBE_RATIO_MIN := 0.95
 const LOBE_RATIO_MAX := 1.05
 
+# --- Regression contract (checked-in JSON reference) ---
+## Contract version of benchmark/reference/fast_marschner_energy_contract_v1.json.
+const CONTRACT_VERSION := "fast_marschner_energy_contract_v1"
+## Default regression reference; override with --reference=<path>.
+const DEFAULT_REFERENCE_PATH := "res://benchmark/reference/fast_marschner_energy_contract_v1.json"
+## Accepted --contract modes; unknown values fall back to the shipping default
+## (regression) so a typo can never silently select a different gate.
+const CONTRACT_MODES: Array = ["parity", "regression", "report"]
+## Accepted --decomposition modes; unknown values fall back to the shipping
+## default (full) so a typo can never silently run a different factor subset.
+const DECOMPOSITION_MODES: Array = ["full", "m", "n", "a", "mn", "ma"]
+## Accepted --azimuthal modes; unknown values fall back to the shipping
+## default (fixed_h) so a typo can never silently run a different model.
+const AZIMUTHAL_MODES: Array = ["fixed_h", "baseline_h"]
+## Shipping shader selectors the regression reference is pinned to (hardcoded
+## in this harness; compared against the JSON so a reference can never be
+## silently applied to a different shader mode).
+const CUTICLE_CONVENTION := 0             # FM_CUTICLE_TILT_CONVENTION (baseline convention)
+const ATTENUATION_MODE := "unity_fixed_h" # FM_ATTENUATION_MODEL_UNITY fixed-h branch
+
 # --- Ratio audit diagnostics (additional evidence, NOT an acceptance gate) ---
 ## Masking threshold for the per-theta_i ratio audit, as a fraction of the
 ## maximum per-incoming-angle baseline total: an entry is
@@ -119,8 +194,23 @@ var _beta_m := 0.0 # reparameterized longitudinal roughness (used by widths)
 var _beta_n := 0.0 # reparameterized azimuthal roughness (used by logistic)
 var _sigma_a := Vector3.ZERO
 var _cuticle_tilt := CUTICLE_TILT # runtime cuticle tilt (radians), --cuticle= override
+# Runtime material inputs (CLI-selectable where noted; shipping defaults from
+# the consts above, so existing behavior is unchanged with no overrides). All
+# ports, derivations and reports read these runtime vars.
+var _eta := ETA                     # --eta=<float>
+var _albedo := ALBEDO               # --albedo=r,g,b
+var _beta_m_raw := BETA_M_RAW       # --beta-m=<float>
+var _beta_n_raw := BETA_N_RAW       # --beta-n=<float>
+var _specular := SPECULAR           # (not CLI-selectable)
+var _lobe_scales := LOBE_SCALES     # (not CLI-selectable)
+var _exposure_gain := EXPOSURE_GAIN # (not CLI-selectable)
+var _seed := SEED                   # (not CLI-selectable)
+var _decomposition := "full" # --decomposition=full|m|n|a|mn|ma (shipping default: full)
 var _longitudinal_mode := "unity" # fast longitudinal model, --longitudinal=unity|baseline
 var _r_longitudinal_mode := "standard" # fast R longitudinal model, --r-longitudinal=standard|nonseparable
+var _azimuthal_mode := "fixed_h" # fast azimuthal cross-section model, --azimuthal=fixed_h|baseline_h
+var _contract_mode := "regression" # --contract=parity|regression|report (shipping default: regression)
+var _reference_path := DEFAULT_REFERENCE_PATH # --reference=<path> override
 
 
 func _initialize() -> void:
@@ -135,34 +225,67 @@ func _initialize() -> void:
 			coarse = int(argument.trim_prefix("--coarse=").strip_edges())
 		elif argument.begins_with("--cuticle="):
 			_cuticle_tilt = float(argument.trim_prefix("--cuticle=").strip_edges())
+		elif argument.begins_with("--eta="):
+			_eta = float(argument.trim_prefix("--eta=").strip_edges())
+		elif argument.begins_with("--beta-m="):
+			_beta_m_raw = float(argument.trim_prefix("--beta-m=").strip_edges())
+		elif argument.begins_with("--beta-n="):
+			_beta_n_raw = float(argument.trim_prefix("--beta-n=").strip_edges())
+		elif argument.begins_with("--albedo="):
+			var albedo_parts := argument.trim_prefix("--albedo=").strip_edges().split(",")
+			if albedo_parts.size() == 3:
+				_albedo = Vector3(float(albedo_parts[0]), float(albedo_parts[1]), float(albedo_parts[2]))
+		elif argument.begins_with("--decomposition="):
+			_decomposition = argument.trim_prefix("--decomposition=").strip_edges()
 		elif argument.begins_with("--longitudinal="):
 			_longitudinal_mode = argument.trim_prefix("--longitudinal=").strip_edges()
 		elif argument.begins_with("--r-longitudinal="):
 			_r_longitudinal_mode = argument.trim_prefix("--r-longitudinal=").strip_edges()
+		elif argument.begins_with("--azimuthal="):
+			_azimuthal_mode = argument.trim_prefix("--azimuthal=").strip_edges()
+		elif argument.begins_with("--contract="):
+			_contract_mode = argument.trim_prefix("--contract=").strip_edges()
+		elif argument.begins_with("--reference="):
+			_reference_path = argument.trim_prefix("--reference=").strip_edges()
 	# Unknown values fall back to the shipping default (unity/standard) so a
 	# typo can never silently run a different model.
 	if _longitudinal_mode != "unity" and _longitudinal_mode != "baseline":
 		_longitudinal_mode = "unity"
 	if _r_longitudinal_mode != "standard" and _r_longitudinal_mode != "nonseparable":
 		_r_longitudinal_mode = "standard"
+	# Unknown azimuthal values fall back to the shipping default (fixed_h) so a
+	# typo can never silently run a different model.
+	if not AZIMUTHAL_MODES.has(_azimuthal_mode):
+		_azimuthal_mode = "fixed_h"
+	# Unknown decomposition values fall back to the shipping default (full) so
+	# a typo can never silently run a different factor subset.
+	if not DECOMPOSITION_MODES.has(_decomposition):
+		_decomposition = "full"
+	# Unknown contract modes fall back to the shipping default (regression) so
+	# a typo can never silently select a different acceptance gate.
+	if not CONTRACT_MODES.has(_contract_mode):
+		_contract_mode = "regression"
 
-	# Shared material derivation, identical on both sides.
-	_beta_m = maxf(1e-3, 1.0 * (0.726 * BETA_M_RAW + 0.812 * BETA_M_RAW * BETA_M_RAW
-		+ 3.7 * pow(BETA_M_RAW, 20.0)))
-	_beta_n = maxf(1e-3, 1.0 * (0.265 * BETA_N_RAW + 1.194 * BETA_N_RAW * BETA_N_RAW
-		+ 5.372 * pow(BETA_N_RAW, 22.0)))
-	_sigma_a = _sigma_from_albedo(ALBEDO, BETA_N_RAW)
+	# Shared material derivation, identical on both sides. Uses the runtime
+	# material inputs so non-default --eta/--beta-m/--beta-n/--albedo
+	# propagate into every port, report and the sigma derivation.
+	_beta_m = maxf(1e-3, 1.0 * (0.726 * _beta_m_raw + 0.812 * _beta_m_raw * _beta_m_raw
+		+ 3.7 * pow(_beta_m_raw, 20.0)))
+	_beta_n = maxf(1e-3, 1.0 * (0.265 * _beta_n_raw + 1.194 * _beta_n_raw * _beta_n_raw
+		+ 5.372 * pow(_beta_n_raw, 22.0)))
+	_sigma_a = _sigma_from_albedo(_albedo, _beta_n_raw)
 
 	var report := {}
 	report["tool"] = "validate_fast_marschner_energy"
 	report["scope"] = "Phase 4 integrated-energy comparison, no LUT/dual/environment/compensation"
 	report["longitudinal_mode"] = _longitudinal_mode
 	report["r_longitudinal_mode"] = _r_longitudinal_mode
+	report["azimuthal_mode"] = _azimuthal_mode
 	report["parameters"] = {
-		"eta": ETA,
-		"albedo": [ALBEDO.x, ALBEDO.y, ALBEDO.z],
-		"longitudinal_roughness_raw": BETA_M_RAW,
-		"azimuthal_roughness_raw": BETA_N_RAW,
+		"eta": _eta,
+		"albedo": [_albedo.x, _albedo.y, _albedo.z],
+		"longitudinal_roughness_raw": _beta_m_raw,
+		"azimuthal_roughness_raw": _beta_n_raw,
 		"longitudinal_roughness_reparameterized": _beta_m,
 		"azimuthal_roughness_reparameterized": _beta_n,
 		"cuticle_tilt_alpha": _cuticle_tilt,
@@ -174,10 +297,15 @@ func _initialize() -> void:
 		"fast_r_longitudinal_model": ("shared longitudinal R path (FM_R_LONGITUDINAL_MODE 0, shipping default)"
 			if _r_longitudinal_mode == "standard" else
 			"cheap non-separable R diagnostic (FM_R_LONGITUDINAL_MODE 1, R-only override after the shared longitudinal call: z_r = cos_phi_half, beta_r = sqrt(2)*z_r*beta_m with a positive floor, sin_theta_cone_r = clamp(-sin_theta_i + 2*z_r*cuticle_tilt, -1, 1) in sin(theta_o) space; NOT the full d'Eon 2014 non-separable baseline, no compensation)"),
-		"specular": SPECULAR,
-		"lobe_scales": [1.0, 1.0, 1.0],
-		"comparison_exposure_gain": EXPOSURE_GAIN,
-		"roughness_seed": SEED,
+		"azimuthal_mode": _azimuthal_mode,
+		"fast_azimuthal_model": ("fixed-h logistic analytic approximation (FM_AZIMUTHAL_MODE 0 / FM_AZIMUTHAL_FIXED_H_ANALYTIC, shipping default: h_TT = 0, h_TRT = sqrt(3)/2)"
+			if _azimuthal_mode == "fixed_h" else
+			"baseline cross-section diagnostic for the ANALYTIC BSDF only (FM_AZIMUTHAL_MODE 1 / FM_AZIMUTHAL_BASELINE_H_ANALYTIC: dynamic h_TT = sign(sin_phi_half) * cos_phi_half / sqrt(1 + eta_prime_inv * (1 - 2 * eta_prime_inv * abs(sin_phi_half))), h_TRT = 0.91; LUT sampling and the fixed-h attenuation family unchanged)"),
+		"decomposition": _decomposition,
+		"specular": _specular,
+		"lobe_scales": [_lobe_scales.x, _lobe_scales.y, _lobe_scales.z],
+		"comparison_exposure_gain": _exposure_gain,
+		"roughness_seed": _seed,
 		"absorption_formula": "sigma_a = (ln(albedo) / c(beta_n_raw))^2 (Chiang 2016)",
 		"sigma_a": [_sigma_a.x, _sigma_a.y, _sigma_a.z],
 		"baseline_alpha_passed_to_bsdf": -_cuticle_tilt,
@@ -185,6 +313,31 @@ func _initialize() -> void:
 		"fast_lobe_variance_stddev": [1.0 * _beta_m, 0.5 * _beta_m, 2.0 * _beta_m],
 		"baseline_h_trt": H_TRT_BASELINE,
 		"fast_h_trt": H_TRT_FAST,
+	}
+	report["runtime_parameters"] = {
+		"eta": _eta,
+		"albedo": [_albedo.x, _albedo.y, _albedo.z],
+		"beta_m_raw": _beta_m_raw,
+		"beta_n_raw": _beta_n_raw,
+		"cuticle_tilt_alpha": _cuticle_tilt,
+		"specular": _specular,
+		"lobe_scales": [_lobe_scales.x, _lobe_scales.y, _lobe_scales.z],
+		"exposure_gain": _exposure_gain,
+		"roughness_seed": _seed,
+		"longitudinal_mode": _longitudinal_mode,
+		"r_longitudinal_mode": _r_longitudinal_mode,
+		"azimuthal_mode": _azimuthal_mode,
+		"decomposition": _decomposition,
+		"cli_overridable": ["--eta", "--albedo", "--beta-m", "--beta-n", "--cuticle",
+			"--decomposition", "--longitudinal", "--r-longitudinal", "--azimuthal"],
+		"note": "Runtime material/model inputs; shipping defaults match the reference material exactly. --contract=regression verifies these against the reference, so any non-default value makes the reference inapplicable (FAIL, never a silent pass).",
+	}
+	report["decomposition"] = {
+		"mode": _decomposition,
+		"semantics": "per-lobe M*N*A factor subsets: m = longitudinal only (N=1, A=1); n = azimuthal distribution only (M=1, A=1); a = attenuation only (M=1, N=1); mn = M*N (A=1); ma = M*A (N=1); full = M*N*A",
+		"per_lobe_factors": "R: m = longitudinal, n = scalar Fresnel cosine lobe, a = Vector3(1,1,1). TT/TRT: m = longitudinal, n = logistic distribution, a = RGB attenuation (logistic split from attenuation before combining). The lobe scale multiplies the longitudinal m factor in every mode; scalar factors are replicated to RGB explicitly (results stay Vector3 per lobe).",
+		"full_byte_equivalent": _decomposition == "full",
+		"note": "Diagnostic/report-only: non-full decompositions measure factor subsets, change every reported energy and NEVER pass --contract=regression (they fail it as inapplicable). Integration, ratio audit and contract JSON keep working for every mode; the Karis check is unchanged.",
 	}
 	report["measure"] = {
 		"integral": "E_p = INT INT f_p(theta_i, theta_o, phi) * cos(theta_o) dtheta_o dphi (projected solid angle, RGB)",
@@ -195,8 +348,16 @@ func _initialize() -> void:
 		"grid_theta": grid_theta,
 		"grid_phi": grid_phi,
 		"grid_coarse": coarse,
-		"note": "Fast longitudinal normalization depends on the selected --longitudinal mode: the theta_h Gaussian (unity, FM_LONGITUDINAL_MODE 0) is normalized in theta_h = 0.5*(theta_i + theta_o) space, so its theta_o integral is ~2, while the separable sin(theta_o) cone Gaussian (baseline, FM_LONGITUDINAL_MODE 1) integrates like the baseline's sin-space function (~1 in the projected measure) without the non-separable widths/tilts. --r-longitudinal=nonseparable additionally overrides ONLY the fast R lobe with the FM_R_LONGITUDINAL_MODE 1 cheap non-separable diagnostic (z_r = cos_phi_half width/tilt coupling; R-only, no compensation, not the full d'Eon 2014 baseline); TT/TRT and the baseline equations are unchanged. Scalar totals/ratios sum the RGB channels.",
+		"note": "Fast longitudinal normalization depends on the selected --longitudinal mode: the theta_h Gaussian (unity, FM_LONGITUDINAL_MODE 0) is normalized in theta_h = 0.5*(theta_i + theta_o) space, so its theta_o integral is ~2, while the separable sin(theta_o) cone Gaussian (baseline, FM_LONGITUDINAL_MODE 1) integrates like the baseline's sin-space function (~1 in the projected measure) without the non-separable widths/tilts. --r-longitudinal=nonseparable additionally overrides ONLY the fast R lobe with the FM_R_LONGITUDINAL_MODE 1 cheap non-separable diagnostic (z_r = cos_phi_half width/tilt coupling; R-only, no compensation, not the full d'Eon 2014 baseline); TT/TRT and the baseline equations are unchanged. The fast azimuthal cross-section model follows --azimuthal: fixed_h (FM_AZIMUTHAL_MODE 0, shipping default) keeps the fixed h_TT = 0 / h_TRT = sqrt(3)/2 angular offsets; baseline_h (FM_AZIMUTHAL_MODE 1 diagnostic) swaps in the baseline dynamic h_TT = sign(sin_phi_half) * cos_phi_half / sqrt(1 + eta_prime_inv * (1 - 2 * eta_prime_inv * abs(sin_phi_half))) and h_TRT = 0.91 for the fast analytic port only. The LUT is out of this CPU comparison (the harness has no LUT path) and attenuation keeps the shipping fixed-h family in both modes. Scalar totals/ratios sum the RGB channels.",
 		"ratio_masking": "diagnostic only, NOT an acceptance gate: per-theta_i entries with baseline_total <= BASELINE_RATIO_EPSILON * max_baseline_total are flagged baseline_ratio_valid = false and excluded from the ratio_audit statistics; the aggregate acceptance gate is unmasked.",
+	}
+	report["contract"] = {
+		"mode": _contract_mode,
+		"decomposition": _decomposition,
+		"azimuthal_mode": _azimuthal_mode,
+		"reference_path": _reference_path,
+		"reference_file_exists": FileAccess.file_exists(_reference_path),
+		"expected_contract_version": CONTRACT_VERSION,
 	}
 
 	# Per-theta_i integration. Per-lobe energies are RGB; aggregate per-lobe
@@ -336,6 +497,29 @@ func _initialize() -> void:
 	}
 	report["result"] = "PASS" if passed else "FAIL"
 
+	# Contract gate: exit semantics follow contract_result/contract_reason. The
+	# strict parity acceptance fields (acceptance, result) stay in the payload
+	# as diagnostic data in every mode and are never weakened.
+	var contract_result := "PASS"
+	var contract_reason := ""
+	if _contract_mode == "report":
+		contract_result = "REPORT"
+		contract_reason = ("report-only mode: execution and report generation succeeded, exit 0; "
+			+ "strict parity acceptance fields reported unweakened (acceptance.passed=%s)" % str(passed))
+	elif _contract_mode == "parity":
+		contract_result = "PASS" if passed else "FAIL"
+		contract_reason = "strict parity bands: " + str(report["acceptance"]["reason"])
+	else: # regression (shipping default)
+		var regression := _evaluate_regression(agg_entry, drift, grid_theta, grid_phi, coarse)
+		report["regression"] = regression["details"]
+		report["contract"]["reference_valid"] = regression["reference_valid"]
+		if regression["contract_version"] != "":
+			report["contract"]["loaded_contract_version"] = regression["contract_version"]
+		contract_result = regression["result"]
+		contract_reason = regression["reason"]
+	report["contract_result"] = contract_result
+	report["contract_reason"] = contract_reason
+
 	# Human-readable lines, then the JSON payload, then the result line.
 	print("ENERGY_VALIDATION longitudinal_mode=%s (%s)" % [_longitudinal_mode,
 		"Unity-standard theta_h Gaussian (FM_LONGITUDINAL_MODE 0, shipping default)"
@@ -345,6 +529,17 @@ func _initialize() -> void:
 		"shared longitudinal R path (FM_R_LONGITUDINAL_MODE 0, shipping default)"
 		if _r_longitudinal_mode == "standard" else
 		"cheap non-separable R diagnostic (FM_R_LONGITUDINAL_MODE 1, R-only override, not the full d'Eon 2014 baseline, no compensation)"])
+	print("ENERGY_VALIDATION azimuthal_mode=%s (%s)" % [_azimuthal_mode,
+		"fixed-h logistic analytic approximation (FM_AZIMUTHAL_MODE 0, shipping default: h_TT = 0, h_TRT = sqrt(3)/2)"
+		if _azimuthal_mode == "fixed_h" else
+		"baseline cross-section diagnostic for the analytic BSDF only (FM_AZIMUTHAL_MODE 1: dynamic h_TT = sign(sin_phi_half) * cos_phi_half / sqrt(1 + eta_prime_inv * (1 - 2 * eta_prime_inv * abs(sin_phi_half))), h_TRT = 0.91; LUT sampling and fixed-h attenuation unchanged)"])
+	print("ENERGY_VALIDATION material eta=%.4f albedo=(%.6f, %.6f, %.6f) beta_m_raw=%.4f beta_n_raw=%.4f cuticle=%.4f" % [
+		_eta, _albedo.x, _albedo.y, _albedo.z, _beta_m_raw, _beta_n_raw, _cuticle_tilt])
+	print("ENERGY_VALIDATION decomposition=%s (%s)" % [_decomposition,
+		"shipping full M*N*A (byte-equivalent)"
+		if _decomposition == "full" else
+		"diagnostic factor subset, --contract=regression inapplicable"])
+	print("ENERGY_VALIDATION contract_mode=%s reference=%s" % [_contract_mode, _reference_path])
 	for entry in per_theta_i:
 		print("ENERGY_VALIDATION theta_i_deg=%.1f E_base=%.6f E_fast=%.6f ratio_total=%.4f" % [
 			entry["theta_i_deg"], entry["baseline_total"], entry["fast_total"], entry["ratio_total"]])
@@ -368,14 +563,19 @@ func _initialize() -> void:
 		ratio_audit["rms_absolute_error_total"], ratio_audit["max_absolute_error_total"],
 		ratio_audit["valid_ratio_min"], ratio_audit["valid_ratio_max"]])
 	print(JSON.stringify(report, "\t"))
-	print("ENERGY_VALIDATION result=%s reason=%s" % [report["result"], report["acceptance"]["reason"]])
-	quit(0 if passed else 1)
+	print("ENERGY_VALIDATION result=%s reason=%s (strict parity acceptance, diagnostic in every mode)" % [
+		report["result"], report["acceptance"]["reason"]])
+	print("ENERGY_VALIDATION contract_result=%s reason=%s" % [contract_result, contract_reason])
+	quit(0 if contract_result != "FAIL" else 1)
 
 
 # ---------------------------------------------------------------------------
 # Baseline reference BSDF port (benchmark/reference/hair.gdshaderinc, shipped
 # defines: energy-conserving longitudinal + Bessel approx, non-separable
-# widths/tilts, approximate tilts, approximate h_TRT = 0.91).
+# widths/tilts, approximate tilts, approximate h_TRT = 0.91). Each lobe is
+# split into its longitudinal m factor, azimuthal distribution n and RGB
+# attenuation a, then combined per --decomposition (default full = shipping
+# byte-equivalent M*N*A).
 # Returns per-lobe RGB energies as Array [R, TT, TRT] of Vector3.
 # ---------------------------------------------------------------------------
 
@@ -390,18 +590,22 @@ func _baseline_bsdf(omega_i: Vector3, omega_o: Vector3, cos_phi: float, sin_phi:
 	var cos_theta_d := sqrt(0.5 + 0.5 * cos_theta)
 	var sin_theta_d := sqrt(0.5 - 0.5 * cos_theta) * signf(sin_theta_o * cos_theta_i - cos_theta_o * sin_theta_i)
 	# Incoming/light Snell convention (baseline include).
-	var cos_theta_t := sqrt(maxf(0.0, 1.0 - sin_theta_i * sin_theta_i / (ETA * ETA)))
-	var eta_prime := sqrt(ETA * ETA - sin_theta_d * sin_theta_d) / maxf(cos_theta_d, 1e-6)
+	var cos_theta_t := sqrt(maxf(0.0, 1.0 - sin_theta_i * sin_theta_i / (_eta * _eta)))
+	var eta_prime := sqrt(_eta * _eta - sin_theta_d * sin_theta_d) / maxf(cos_theta_d, 1e-6)
 	var eta_prime_inv := 1.0 / eta_prime
 	var h := _baseline_cross_section_offsets(cos_phi_half, sin_phi_half, eta_prime_inv)
 	# Baseline passes alpha = -cuticle_tilt_offset (baseline_hair.gdshader).
 	var m := _baseline_longitudinal(cos_theta_i, sin_theta_i, cos_theta_o, sin_theta_o,
 		cos_theta_d, sin_theta_d, cos_phi_half, -_cuticle_tilt, _beta_m, h)
-	var az := _baseline_azimuthal(cos_theta_t, cos_theta_d, cos_phi, sin_phi, cos_phi_half, eta_prime_inv, h)
+	# Per-lobe factor split (decomposition): R = white Fresnel cosine lobe
+	# (n = Fresnel * cosine, a = 1); TT/TRT split the logistic distribution
+	# (n) from the RGB Beer-Lambert/Fresnel attenuation (a) before combining.
+	var factors := _baseline_azimuthal_factors(cos_theta_t, cos_theta_d, cos_phi, sin_phi,
+		cos_phi_half, eta_prime_inv, h)
 	return [
-		az[0] * (m.x * LOBE_SCALES.x),
-		az[1] * (m.y * LOBE_SCALES.y),
-		az[2] * (m.z * LOBE_SCALES.z),
+		_apply_decomposition(m.x, factors[0]["n"], factors[0]["a"], _lobe_scales.x, "vector"),
+		_apply_decomposition(m.y, factors[1]["n"], factors[1]["a"], _lobe_scales.y, "vector"),
+		_apply_decomposition(m.z, factors[2]["n"], factors[2]["a"], _lobe_scales.z, "vector"),
 	]
 
 
@@ -431,12 +635,12 @@ func _baseline_longitudinal(cos_theta_i: float, sin_theta_i: float, cos_theta_o:
 		sin_theta_d * sin_theta_d + cos_theta_d * cos_theta_d * h.y * h.y,
 		sin_theta_d * sin_theta_d + cos_theta_d * cos_theta_d * h.z * h.z)
 	var z := Vector3(sqrt(1.0 - k_sq.x), sqrt(1.0 - k_sq.y), sqrt(1.0 - k_sq.z))
-	var z_prime := Vector3(0.0, sqrt(ETA * ETA - k_sq.y), 2.0 * sqrt(ETA * ETA - k_sq.z))
+	var z_prime := Vector3(0.0, sqrt(_eta * _eta - k_sq.y), 2.0 * sqrt(_eta * _eta - k_sq.z))
 	# d'Eon 2014 non-separable lobe widths.
 	var beta_m := Vector3(beta, beta, beta)
 	beta_m.x *= sqrt(2.0) * cos_phi_half
 	beta_m.y *= (z.y + 0.5 * z_prime.y) / cos_theta_d
-	beta_m.z *= 2.0 * sqrt(ETA * ETA - sin_theta_d * sin_theta_d) / cos_theta_d - 1.0
+	beta_m.z *= 2.0 * sqrt(_eta * _eta - sin_theta_d * sin_theta_d) / cos_theta_d - 1.0
 	# Approximate tilts: sin_theta_cone = -sin_theta_i + (2*z' - 2*z)*alpha.
 	var sin_cone := Vector3(
 		clampf(-sin_theta_i + (2.0 * z_prime.x - 2.0 * z.x) * alpha, -1.0, 1.0),
@@ -453,7 +657,7 @@ func _baseline_longitudinal(cos_theta_i: float, sin_theta_i: float, cos_theta_o:
 
 ## Baseline unclamped Schlick Fresnel (no cos clamp in the reference include).
 func _baseline_fresnel(cos_theta: float) -> float:
-	var f0 := (1.0 - ETA) * (1.0 - ETA) / ((1.0 + ETA) * (1.0 + ETA))
+	var f0 := (1.0 - _eta) * (1.0 - _eta) / ((1.0 + _eta) * (1.0 + _eta))
 	var p := 1.0 - cos_theta
 	var p_sq := p * p
 	return lerp(p_sq * p_sq * p, 1.0, f0)
@@ -490,17 +694,22 @@ func _baseline_attenuation(mode: int, cos_theta_t: float, cos_theta_d: float, et
 	return trans * (one_minus_f * one_minus_f * f)
 
 
-## Baseline azimuthal scattering per lobe: R (white Fresnel cosine lobe),
-## TT/TRT (logistic x RGB attenuation). Returns Array [R, TT, TRT] of RGB.
-func _baseline_azimuthal(cos_theta_t: float, cos_theta_d: float, cos_phi: float, sin_phi: float,
+## Baseline azimuthal factors per lobe, split into the scalar azimuthal
+## distribution n and the RGB attenuation a (decomposition): R = white Fresnel
+## cosine lobe (n = Fresnel * cosine, a = Vector3(1,1,1)), TT/TRT = logistic
+## distribution (n) x Beer-Lambert/Fresnel RGB attenuation (a). The combining
+## happens in _baseline_bsdf via _apply_decomposition so every --decomposition
+## subset can be measured.
+## Returns Array [R, TT, TRT] of {n: float, a: Vector3} dictionaries.
+func _baseline_azimuthal_factors(cos_theta_t: float, cos_theta_d: float, cos_phi: float, sin_phi: float,
 		cos_phi_half: float, eta_prime_inv: float, h: Vector3) -> Array:
-	var r_scalar := _baseline_fresnel(cos_theta_d * cos_phi_half) * (0.25 * cos_phi_half)
-	var r_energy := Vector3(r_scalar, r_scalar, r_scalar)
-	var tt_dist := _baseline_logistic(_angular_offset(1, cos_phi, sin_phi, eta_prime_inv, h.y), sqrt(2.0) / _beta_n)
-	var tt_energy := _baseline_attenuation(1, cos_theta_t, cos_theta_d, eta_prime_inv, h.y) * tt_dist
-	var trt_dist := _baseline_logistic(_angular_offset(2, cos_phi, sin_phi, eta_prime_inv, h.z), 0.5 * sqrt(2.0) / _beta_n)
-	var trt_energy := _baseline_attenuation(2, cos_theta_t, cos_theta_d, eta_prime_inv, h.z) * trt_dist
-	return [r_energy, tt_energy, trt_energy]
+	var r_n := _baseline_fresnel(cos_theta_d * cos_phi_half) * (0.25 * cos_phi_half)
+	var r_a := Vector3(1.0, 1.0, 1.0)
+	var tt_n := _baseline_logistic(_angular_offset(1, cos_phi, sin_phi, eta_prime_inv, h.y), sqrt(2.0) / _beta_n)
+	var tt_a := _baseline_attenuation(1, cos_theta_t, cos_theta_d, eta_prime_inv, h.y)
+	var trt_n := _baseline_logistic(_angular_offset(2, cos_phi, sin_phi, eta_prime_inv, h.z), 0.5 * sqrt(2.0) / _beta_n)
+	var trt_a := _baseline_attenuation(2, cos_theta_t, cos_theta_d, eta_prime_inv, h.z)
+	return [{"n": r_n, "a": r_a}, {"n": tt_n, "a": tt_a}, {"n": trt_n, "a": trt_a}]
 
 
 # ---------------------------------------------------------------------------
@@ -508,7 +717,10 @@ func _baseline_azimuthal(cos_theta_t: float, cos_theta_d: float, cos_phi: float,
 # variance Gaussian via the FM_LONGITUDINAL_MODE selector, Unity-style
 # fixed-h attenuation, outgoing Snell). The longitudinal model follows
 # --longitudinal (unity = mode 0 theta_h Gaussian, the default; baseline =
-# mode 1 separable sin(theta_o) cone Gaussian diagnostic).
+# mode 1 separable sin(theta_o) cone Gaussian diagnostic). Each lobe is
+# split into its longitudinal m factor, azimuthal distribution n and RGB
+# attenuation a, then combined per --decomposition (default full = shipping
+# byte-equivalent M*N*A).
 # Returns per-lobe RGB energies as Array [R, TT, TRT] of Vector3.
 # ---------------------------------------------------------------------------
 
@@ -522,11 +734,23 @@ func _fast_bsdf(omega_i: Vector3, omega_o: Vector3, cos_phi: float, sin_phi: flo
 	var cos_theta_d := sqrt(0.5 + 0.5 * cos_theta)
 	var sin_theta_d := sqrt(0.5 - 0.5 * cos_theta) * signf(sin_theta_o * cos_theta_i - cos_theta_o * sin_theta_i)
 	# Outgoing/view Snell convention (FM_ATTENUATION_MODEL_UNITY branch).
-	var cos_theta_t := sqrt(maxf(0.0, 1.0 - sin_theta_o * sin_theta_o / (ETA * ETA)))
-	var eta_prime := sqrt(maxf(ETA * ETA - sin_theta_d * sin_theta_d, 1e-6)) / maxf(cos_theta_d, 1e-6)
+	var cos_theta_t := sqrt(maxf(0.0, 1.0 - sin_theta_o * sin_theta_o / (_eta * _eta)))
+	var eta_prime := sqrt(maxf(_eta * _eta - sin_theta_d * sin_theta_d, 1e-6)) / maxf(cos_theta_d, 1e-6)
 	var eta_prime_inv := 1.0 / eta_prime
-	# Fixed representative cross-section offsets: h_TT = 0, h_TRT = sqrt(3)/2.
-	var h := Vector3(0.0, H_TT_FAST, H_TRT_FAST)
+	# Fixed representative cross-section offsets: h_TT = 0, h_TRT = sqrt(3)/2
+	# (shipping FM_AZIMUTHAL_MODE 0). --azimuthal=baseline_h matches the
+	# shader's FM_AZIMUTHAL_MODE 1 diagnostic for the ANALYTIC BSDF only:
+	# dynamic h_TT from the baseline cross-section formula and h_TRT = 0.91
+	# (H_TRT_BASELINE). Attenuation keeps the shipping fixed-h family in both
+	# modes (fm_att_fixed_h reads H_TT_FAST/H_TRT_FAST directly) and the LUT is
+	# out of this CPU comparison.
+	var h_tt := H_TT_FAST
+	var h_trt := H_TRT_FAST
+	if _azimuthal_mode == "baseline_h":
+		var sin_phi_half := sqrt(0.5 - 0.5 * cos_phi) * signf(sin_phi)
+		h_tt = signf(sin_phi_half) * cos_phi_half / sqrt(1.0 + eta_prime_inv * (1.0 - 2.0 * eta_prime_inv * absf(sin_phi_half)))
+		h_trt = H_TRT_BASELINE
+	var h := Vector3(0.0, h_tt, h_trt)
 	# Hoisted lobe setup from fragment() under the shipping baseline cuticle-tilt
 	# convention (FM_CUTICLE_TILT_CONVENTION = 0): centers (+a, -0.5a, -1.5a),
 	# variances (1, 0.5, 2)^2 * beta_M^2.
@@ -549,14 +773,21 @@ func _fast_bsdf(omega_i: Vector3, omega_o: Vector3, cos_phi: float, sin_phi: flo
 	var s_trt := 0.5 * sqrt(2.0) / _beta_n
 	var b_tt := exp(-2.0 * sqrt(TAU) * s_tt)
 	var b_trt := exp(-2.0 * sqrt(TAU) * s_trt)
-	# R is a white scalar lobe (vec3 of the same scalar in the shader).
-	var r_scalar := (0.25 * cos_phi_half) * _fm_fresnel(cos_theta_d * cos_phi_half) * m.x * LOBE_SCALES.x
-	var r_energy := Vector3(r_scalar, r_scalar, r_scalar)
-	var tt_energy := _fm_logistic(_angular_offset(1, cos_phi, sin_phi, eta_prime_inv, h.y), s_tt, b_tt) \
-		* _att_fixed_h(1, cos_theta_o, cos_theta_d, cos_theta_t, eta_prime) * (m.y * LOBE_SCALES.y)
-	var trt_energy := _fm_logistic(_angular_offset(2, cos_phi, sin_phi, eta_prime_inv, h.z), s_trt, b_trt) \
-		* _att_fixed_h(2, cos_theta_o, cos_theta_d, cos_theta_t, eta_prime) * (m.z * LOBE_SCALES.z)
-	return [r_energy, tt_energy, trt_energy]
+	# Per-lobe factor split (decomposition): R is a white scalar lobe, so n is
+	# its scalar Fresnel cosine lobe and a = 1; TT/TRT split the logistic
+	# distribution (n) from the Unity-style fixed-h RGB attenuation (a) before
+	# combining.
+	var r_n := (0.25 * cos_phi_half) * _fm_fresnel(cos_theta_d * cos_phi_half)
+	var r_a := Vector3(1.0, 1.0, 1.0)
+	var tt_n := _fm_logistic(_angular_offset(1, cos_phi, sin_phi, eta_prime_inv, h.y), s_tt, b_tt)
+	var tt_a := _att_fixed_h(1, cos_theta_o, cos_theta_d, cos_theta_t, eta_prime)
+	var trt_n := _fm_logistic(_angular_offset(2, cos_phi, sin_phi, eta_prime_inv, h.z), s_trt, b_trt)
+	var trt_a := _att_fixed_h(2, cos_theta_o, cos_theta_d, cos_theta_t, eta_prime)
+	return [
+		_apply_decomposition(m.x, r_n, r_a, _lobe_scales.x, "scalar"),
+		_apply_decomposition(m.y, tt_n, tt_a, _lobe_scales.y, "vector"),
+		_apply_decomposition(m.z, trt_n, trt_a, _lobe_scales.z, "vector"),
+	]
 
 
 ## Normalized variance-form Gaussian in theta_h space.
@@ -634,7 +865,7 @@ func _r_nonseparable_gaussian(sin_theta_i: float, sin_theta_o: float, cos_phi_ha
 
 ## Fast clamped Schlick Fresnel.
 func _fm_fresnel(cos_theta: float) -> float:
-	var f0 := (1.0 - ETA) * (1.0 - ETA) / ((1.0 + ETA) * (1.0 + ETA))
+	var f0 := (1.0 - _eta) * (1.0 - _eta) / ((1.0 + _eta) * (1.0 + _eta))
 	var p := 1.0 - clampf(cos_theta, 0.0, 1.0)
 	var p_sq := p * p
 	return lerp(p_sq * p_sq * p, 1.0, f0)
@@ -680,22 +911,22 @@ func _karis_energy(omega_i: Vector3, omega_o: Vector3, fast: bool) -> Vector3:
 	else:
 		yz_norm = Vector2(0.0, 1.0)
 	var view_align := omega_i.y * yz_norm.x + omega_i.z * yz_norm.y
-	var luminance := ALBEDO.dot(Vector3(0.299, 0.587, 0.114))
+	var luminance := _albedo.dot(Vector3(0.299, 0.587, 0.114))
 	var atten := 1.0
-	var sqrt_albedo := Vector3(sqrt(ALBEDO.x), sqrt(ALBEDO.y), sqrt(ALBEDO.z))
+	var sqrt_albedo := Vector3(sqrt(_albedo.x), sqrt(_albedo.y), sqrt(_albedo.z))
 	var result := Vector3.ZERO
 	if fast:
 		# fm_karis_multiple_scattering with guards (never trigger at our params).
 		var safe_lum := maxf(luminance, 1e-4)
 		result = 0.25 * sqrt_albedo * (view_align + 1.0) * Vector3(
-			pow(maxf(ALBEDO.x / safe_lum, 1e-4), atten),
-			pow(maxf(ALBEDO.y / safe_lum, 1e-4), atten),
-			pow(maxf(ALBEDO.z / safe_lum, 1e-4), atten))
+			pow(maxf(_albedo.x / safe_lum, 1e-4), atten),
+			pow(maxf(_albedo.y / safe_lum, 1e-4), atten),
+			pow(maxf(_albedo.z / safe_lum, 1e-4), atten))
 		return result * smoothstep(-0.5, 1.0, atten)
 	result = 0.25 * sqrt_albedo * (view_align + 1.0) * Vector3(
-		pow(ALBEDO.x / luminance, atten),
-		pow(ALBEDO.y / luminance, atten),
-		pow(ALBEDO.z / luminance, atten))
+		pow(_albedo.x / luminance, atten),
+		pow(_albedo.y / luminance, atten),
+		pow(_albedo.z / luminance, atten))
 	return result * smoothstep(-0.5, 1.0, atten)
 
 
@@ -818,6 +1049,39 @@ func _rgb_ratio(fast: Vector3, base: Vector3) -> Array:
 	]
 
 
+## Combines one lobe's factors according to the selected --decomposition mode.
+## Every lobe is the product of a longitudinal factor m (scalar), an azimuthal
+## distribution n (scalar; R = Fresnel cosine lobe, TT/TRT = logistic) and an
+## RGB attenuation a (Vector3; R has A = 1). The lobe scale multiplies the m
+## factor in every mode, and scalar factors are replicated to RGB explicitly so
+## results stay Vector3 per lobe (vector semantics preserved).
+## Modes: m = longitudinal only (N=1, A=1); n = azimuthal only (M=1, A=1);
+## a = attenuation only (M=1, N=1); mn = M*N (A=1); ma = M*A (N=1);
+## full = M*N*A.
+## full_order preserves the byte-equivalent shipping multiply order of the
+## originating port: "scalar" (fast R: ((n * m) * scale)) or "vector" (baseline
+## R and every TT/TRT in both ports: (n * a) * (m * scale)). For R, a = 1 so
+## the extra multiply is an exact no-op in either order.
+func _apply_decomposition(m: float, n: float, a: Vector3, scale: float, full_order: String) -> Vector3:
+	var ms := m * scale
+	if _decomposition == "m": # longitudinal only (N=1, A=1)
+		return Vector3(ms, ms, ms)
+	if _decomposition == "n": # azimuthal distribution only (M=1, A=1)
+		return Vector3(n, n, n)
+	if _decomposition == "a": # attenuation only (M=1, N=1); R stays Vector3(1,1,1)
+		return a
+	if _decomposition == "mn": # M*N (A=1)
+		var mn := ms * n
+		return Vector3(mn, mn, mn)
+	if _decomposition == "ma": # M*A (N=1)
+		return Vector3(ms * a.x, ms * a.y, ms * a.z)
+	# "full": M*N*A, byte-equivalent to the shipping per-port orders.
+	if full_order == "scalar":
+		var nm := n * m
+		return Vector3(nm * scale, nm * scale, nm * scale)
+	return Vector3(n * a.x * ms, n * a.y * ms, n * a.z * ms)
+
+
 ## Builds one per-theta_i report entry with per-lobe RGB energies and ratios.
 func _theta_i_entry(deg: float, e_base: Array, e_fast: Array, k_base: Vector3, k_fast: Vector3) -> Dictionary:
 	var base_total := _total_energy(e_base)
@@ -848,3 +1112,261 @@ func _theta_i_entry(deg: float, e_base: Array, e_fast: Array, k_base: Vector3, k
 			"ratio": _safe_div(_sum_rgb(k_fast), _sum_rgb(k_base)),
 		},
 	}
+
+
+# ---------------------------------------------------------------------------
+# Regression contract evaluation (--contract=regression, shipping default)
+# ---------------------------------------------------------------------------
+
+## Evaluates the regression contract against the checked-in JSON reference.
+## Returns {result, reason, reference_valid, contract_version, details}.
+## result is "PASS" only when the reference loads and validates, the model
+## contract selectors/parameters match the running configuration, the measured
+## total/R/TT/TRT ratios match expected within ratio_absolute, and the grid
+## drift is <= grid_drift_max. Anything else is "FAIL" with a clear reason
+## (missing/invalid reference, version mismatch, inapplicable model override,
+## invalid execution, or out-of-tolerance measurement).
+func _evaluate_regression(agg_entry: Dictionary, drift: float,
+		grid_theta: int, grid_phi: int, coarse: int) -> Dictionary:
+	var out := {
+		"result": "PASS",
+		"reason": "",
+		"reference_valid": false,
+		"contract_version": "",
+		"details": {},
+	}
+	var details: Dictionary = {}
+	out["details"] = details
+	details["mode"] = "regression"
+	details["reference_path"] = _reference_path
+	details["reference_file_exists"] = FileAccess.file_exists(_reference_path)
+	details["run_grid"] = {"grid_theta": grid_theta, "grid_phi": grid_phi, "grid_coarse": coarse,
+		"theta_i_deg": THETA_I_DEG}
+	if not details["reference_file_exists"]:
+		out["result"] = "FAIL"
+		out["reason"] = "regression reference file not found: %s" % _reference_path
+		return out
+	var text: String = FileAccess.get_file_as_string(_reference_path)
+	var parsed: Variant = JSON.parse_string(text)
+	if parsed == null or not (parsed is Dictionary):
+		out["result"] = "FAIL"
+		out["reason"] = "regression reference is not a valid JSON object: %s" % _reference_path
+		return out
+	var ref: Dictionary = parsed
+	out["reference_valid"] = true
+	if str(ref.get("contract_version", "<missing>")) != CONTRACT_VERSION:
+		out["result"] = "FAIL"
+		out["reason"] = "regression reference contract version mismatch: expected %s, got %s" % [
+			CONTRACT_VERSION, str(ref.get("contract_version", "<missing>"))]
+		return out
+	out["contract_version"] = CONTRACT_VERSION
+	details["contract_version"] = CONTRACT_VERSION
+	details["reference_grid"] = ref.get("configuration", {})
+	var run_grid_matches := float(details["reference_grid"].get("grid_theta", NAN)) == float(grid_theta) \
+		and float(details["reference_grid"].get("grid_phi", NAN)) == float(grid_phi) \
+		and float(details["reference_grid"].get("grid_coarse", NAN)) == float(coarse)
+	details["run_grid_matches_reference"] = run_grid_matches
+	if not run_grid_matches:
+		details["grid_note"] = ("Run grid differs from the reference configuration; expected values "
+			+ "were measured at the reference grid and the tolerances still apply.")
+
+	# Decomposition subsets are diagnostic/report-only: the regression contract
+	# is pinned to the shipping full M*N*A model, so any other decomposition
+	# makes the reference inapplicable (clear FAIL, never a silent pass).
+	details["decomposition"] = _decomposition
+	if _decomposition != "full":
+		out["result"] = "FAIL"
+		out["reason"] = ("reference inapplicable: decomposition=%s is diagnostic/report-only; "
+			+ "the regression contract only applies to the shipping full M*N*A decomposition"
+			% _decomposition)
+		return out
+
+	# Azimuthal cross-section diagnostics are report-only: the regression
+	# contract is pinned to the shipping fixed-h analytic model
+	# (FM_AZIMUTHAL_MODE 0), so any other azimuthal mode makes the reference
+	# inapplicable (clear FAIL, never a silent pass).
+	details["azimuthal_mode"] = _azimuthal_mode
+	if _azimuthal_mode != "fixed_h":
+		out["result"] = "FAIL"
+		out["reason"] = ("reference inapplicable: azimuthal_mode=%s is diagnostic/report-only; "
+			+ "the regression contract only applies to the shipping fixed-h analytic model "
+			+ "(FM_AZIMUTHAL_MODE 0)" % _azimuthal_mode)
+		return out
+
+	# Model contract verification: the reference only applies to the shipping
+	# selectors/parameters. Any mismatch (including unsupported CLI overrides)
+	# makes the reference inapplicable and fails the contract clearly.
+	var model: Dictionary = ref.get("model", {})
+	var checks: Array = []
+	checks.append(_contract_check("longitudinal_mode", model.get("longitudinal_mode", null),
+		(0 if _longitudinal_mode == "unity" else 1), "FM_LONGITUDINAL_MODE"))
+	checks.append(_contract_check("longitudinal_label", model.get("longitudinal_label", null),
+		_longitudinal_mode, "FM_LONGITUDINAL_MODE label"))
+	checks.append(_contract_check("r_longitudinal_mode", model.get("r_longitudinal_mode", null),
+		(0 if _r_longitudinal_mode == "standard" else 1), "FM_R_LONGITUDINAL_MODE"))
+	checks.append(_contract_check("r_longitudinal_label", model.get("r_longitudinal_label", null),
+		_r_longitudinal_mode, "FM_R_LONGITUDINAL_MODE label"))
+	checks.append(_contract_check("cuticle_convention", model.get("cuticle_convention", null),
+		CUTICLE_CONVENTION, "FM_CUTICLE_TILT_CONVENTION"))
+	checks.append(_contract_check("attenuation_mode", model.get("attenuation_mode", null),
+		ATTENUATION_MODE, "FM attenuation branch"))
+	checks.append(_contract_check("eta", model.get("eta", null), _eta, "material eta"))
+	checks.append(_contract_check("beta_m_raw", model.get("beta_m_raw", null), _beta_m_raw,
+		"artist longitudinal roughness"))
+	checks.append(_contract_check("beta_n_raw", model.get("beta_n_raw", null), _beta_n_raw,
+		"artist azimuthal roughness"))
+	checks.append(_contract_check("cuticle_tilt_alpha", model.get("cuticle_tilt_alpha", null),
+		_cuticle_tilt, "runtime cuticle tilt"))
+	checks.append(_contract_check("specular", model.get("specular", null), _specular, "specular"))
+	checks.append(_contract_check("exposure_gain", model.get("exposure_gain", null),
+		_exposure_gain, "comparison exposure gain"))
+	checks.append(_contract_check("lobe_scales", model.get("lobe_scales", null), _lobe_scales,
+		"lobe scales"))
+	# Albedo is not pinned in the reference JSON; the contract is tied to the
+	# shipping default material, so any non-default albedo is inapplicable.
+	checks.append(_contract_check("albedo", ALBEDO, _albedo, "material albedo (shipping default)"))
+	checks.append(_contract_check("no_compensation", model.get("no_compensation", null), true,
+		"no compensation"))
+	details["model_contract_checks"] = checks
+	var failed_checks: Array = []
+	for check in checks:
+		if not check["ok"]:
+			failed_checks.append("%s (expected %s, got %s)" % [
+				check["field"], str(check["expected"]), str(check["measured"])])
+	if not failed_checks.is_empty():
+		out["result"] = "FAIL"
+		out["reason"] = ("reference inapplicable: model contract mismatch on %s; unsupported CLI "
+			+ "mode/parameter overrides cannot be validated against this reference"
+			% ", ".join(failed_checks))
+		return out
+	details["model_contract_ok"] = true
+
+	# Expected values and tolerances from the reference.
+	var expected: Dictionary = ref.get("expected", {})
+	var tolerances: Dictionary = ref.get("tolerances", {})
+	var ratio_tol: float = _float_field(tolerances, "ratio_absolute", -1.0)
+	var drift_tol: float = _float_field(tolerances, "grid_drift_max", -1.0)
+	if ratio_tol <= 0.0 or drift_tol <= 0.0:
+		out["result"] = "FAIL"
+		out["reason"] = ("regression reference has invalid tolerances: expected ratio_absolute > 0 "
+			+ "and grid_drift_max > 0")
+		return out
+	details["tolerances"] = {"ratio_absolute": ratio_tol, "grid_drift_max": drift_tol}
+
+	# Ratio comparison: |measured - expected| <= ratio_absolute per ratio.
+	var measured_ratios := {
+		"ratio_total": float(agg_entry["ratio_total"]),
+		"ratio_R": float(agg_entry["lobes"]["R"]["ratio"]),
+		"ratio_TT": float(agg_entry["lobes"]["TT"]["ratio"]),
+		"ratio_TRT": float(agg_entry["lobes"]["TRT"]["ratio"]),
+	}
+	var ratio_checks := {}
+	var missing_expected := false
+	var invalid_execution := false
+	for key in ["ratio_total", "ratio_R", "ratio_TT", "ratio_TRT"]:
+		var expected_val: float = _float_field(expected, key, NAN)
+		var measured_val: float = measured_ratios[key]
+		var delta := absf(measured_val - expected_val)
+		var ok := false
+		if is_nan(expected_val):
+			missing_expected = true
+		elif is_nan(measured_val) or is_inf(measured_val):
+			invalid_execution = true
+		else:
+			ok = delta <= ratio_tol
+		ratio_checks[key] = {
+			"expected": expected_val,
+			"measured": measured_val,
+			"absolute_delta": delta,
+			"tolerance": ratio_tol,
+			"ok": ok,
+		}
+	details["ratio_checks"] = ratio_checks
+
+	# Grid drift comparison: measured drift <= grid_drift_max (absolute bound).
+	var expected_drift: float = _float_field(expected, "grid_max_relative_drift", NAN)
+	var drift_ok := false
+	if is_nan(expected_drift):
+		missing_expected = true
+	elif is_nan(drift) or is_inf(drift):
+		invalid_execution = true
+	else:
+		drift_ok = drift <= drift_tol
+	details["drift_check"] = {
+		"expected": expected_drift,
+		"measured": drift,
+		"absolute_delta": absf(drift - expected_drift),
+		"tolerance": drift_tol,
+		"ok": drift_ok,
+	}
+	if missing_expected:
+		out["result"] = "FAIL"
+		out["reason"] = "regression reference is missing expected values"
+		return out
+	if invalid_execution:
+		out["result"] = "FAIL"
+		out["reason"] = "invalid execution: measured regression values are not finite"
+		return out
+	var failures: Array = []
+	for key in ["ratio_total", "ratio_R", "ratio_TT", "ratio_TRT"]:
+		if not ratio_checks[key]["ok"]:
+			failures.append("%s (expected %.4f, measured %.4f, |delta|=%.4f > %.4f)" % [
+				key, ratio_checks[key]["expected"], ratio_checks[key]["measured"],
+				ratio_checks[key]["absolute_delta"], ratio_tol])
+	if not drift_ok:
+		failures.append("grid_max_relative_drift (measured %.6f > %.4f)" % [drift, drift_tol])
+	if not failures.is_empty():
+		out["result"] = "FAIL"
+		out["reason"] = "regression mismatch: " + "; ".join(failures)
+		return out
+	out["result"] = "PASS"
+	out["reason"] = "regression contract satisfied: total/R/TT/TRT ratios within ratio_absolute=%.4f of expected and grid drift <= %.4f" % [ratio_tol, drift_tol]
+	return out
+
+
+## One model-contract verification entry: expected comes from the reference
+## JSON, measured from the running configuration.
+func _contract_check(field: String, expected: Variant, measured: Variant, context: String) -> Dictionary:
+	return {
+		"field": field,
+		"context": context,
+		"expected": expected,
+		"measured": measured,
+		"ok": expected != null and _contract_values_close(expected, measured),
+	}
+
+
+func _contract_values_close(a: Variant, b: Variant) -> bool:
+	if a is Array and b is Array:
+		return _arrays_close(a, b)
+	if a is Vector3 and b is Vector3:
+		return _num_close(a.x, b.x) and _num_close(a.y, b.y) and _num_close(a.z, b.z)
+	if a is Array and b is Vector3:
+		return a.size() == 3 and _num_close(float(a[0]), b.x) and _num_close(float(a[1]), b.y) \
+			and _num_close(float(a[2]), b.z)
+	if a is Vector3 and b is Array:
+		return b.size() == 3 and _num_close(a.x, float(b[0])) and _num_close(a.y, float(b[1])) \
+			and _num_close(a.z, float(b[2]))
+	if (a is float or a is int) and (b is float or b is int):
+		return _num_close(float(a), float(b))
+	return str(a) == str(b)
+
+
+func _arrays_close(a: Array, b: Array) -> bool:
+	if a.size() != b.size():
+		return false
+	for i in a.size():
+		if not _num_close(float(a[i]), float(b[i])):
+			return false
+	return true
+
+
+func _num_close(a: float, b: float, eps := 1e-9) -> bool:
+	return absf(a - b) <= eps
+
+
+## Reads a numeric field from a Dictionary; returns fallback when missing or
+## not a number.
+func _float_field(d: Dictionary, key: String, fallback: float) -> float:
+	var v: Variant = d.get(key, fallback)
+	return float(v) if (v is float or v is int) else fallback

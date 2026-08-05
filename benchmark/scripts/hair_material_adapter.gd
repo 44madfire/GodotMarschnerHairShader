@@ -17,6 +17,35 @@ class_name HairMaterialAdapter
 ## parameters and textures with the profile's values.
 
 const PROFILES_DIRECTORY := "res://benchmark/resources/profiles"
+const FAST_MARSCHNER_UNIFORMS: Array[StringName] = [
+	&"absorption_mode",
+	&"absorption",
+	&"eumelanin",
+	&"pheomelanin",
+	&"melanin_absorption_scale",
+	&"ior",
+	&"use_azimuthal_lut",
+	&"azimuthal_lut",
+	&"azimuthal_lut_eta",
+	&"use_dual_scatter",
+	&"dual_scatter_strength",
+	&"dual_scatter_density",
+	&"use_preintegrated_dual_scatter",
+	&"dual_scatter_lut",
+	&"dual_scatter_lut_eta",
+	&"dual_scatter_lut_tau_max",
+	&"use_environment",
+	&"environment_texture",
+	&"environment_strength",
+	# Preview/timing/validation uniforms declared only through the shared
+	# includes (hair_marschner_fast_body.gdshaderinc and the fast common
+	# include): the Fast wrapper declares no uniforms of its own, so these
+	# names can be missed by get_shader_uniform_list() on some import paths.
+	&"comparison_exposure_gain",
+	&"freeze_bayer_phase",
+	&"use_area_light_multipliers",
+	&"lobe_scales",
+]
 
 var _alpha_hash_texture_cache: Dictionary = {}
 var _azimuthal_lut_texture_cache: Dictionary = {}
@@ -129,6 +158,15 @@ func _apply_tier2_parameters(material: ShaderMaterial, profile: Resource) -> voi
 		var uniform_name_value: Variant = uniform_info.get(&"name", "")
 		if StringName(uniform_name_value) != &"":
 			declared_uniforms[StringName(uniform_name_value)] = true
+	# Godot's uniform introspection does not expose declarations that arrive
+	# through a shared .gdshaderinc on every import path. The committed Fast
+	# wrappers all include the same body, so use the canonical list as a narrow
+	# fallback for those paths only; other benchmark shaders remain gated by
+	# get_shader_uniform_list() as before.
+	var shader_path := material.shader.resource_path
+	if shader_path.begins_with("res://assets/hair/materials/shaders/hair_marschner_fast"):
+		for uniform_name in FAST_MARSCHNER_UNIFORMS:
+			declared_uniforms[uniform_name] = true
 	var tier2_parameters := {
 		&"absorption_mode": profile.get(&"absorption_mode"),
 		&"absorption": profile.get(&"absorption"),
@@ -172,6 +210,16 @@ func _apply_tier2_parameters(material: ShaderMaterial, profile: Resource) -> voi
 			var dual_scatter_eta: Variant = dual_scatter_data.get(&"eta")
 			if dual_scatter_eta is float:
 				material.set(&"shader_parameter/dual_scatter_lut_eta", dual_scatter_eta)
+	# The U-axis tau_max metadata mirrors the eta guard: the runtime maps the
+	# LUT domain with the resource's own tau_max (dual_scatter_lut_tau_max),
+	# so it never silently claims a wider baked domain. Legacy resources
+	# without the metadata keep the shader default (4.0, the committed domain).
+	if declared_uniforms.has(&"dual_scatter_lut_tau_max"):
+		var dual_scatter_data: Variant = profile.get(&"dual_scatter_lut_data")
+		if dual_scatter_data != null:
+			var dual_scatter_tau_max: Variant = dual_scatter_data.get(&"tau_max")
+			if dual_scatter_tau_max is float and float(dual_scatter_tau_max) > 0.0:
+				material.set(&"shader_parameter/dual_scatter_lut_tau_max", dual_scatter_tau_max)
 
 
 

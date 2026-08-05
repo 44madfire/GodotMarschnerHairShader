@@ -44,6 +44,11 @@ func _initialize() -> void:
 		push_error("LUT data invalid: %s" % "; ".join(validation_errors))
 		quit(1)
 		return
+	if absf(lut_data.eta - ETA) > 0.0005:
+		push_error("LUT baked eta %.4f must be ~= %.2f within 0.0005" % [lut_data.eta, ETA])
+		quit(1)
+		return
+	print("LUT_ETA eta=%.4f expected=%.2f tolerance=0.0005" % [lut_data.eta, ETA])
 	_size = lut_data.size
 	_data = lut_data.data
 

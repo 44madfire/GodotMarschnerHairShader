@@ -372,6 +372,12 @@ func _apply_preview_settings(settings: Dictionary) -> bool:
 			if dual_lut_texture:
 				override_material.set(&"shader_parameter/dual_scatter_lut", dual_lut_texture)
 				override_material.set(&"shader_parameter/dual_scatter_lut_eta", float(FAST_MARSCHNER_DUAL_SCATTER_LUT_DATA.get(&"eta")))
+				# U-axis tau_max metadata: the runtime maps the LUT domain with
+				# the resource's own tau_max so it never silently claims the
+				# wider legacy 16-wide domain.
+				var dual_scatter_tau_max: Variant = FAST_MARSCHNER_DUAL_SCATTER_LUT_DATA.get(&"tau_max")
+				if dual_scatter_tau_max is float and float(dual_scatter_tau_max) > 0.0:
+					override_material.set(&"shader_parameter/dual_scatter_lut_tau_max", dual_scatter_tau_max)
 			if use_environment:
 				override_material.set(&"shader_parameter/environment_texture", FAST_MARSCHNER_ENVIRONMENT_TEXTURE)
 	return true
@@ -529,6 +535,12 @@ func _apply_preintegrated_dual_scatter_binding() -> bool:
 				override_material.set(&"shader_parameter/use_environment", false)
 				override_material.set(&"shader_parameter/dual_scatter_lut", lut_texture)
 				override_material.set(&"shader_parameter/dual_scatter_lut_eta", float(FAST_MARSCHNER_DUAL_SCATTER_LUT_DATA.get(&"eta")))
+				# U-axis tau_max metadata: the runtime maps the LUT domain with
+				# the resource's own tau_max so it never silently claims the
+				# wider legacy 16-wide domain.
+				var dual_scatter_tau_max: Variant = FAST_MARSCHNER_DUAL_SCATTER_LUT_DATA.get(&"tau_max")
+				if dual_scatter_tau_max is float and float(dual_scatter_tau_max) > 0.0:
+					override_material.set(&"shader_parameter/dual_scatter_lut_tau_max", dual_scatter_tau_max)
 	return true
 
 
@@ -578,6 +590,59 @@ func _apply_environment_binding() -> bool:
 				override_material.set(&"shader_parameter/use_preintegrated_dual_scatter", false)
 				override_material.set(&"shader_parameter/environment_texture", FAST_MARSCHNER_ENVIRONMENT_TEXTURE)
 	return true
+
+
+## Returns true for the timed Fast Marschner variants that pin the shared-body
+## material contract: FAST_MARSCHNER_ANALYTIC, FAST_MARSCHNER_LUT,
+## FAST_MARSCHNER_DUAL_SCATTER, FAST_MARSCHNER_ENVIRONMENT, and
+## FAST_MARSCHNER_DUAL_SCATTER_PREINTEGRATED all use hair_marschner_fast.gdshader.
+func _variant_uses_timed_material_contract(variant_id: int) -> bool:
+	match variant_id:
+		BenchmarkVariant.FAST_MARSCHNER_ANALYTIC, \
+		BenchmarkVariant.FAST_MARSCHNER_LUT, \
+		BenchmarkVariant.FAST_MARSCHNER_DUAL_SCATTER, \
+		BenchmarkVariant.FAST_MARSCHNER_ENVIRONMENT, \
+		BenchmarkVariant.FAST_MARSCHNER_DUAL_SCATTER_PREINTEGRATED:
+			return true
+		_:
+			return false
+
+
+## Pins the timed-material contract on the live FAST_MARSCHNER surface
+## overrides: comparison_exposure_gain=1.0, lobe_scales=Vector3.ONE, and
+## use_area_light_multipliers=true (the shared body's defaults, made explicit so
+## benchmark artifacts prove unit exposure and lobe scales; the values mirror
+## validate_fast_marschner_energy.gd's reference contract). Only selected
+## surfaces are touched. Preview-only flows never call this: the visual
+## comparison chooses its own presentation gain.
+func _apply_timed_material_contract() -> void:
+	for groom_data in groom_catalog:
+		var groom := groom_data["node"] as MeshInstance3D
+		if not is_instance_valid(groom):
+			continue
+		for surface_data in groom_data["surfaces"]:
+			if not bool(surface_data["selected"]):
+				continue
+			var override_material := groom.get_surface_override_material(int(surface_data["surface_index"])) as ShaderMaterial
+			if not override_material:
+				continue
+			override_material.set(&"shader_parameter/comparison_exposure_gain", 1.0)
+			override_material.set(&"shader_parameter/lobe_scales", Vector3.ONE)
+			override_material.set(&"shader_parameter/use_area_light_multipliers", true)
+
+
+## Records the timed-material contract in run_manifest.json: the values pinned
+## by _apply_timed_material_contract() on timed FAST_MARSCHNER runs, plus the
+## "applied" flag so artifacts distinguish contract-pinned runs from variants
+## that never receive the values (non-fast variants, preview-only flows).
+func _timed_material_contract_manifest() -> Dictionary:
+	return {
+		"applied": _variant_uses_timed_material_contract(_active_variant),
+		"comparison_exposure_gain": 1.0,
+		"lobe_scales": [1.0, 1.0, 1.0],
+		"use_area_light_multipliers": true,
+		"note": "Timed FAST_MARSCHNER runs explicitly pin the shared-body preview/timing uniforms to their unit defaults (comparison_exposure_gain 1.0, lobe_scales 1.0, use_area_light_multipliers true) so benchmark artifacts prove unit exposure and lobe scales. Preview-only flows and non-fast variants never apply the contract; the standalone visual comparison chooses its own presentation gain.",
+	}
 
 
 ## Returns the stable groom entries used by the preview selector. The returned
@@ -805,6 +870,13 @@ func apply_variant(variant_id: int, preview_only: bool = false) -> bool:
 			BenchmarkVariant.BUILTIN_ALPHA_HASH_CONTROL:
 				applied = _apply_builtin_alpha_hash_variant(profile)
 				_apply_display_mode(display_mode)
+	# Timed FAST_MARSCHNER runs pin the shared-body preview/timing uniforms to
+	# their unit contract (comparison_exposure_gain 1.0, lobe_scales 1, and the
+	# default area-light multipliers) so benchmark artifacts prove unit exposure
+	# and lobe scales. Preview-only flows deliberately skip the contract: the
+	# visual comparison chooses its own presentation gain.
+	if applied and not preview_only and _variant_uses_timed_material_contract(selected_variant):
+		_apply_timed_material_contract()
 	if not applied:
 		_restore_original_surface_state()
 	return applied
@@ -1949,6 +2021,7 @@ func _write_run_outputs() -> bool:
 		"files": output_files,
 		"material_state": "Source ShaderMaterials are cloned per surface; selected groom-level material_override values are temporarily cleared so per-surface variant/diagnostic overrides take precedence, then restored alongside surface overrides. Mesh and source material resources are never edited.",
 		"comparison_validity": _comparison_validity_manifest(),
+		"timed_material_contract": _timed_material_contract_manifest(),
 	}
 	if not _write_text(_run_directory.path_join("run_manifest.json"), JSON.stringify(manifest, "\t")):
 		return false

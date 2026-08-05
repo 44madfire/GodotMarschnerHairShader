@@ -34,14 +34,23 @@
 // d'Eon 2014 baseline (no full widths/tilts, no derived compensation), and
 // mode 0 remains the shipping default. TT/TRT are never touched.
 //
-// Azimuthal scattering is the analytic d'Eon et al. (2011) model already used
-// by the high-tier include (Fresnel + Beer-Lambert attenuation with logistic
-// distributions). Attenuation uses the Unity-style fixed-h family
-// (FM_ATTENUATION_UNITY_FIXED_H, the shipping default) with the fixed
-// representative cross-section offsets h_TT = 0 and h_TRT = sqrt(3)/2. The
-// shipping branch uses the outgoing/view Snell convention; the named legacy
-// branch retains the incoming/light convention for diagnosis.
-// No LUT is required.
+// Azimuthal scattering is the fixed-h logistic analytic approximation
+// (FM_AZIMUTHAL_FIXED_H_ANALYTIC, the same Fresnel + Beer-Lambert with
+// logistic distributions used by the high-tier include), selected by the
+// numeric compile-time selector FM_AZIMUTHAL_MODE below. Mode 0 (shipping
+// default) uses the fixed representative cross-section offsets h_TT = 0 and
+// h_TRT = sqrt(3)/2 for the azimuthal angular offsets. Mode 1 (diagnostic,
+// never the default) is an attribution-only baseline cross-section diagnostic
+// for the ANALYTIC BSDF only: dynamic h_TT from the baseline formula
+// sign(sin_phi_half) * cos_phi_half / sqrt(1 + eta_prime_inv * (1 -
+// 2 * eta_prime_inv * abs(sin_phi_half))) and h_TRT = 0.91. Mode 1 never
+// alters LUT sampling semantics (the LUT's azimuthal terms are baked at the
+// fixed-h offsets, so the LUT path is untouched) and never alters attenuation
+// (the Unity-style fixed-h family FM_ATTENUATION_MODE 0 /
+// FM_ATTENUATION_UNITY_FIXED_H with h_TT = 0 and h_TRT = sqrt(3)/2 stays in
+// every mode). The shipping branch uses the outgoing/view Snell convention;
+// the named legacy diagnostic branch (FM_ATTENUATION_DEON_FIXED_H) retains
+// the incoming/light convention for diagnosis. No LUT is required.
 
 // --- Compile-time lobe configuration ---
 // Comment out a lobe define to strip that lobe from the compiled shader
@@ -62,8 +71,12 @@
 // (diagnostic comparison mode; a separable approximation of the baseline
 // cone-tilt contract, NOT the full non-separable baseline). Defined as a
 // literal so the #if in fm_longitudinal_scattering never depends on nested
-// macro expansion.
+// macro expansion. The #ifndef guard honors a selector defined by a wrapper
+// shader before including the body; the default applies when this include is
+// used directly.
+#ifndef FM_LONGITUDINAL_MODE
 #define FM_LONGITUDINAL_MODE 0
+#endif
 
 // R longitudinal model: single numeric selector for the R lobe only, applied
 // in both the analytic and LUT BSDF functions after the shared
@@ -75,16 +88,54 @@
 // sin_theta_cone_r = clamp(-sin_theta_i + 2.0*z_r*cuticle_tilt_value, -1.0,
 // 1.0)). This is a cheap diagnostic, NOT the full non-separable d'Eon 2014
 // baseline (no full widths/tilts, no derived compensation), and 0 remains the
-// shipping default. TT/TRT are never modified in either mode.
+// shipping default. TT/TRT are never modified in either mode. The #ifndef
+// guard honors a selector defined by a wrapper shader before including the
+// body; the default applies when this include is used directly.
+#ifndef FM_R_LONGITUDINAL_MODE
 #define FM_R_LONGITUDINAL_MODE 0
+#endif
 
-#define FM_ATTENUATION_UNITY_FIXED_H
-// Legacy diagnostic attenuation (previous folded-constant d'Eon-style fixed h):
-// #define FM_ATTENUATION_DEON_FIXED_H
-#ifdef FM_ATTENUATION_DEON_FIXED_H
-#define FM_ATTENUATION_MODEL_DEON
-#else
-#define FM_ATTENUATION_MODEL_UNITY
+// Attenuation model: single numeric selector (no boolean/legacy macros).
+// 0 = Unity-style fixed-h family (shipping default, current behavior
+// unchanged); 1 = legacy diagnostic branch (the previous folded-constant
+// d'Eon-style fixed-h family, incoming/light Snell convention). The two named
+// constants below document the selector values; the selector itself is defined
+// as the literal value (not as a macro alias) so the #if checks never depend
+// on nested macro expansion. The #ifndef guard honors a selector defined by a
+// wrapper shader before including the body; the default applies when this
+// include is used directly.
+#define FM_ATTENUATION_UNITY_FIXED_H 0
+#define FM_ATTENUATION_DEON_FIXED_H 1
+#ifndef FM_ATTENUATION_MODE
+#define FM_ATTENUATION_MODE 0
+#endif
+
+// Azimuthal model: single numeric selector (no boolean/legacy macros).
+// 0 = fixed-h logistic analytic approximation (shipping default, current
+// behavior unchanged: the azimuthal angular offsets use the fixed
+// representative cross-section offsets FM_H_TT = 0 and FM_H_TRT = sqrt(3)/2);
+// 1 = diagnostic baseline-h cross-section override for the ANALYTIC BSDF only
+// (dynamic h_TT from the baseline cross-section formula
+// sign(sin_phi_half) * cos_phi_half / sqrt(1 + eta_prime_inv * (1 -
+// 2 * eta_prime_inv * abs(sin_phi_half))) and h_TRT =
+// FM_AZIMUTHAL_BASELINE_H_TRT = 0.91). The baseline-h diagnostic never alters
+// LUT sampling semantics (the LUT's R/TT/TRT azimuthal terms are baked at the
+// fixed-h offsets, so fm_hair_bsdf_lut is untouched by the selector) and
+// never alters attenuation (fm_att_fixed_h always uses the shipping fixed-h
+// family FM_H_TT / FM_H_TRT via FM_ATTENUATION_MODE, which is independent).
+// The two named constants below document the selector values; the selector
+// itself is defined as the literal value (not as a macro alias) so the #if
+// checks never depend on nested macro expansion. The #ifndef guard honors a
+// selector defined by a wrapper shader before including the body; the default
+// applies when this include is used directly.
+#define FM_AZIMUTHAL_FIXED_H_ANALYTIC 0
+#define FM_AZIMUTHAL_BASELINE_H_ANALYTIC 1
+// Baseline representative TRT cross-section offset used by
+// FM_AZIMUTHAL_MODE 1, matching the baseline reference include's
+// USE_APPROXIMATE_TRT_CROSS_SECTION_OFFSET (0.91).
+#define FM_AZIMUTHAL_BASELINE_H_TRT 0.91
+#ifndef FM_AZIMUTHAL_MODE
+#define FM_AZIMUTHAL_MODE 0
 #endif
 
 // --- Compile-time cuticle tilt convention ---
@@ -99,8 +150,12 @@
 #define FM_CUTICLE_TILT_BASELINE 0
 #define FM_CUTICLE_TILT_UNITY 1
 // The selector itself is defined as the literal value (not as a macro alias)
-// so the #if in the shader never depends on nested macro expansion.
+// so the #if in the shader never depends on nested macro expansion. The
+// #ifndef guard honors a selector defined by a wrapper shader before including
+// the body; the default applies when this include is used directly.
+#ifndef FM_CUTICLE_TILT_CONVENTION
 #define FM_CUTICLE_TILT_CONVENTION 0
+#endif
 
 // --- Fixed cross-section offsets (fixed-h attenuation family) ---
 // Single source of truth for the fixed-h family: h_TT = 0 and h_TRT = sqrt(3)/2.
@@ -152,23 +207,33 @@ uniform bool use_preintegrated_dual_scatter = false;
 /** 64x64 RGBAF scalar density/event-proxy weights (see
  *  benchmark/tools/generate_marschner_dual_scatter_lut.gd and
  *  validate_marschner_dual_scatter_lut.gd). Axes: U = scalar density/event
- *  proxy tau_d = 4 * local_density in [0, 16] (texel centers at (i + 0.5) / N),
- *  V = scattering cosine c (light/view alignment) in [-1, 1] -> 0.5 + 0.5*c.
- *  Channels are aggregate event weights: P1 = 1 - exp(-tau_d) (R/G, one
- *  event) and P3 = 1 - exp(-1.5 * tau_d) (B/A, three events), split
+ *  proxy tau_d = 4 * local_density in [0, tau_max] (the reachable domain;
+ *  the committed resource carries tau_max = 4.0 as metadata, texel centers at
+ *  (i + 0.5) / N), V = scattering cosine c (light/view alignment) in [-1, 1]
+ *  -> 0.5 + 0.5*c. Channels are aggregate event weights: P1 = 1 - exp(-tau_d)
+ *  (R/G, one event) and P3 = 1 - exp(-1.5 * tau_d) (B/A, three events), split
  *  forward/backward by the cosine and scaled by the F0 baked at
  *  dual_scatter_lut_eta (1.55). The runtime samples the LUT once at the
- *  scalar tau_d, then applies the RGB absorption separately as
- *  T1 = exp(-sigma_a) and T3 = exp(-1.5 * sigma_a): no RGB LUT fetch and no
- *  double absorption. Linear filtering with repeat disabled; both axes are
- *  half-texel clamped into the interior texel-center range so the clamped
- *  sample never wraps. */
+ *  scalar tau_d, then reconstructs the four directional channels separately
+ *  with the per-direction path responses
+ *  T1f = exp(-sigma_a), T1b = exp(-0.5 * sigma_a),
+ *  T3f = exp(-1.5 * sigma_a), T3b = exp(-0.75 * sigma_a)
+ *  (see fm_dual_scattering_preintegrated): the forward/backward split the LUT
+ *  stores is preserved at runtime, never cancelled by a summed fetch. Linear
+ *  filtering with repeat disabled; both axes are half-texel clamped into the
+ *  interior texel-center range so the clamped sample never wraps. */
 uniform sampler2D dual_scatter_lut : filter_linear, repeat_disable;
 /** IOR baked into dual_scatter_lut (the F0 in the stored event weights);
  *  a runtime ior outside abs(ior - dual_scatter_lut_eta) <= 0.0005 evaluates
  *  the analytic Contract B fallback with the runtime F0 instead of sampling
  *  the LUT. */
 uniform float dual_scatter_lut_eta : hint_range(1.0, 2.0) = 1.55;
+/** tau_max metadata of dual_scatter_lut: the U-axis upper bound
+ *  (tau_d = 4 * local_density; the committed resource is 4.0, the reachable
+ *  domain). The adapter populates this from the resource metadata; the
+ *  runtime maps tau_d into the texture domain with this value and never
+ *  silently assumes a wider baked domain. */
+uniform float dual_scatter_lut_tau_max : hint_range(0.01, 16.0) = 4.0;
 group_uniforms;
 
 group_uniforms Environment;
@@ -188,8 +253,9 @@ group_uniforms;
 
 group_uniforms LUT;
 /** Opt-in azimuthal LUT path (FAST_MARSCHNER_LUT). Default false keeps the
- *  analytic d'Eon azimuthal model as the reference; the LUT is a separately
- *  selectable variant, never silently enabled. */
+ *  fixed-h logistic analytic approximation (FM_AZIMUTHAL_FIXED_H_ANALYTIC) as
+ *  the reference; the LUT is a separately selectable variant, never silently
+ *  enabled. */
 uniform bool use_azimuthal_lut = false;
 /** 64^3 RGBAF azimuthal R/TT/TRT terms, axes U=phi, V=cos_theta_d,
  *  W=azimuthal_roughness (see benchmark/tools/generate_marschner_azimuthal_lut.gd
@@ -237,9 +303,9 @@ float fm_fresnel(float cos_theta, const float eta) {
 float fm_logistic(float cos_phi, float s_inv, float b_pre) {
 	float safe_cos_phi = clamp(cos_phi, -1.0, 1.0);
 	float phi = sqrt(max(0.0, 1.0 - safe_cos_phi)) * (1.5707288 + safe_cos_phi * (-0.2121144 + safe_cos_phi * 0.0742610)); // Approximate: acos(cos_phi)
-	float eta_prime_inv = exp(-phi * s_inv);
-	float c = 1.0 + eta_prime_inv;
-	return min(1.0, s_inv * eta_prime_inv * (1.0 + b_pre) / ((1.0 - b_pre) * c * c));
+	float exp_term = exp(-phi * s_inv);
+	float c = 1.0 + exp_term;
+	return min(1.0, s_inv * exp_term * (1.0 + b_pre) / ((1.0 - b_pre) * c * c));
 }
 
 
@@ -254,11 +320,30 @@ float fm_azimuthal_angular_offset(int mode, float cos_phi, float sin_phi, float 
 }
 
 
+#if FM_AZIMUTHAL_MODE == FM_AZIMUTHAL_BASELINE_H_ANALYTIC
+/** Baseline cross-section formula for the TT azimuthal angular offset h_TT
+ *  (FM_AZIMUTHAL_MODE 1 diagnostic, ANALYTIC BSDF only):
+ *
+ *    h_TT = sign(sin_phi_half) * cos_phi_half
+ *           / sqrt(1 + eta_prime_inv * (1 - 2 * eta_prime_inv * abs(sin_phi_half)))
+ *
+ *  matching the baseline reference include's h_y formula
+ *  (_baseline_cross_section_offsets in the CPU validator port). Only the
+ *  analytic BSDF fm_hair_bsdf consumes it; the LUT path is untouched (its
+ *  azimuthal terms are baked at the fixed-h offsets) and attenuation always
+ *  keeps the shipping fixed-h family (FM_H_TT / FM_H_TRT) in every mode. */
+float fm_azimuthal_baseline_h_tt(float cos_phi_half, float sin_phi_half, float eta_prime_inv) {
+	return sign(sin_phi_half) * cos_phi_half
+		/ sqrt(1.0 + eta_prime_inv * (1.0 - 2.0 * eta_prime_inv * abs(sin_phi_half)));
+}
+#endif
+
+
 /** TT attenuation with the fixed h_TT = 0 and mode = 1 constants folded in:
  *  Fresnel input cos(theta_d), Beer-Lambert path factor 4.0, and
  *  (1 - F)^2 * transmittance. Legacy diagnostic branch used only by
- *  FM_ATTENUATION_DEON_FIXED_H; the shipping FM_ATTENUATION_UNITY_FIXED_H
- *  helper fm_att_fixed_h() is the explicit equivalent. */
+ *  FM_ATTENUATION_MODE 1 (FM_ATTENUATION_DEON_FIXED_H); the shipping
+ *  fm_att_unity_fixed_h() helper is the explicit equivalent. */
 vec3 fm_tt_attenuation(float cos_theta_t, float cos_theta_d, vec3 sigma_a, float eta) {
 	float f = fm_fresnel(cos_theta_d, eta);
 	// Beer-Lambert law; the TT path length is 4.0 * (1 - eta'^-2 * 0^2) * 1.
@@ -270,9 +355,9 @@ vec3 fm_tt_attenuation(float cos_theta_t, float cos_theta_d, vec3 sigma_a, float
 /** TRT attenuation with the fixed h_TRT = sqrt(3)/2 and mode = 2 constants
  *  folded in: Fresnel input cos(theta_d)*0.5 (sqrt(1 - h*h) = 0.5), Beer-Lambert
  *  path factor 8.0*(1.0 - 0.75*eta'^-2), and (1 - F)^2 * F * transmittance.
- *  Legacy diagnostic branch used only by FM_ATTENUATION_DEON_FIXED_H; the
- *  shipping FM_ATTENUATION_UNITY_FIXED_H helper fm_att_fixed_h() is the
- *  explicit equivalent. */
+ *  Legacy diagnostic branch used only by FM_ATTENUATION_MODE 1
+ *  (FM_ATTENUATION_DEON_FIXED_H); the shipping fm_att_unity_fixed_h() helper
+ *  is the explicit equivalent. */
 vec3 fm_trt_attenuation(float cos_theta_t, float cos_theta_d, vec3 sigma_a, float eta_prime_inv, float eta) {
 	float f = fm_fresnel(cos_theta_d * 0.5, eta);
 	// Beer-Lambert law; the TRT path length is 4.0 * (1 - eta'^-2 * 0.75) * 2.
@@ -281,21 +366,13 @@ vec3 fm_trt_attenuation(float cos_theta_t, float cos_theta_d, vec3 sigma_a, floa
 }
 
 
-/** Unity-style fixed-h attenuation for TT/TRT, the shipping default.
- *  The fixed representative h values are explicit and the two internal TRT
- *  traversals are represented by a second transmittance factor. The outgoing
- *  longitudinal angle supplies cos_theta_o; the transmitted angle uses the
- *  documented Snell convention supplied by the caller. */
-vec3 fm_att_fixed_h(int mode, float cos_theta_o, float cos_theta_d, float cos_theta_t, float eta_prime, vec3 sigma_a, float eta) {
-#ifdef FM_ATTENUATION_MODEL_DEON
-	// Legacy diagnostic branch: preserve the previous folded-constant d'Eon
-	// family under an explicit name rather than silently mixing conventions.
-	float legacy_eta_prime_inv = 1.0 / max(eta_prime, 1e-4);
-	if (mode == FM_TT) {
-		return fm_tt_attenuation(cos_theta_t, cos_theta_d, sigma_a, eta);
-	}
-	return fm_trt_attenuation(cos_theta_t, cos_theta_d, sigma_a, legacy_eta_prime_inv, eta);
-#else
+/** Unity-style fixed-h attenuation for TT/TRT (FM_ATTENUATION_MODE 0, the
+ *  shipping default). The fixed representative h values are explicit and the
+ *  two internal TRT traversals are represented by a second transmittance
+ *  factor. The outgoing longitudinal angle supplies cos_theta_o; the
+ *  transmitted angle uses the documented Snell convention supplied by the
+ *  caller. */
+vec3 fm_att_unity_fixed_h(int mode, float cos_theta_o, float cos_theta_d, float cos_theta_t, float eta_prime, vec3 sigma_a, float eta) {
 	float h = (mode == FM_TRT) ? FM_H_TRT : FM_H_TT;
 	float h2 = h * h;
 	float cos_gamma_o = sqrt(max(0.0, 1.0 - h2));
@@ -311,6 +388,32 @@ vec3 fm_att_fixed_h(int mode, float cos_theta_o, float cos_theta_d, float cos_th
 		return one_minus_f * one_minus_f * transmittance;
 	}
 	return one_minus_f * one_minus_f * f * transmittance * transmittance;
+}
+
+
+/** Legacy diagnostic attenuation (FM_ATTENUATION_MODE 1, never the default):
+ *  the previous folded-constant d'Eon-style fixed-h family under an explicit
+ *  name rather than silently mixing conventions. Only reachable through the
+ *  diagnostic branch; fm_att_unity_fixed_h() is the shipping equivalent. */
+vec3 fm_att_deon_fixed_h(int mode, float cos_theta_o, float cos_theta_d, float cos_theta_t, float eta_prime, vec3 sigma_a, float eta) {
+	float legacy_eta_prime_inv = 1.0 / max(eta_prime, 1e-4);
+	if (mode == FM_TT) {
+		return fm_tt_attenuation(cos_theta_t, cos_theta_d, sigma_a, eta);
+	}
+	return fm_trt_attenuation(cos_theta_t, cos_theta_d, sigma_a, legacy_eta_prime_inv, eta);
+}
+
+
+/** Attenuation dispatcher (minimal wrapper): selects the configured
+ *  FM_ATTENUATION_MODE without changing the call sites. Mode 0 (shipping
+ *  default) = fm_att_unity_fixed_h; mode 1 (diagnostic) =
+ *  fm_att_deon_fixed_h. The #if compares the literal selector so it never
+ *  depends on nested macro expansion. */
+vec3 fm_att_fixed_h(int mode, float cos_theta_o, float cos_theta_d, float cos_theta_t, float eta_prime, vec3 sigma_a, float eta) {
+#if FM_ATTENUATION_MODE == FM_ATTENUATION_DEON_FIXED_H
+	return fm_att_deon_fixed_h(mode, cos_theta_o, cos_theta_d, cos_theta_t, eta_prime, sigma_a, eta);
+#else
+	return fm_att_unity_fixed_h(mode, cos_theta_o, cos_theta_d, cos_theta_t, eta_prime, sigma_a, eta);
 #endif
 }
 
@@ -468,13 +571,13 @@ vec3 fm_dual_scattering(vec3 base_color, vec3 omega_i, vec2 omega_o_yz_normalize
 }
 
 
-/** Upper bound of the preintegrated LUT's scalar density/event-proxy axis
- *  (tau_d = 4 * local_density). At tau_d = 16 the event weights saturate:
- *  P1 = 1 - exp(-16) and P3 = 1 - exp(-24) are within 1.2e-7 of the available
- *  one-/three-event energy, so the far end of the axis is effectively
- *  saturated and the runtime clamp at this bound keeps all lookups inside
- *  the domain. */
-const float FM_DUAL_SCATTER_TAU_MAX = 16.0;
+/** Documented default/fallback of the preintegrated LUT's scalar
+ *  density/event-proxy axis upper bound (tau_d = 4 * local_density). The
+ *  reachable domain is [0, 4] (local_density is clamped to [0, 1]); the
+ *  committed resource stores tau_max = 4.0 as metadata and the adapter binds
+ *  it into dual_scatter_lut_tau_max, so the runtime uses the resource's own
+ *  domain and never silently claims the wider legacy 16-wide axis. */
+const float FM_DUAL_SCATTER_TAU_MAX = 4.0;
 
 
 /** Stage-B preintegrated local dual scattering (opt-in, replaces the Karis
@@ -485,17 +588,25 @@ const float FM_DUAL_SCATTER_TAU_MAX = 16.0;
  *  cosine with the F0 baked at the LUT eta (dual_scatter_lut_eta, 1.55). Zero
  *  local density produces zero secondary energy and increasing density
  *  saturates toward the available one-/three-event energy. The LUT is sampled
- *  once at the scalar tau_d; runtime sigma_a stays RGB and is applied
- *  separately as T1 = exp(-sigma_a) and T3 = exp(-1.5 * sigma_a), so the LUT
- *  never bakes a hair color and there is no double absorption. Outside the
+ *  once at the scalar tau_d; runtime sigma_a stays RGB and is applied as the
+ *  four per-direction path responses
+ *  T1f = exp(-sigma_a * local_path), T1b = exp(-sigma_a * local_path * 0.5),
+ *  T3f = exp(-sigma_a * local_path * 1.5), T3b = exp(-sigma_a * local_path * 0.75)
+ *  with local_path = 1.0 (the unit one-event forward path; density enters the
+ *  event weights through tau_d, never through this RGB absorption), so the
+ *  LUT never bakes a hair color, there is no double absorption, and the
+ *  forward/backward split stored in the four channels is preserved at
+ *  runtime (the previous R+G / B+A summation cancelled it). Outside the
  *  baked-IOR tolerance (abs(ior - dual_scatter_lut_eta) <= 0.0005) the same
- *  Contract B formula is evaluated analytically with the runtime eta/F0
- *  instead of sampling the LUT; the Stage-A slice fm_dual_scattering() is a
- *  separate variant and is never used as this parity fallback. Inputs are
- *  bounded (deepness, density, view alignment, and tau_d clamped to
- *  [0, FM_DUAL_SCATTER_TAU_MAX]), the stored weights are bounded in [0, 1]
- *  with monotone growth in tau_d, and ATTENUATION enters only as the
- *  direct-light visibility ramp - it is never part of the LUT math. */
+ *  Contract B formula is evaluated analytically with the runtime eta/F0 and
+ *  the exact same four-path reconstruction and event weights instead of
+ *  sampling the LUT; the Stage-A slice fm_dual_scattering() is a separate
+ *  variant and is never used as this parity fallback. Inputs are bounded
+ *  (deepness, density, view alignment, and tau_d clamped to
+ *  [0, dual_scatter_lut_tau_max], the resource's tau_max metadata), the
+ *  stored weights are bounded in [0, 1] with monotone growth in tau_d, and
+ *  ATTENUATION enters only as the direct-light visibility ramp - it is never
+ *  part of the LUT math. */
 vec3 fm_dual_scattering_preintegrated(vec3 base_color, vec3 omega_i, vec2 omega_o_yz_normalized, vec3 sigma_a, float depth, float strength, float density, sampler2D lut_texture, float eta, float lut_eta, float attenuation) {
 	float safe_strength = max(strength, 0.0);
 	// Deepness mapping matches Stage A: depth 0 (deep) -> deepness 1.
@@ -506,12 +617,19 @@ vec3 fm_dual_scattering_preintegrated(vec3 base_color, vec3 omega_i, vec2 omega_
 	// Scalar density/event proxy: density controls how much secondary energy
 	// is generated (tau_d = 4 * local_density). RGB sigma_a is never an axis
 	// of this LUT; it is applied separately below.
-	float tau_d = clamp(local_density * 4.0, 0.0, FM_DUAL_SCATTER_TAU_MAX);
+	float lut_tau_max = max(dual_scatter_lut_tau_max, 1e-3);
+	float tau_d = clamp(local_density * 4.0, 0.0, lut_tau_max);
 
-	// RGB one-/three-event absorption, applied once per event count on both
-	// the LUT and the analytic fallback paths (no double absorption).
-	vec3 one_event_transmittance = exp(-max(sigma_a, vec3(0.0)));
-	vec3 three_event_transmittance = exp(-max(sigma_a, vec3(0.0)) * 1.5);
+	// Contract B four-path responses: local_path is the unit one-event
+	// forward path (1.0 in the LUT's tau_d unit system). Backward paths are
+	// half the forward paths (Stage-A convention) and three-event paths are
+	// 1.5x the one-event paths, so each directional channel carries its own
+	// Beer-Lambert response.
+	const float local_path = 1.0;
+	vec3 t1_forward = exp(-max(sigma_a, vec3(0.0)) * local_path);
+	vec3 t1_backward = exp(-max(sigma_a, vec3(0.0)) * local_path * 0.5);
+	vec3 t3_forward = exp(-max(sigma_a, vec3(0.0)) * local_path * 1.5);
+	vec3 t3_backward = exp(-max(sigma_a, vec3(0.0)) * local_path * 0.75);
 
 	vec3 energy = vec3(0.0);
 	if (abs(eta - lut_eta) <= 0.0005) {
@@ -521,15 +639,18 @@ vec3 fm_dual_scattering_preintegrated(vec3 base_color, vec3 omega_i, vec2 omega_
 		float half_texel = 0.5 * texel_scale;
 		float v_domain = clamp(0.5 + 0.5 * view_alignment, 0.0, 1.0);
 		float v_uv = mix(half_texel, 1.0 - half_texel, v_domain);
-		float u_domain = clamp(tau_d * (1.0 / FM_DUAL_SCATTER_TAU_MAX), 0.0, 1.0);
+		float u_domain = clamp(tau_d * (1.0 / lut_tau_max), 0.0, 1.0);
 		float u_uv = mix(half_texel, 1.0 - half_texel, u_domain);
 		vec4 events = texture(lut_texture, vec2(u_uv, v_uv));
-		energy = vec3(events.r + events.g) * one_event_transmittance
-			+ vec3(events.b + events.a) * three_event_transmittance;
+		// Reconstruct the four directional channels separately; the
+		// forward/backward split stored in the LUT survives at runtime.
+		energy = vec3(events.r) * t1_forward + vec3(events.g) * t1_backward
+			+ vec3(events.b) * t3_forward + vec3(events.a) * t3_backward;
 	} else {
 		// Analytic Contract B fallback for a runtime IOR outside the baked-LUT
-		// tolerance: the same P1/P3 event weights and forward/backward split
-		// with F0 evaluated at the runtime eta, at the same scalar tau_d.
+		// tolerance: the same P1/P3 event weights and the exact same four-path
+		// reconstruction with F0 evaluated at the runtime eta, at the same
+		// scalar tau_d.
 		float f0 = (1.0 - eta) * (1.0 - eta) / ((1.0 + eta) * (1.0 + eta));
 		float one_event_fresnel = (1.0 - f0) * (1.0 - f0);
 		float three_event_fresnel = one_event_fresnel * f0;
@@ -537,8 +658,10 @@ vec3 fm_dual_scattering_preintegrated(vec3 base_color, vec3 omega_i, vec2 omega_
 		float backward_lobe = 0.5 * (1.0 - view_alignment);
 		float one_event_weight = 1.0 - exp(-tau_d);
 		float three_event_weight = 1.0 - exp(-1.5 * tau_d);
-		energy = (forward_lobe + backward_lobe) * one_event_fresnel * one_event_weight * one_event_transmittance
-			+ (forward_lobe + backward_lobe) * three_event_fresnel * three_event_weight * three_event_transmittance;
+		energy = forward_lobe * one_event_fresnel * one_event_weight * t1_forward
+			+ backward_lobe * one_event_fresnel * one_event_weight * t1_backward
+			+ forward_lobe * three_event_fresnel * three_event_weight * t3_forward
+			+ backward_lobe * three_event_fresnel * three_event_weight * t3_backward;
 	}
 
 	return energy * max(base_color, vec3(0.0)) * safe_strength
@@ -547,8 +670,9 @@ vec3 fm_dual_scattering_preintegrated(vec3 base_color, vec3 omega_i, vec2 omega_
 
 
 /** Fast analytic Marschner BSDF: FM_LONGITUDINAL_MODE-selected Gaussian
- *  longitudinal R/TT/TRT and the analytic d'Eon azimuthal model
- *  with Unity-style fixed-h attenuation (FM_ATTENUATION_UNITY_FIXED_H). All
+ *  longitudinal R/TT/TRT and the fixed-h logistic analytic azimuthal model
+ *  (FM_AZIMUTHAL_FIXED_H_ANALYTIC) with Unity-style fixed-h attenuation
+ *  (FM_ATTENUATION_MODE 0 / FM_ATTENUATION_UNITY_FIXED_H). All
  *  inputs are in strand space:
  *  [sin(theta), cos(theta)*cos(phi), cos(theta)*sin(phi)].
  *  The light-invariant view/lobe values (view_cos_theta, view_theta_o,
@@ -572,10 +696,10 @@ vec3 fm_hair_bsdf(vec3 omega_i, vec3 omega_o, float view_cos_theta, float view_t
 	float cos_theta_d = sqrt(0.5 + 0.5 * cos_theta);
 	float sin_theta_d = sqrt(0.5 - 0.5 * cos_theta) * sign(sin_theta_o * cos_theta_i - cos_theta_o * sin_theta_i);
 
-	// Snell transmitted-angle convention: the Unity fixed-h branch uses the
-	// outgoing/view longitudinal angle; the legacy d'Eon branch retains the
-	// incoming/light convention for controlled diagnosis.
-#ifdef FM_ATTENUATION_MODEL_UNITY
+	// Snell transmitted-angle convention: the Unity fixed-h branch (mode 0)
+	// uses the outgoing/view longitudinal angle; the legacy diagnostic branch
+	// (mode 1) retains the incoming/light convention for controlled diagnosis.
+#if FM_ATTENUATION_MODE == FM_ATTENUATION_UNITY_FIXED_H
 	float cos_theta_t = sqrt(max(0.0, 1.0 - sin_theta_o * sin_theta_o / (eta * eta)));
 #else
 	float cos_theta_t = sqrt(max(0.0, 1.0 - sin_theta_i * sin_theta_i / (eta * eta)));
@@ -588,8 +712,16 @@ vec3 fm_hair_bsdf(vec3 omega_i, vec3 omega_o, float view_cos_theta, float view_t
 	// Fixed representative cross-section offsets for the azimuthal angular
 	// offsets and the fixed-h attenuation family (Tier 2 plan): h_TT = 0 and
 	// h_TRT = sqrt(3)/2. h_R is unused because the R lobe's attenuation is the
-	// plain Fresnel term below.
+	// plain Fresnel term below. FM_AZIMUTHAL_MODE 1 (diagnostic, analytic BSDF
+	// only) overrides the offsets with the baseline cross-section formula
+	// (dynamic h_TT, h_TRT = 0.91); attenuation and the LUT path are never
+	// affected, and mode 0 keeps the shipping math byte-identical.
+#if FM_AZIMUTHAL_MODE == FM_AZIMUTHAL_BASELINE_H_ANALYTIC
+	float sin_phi_half = sqrt(0.5 - 0.5 * cos_phi) * sign(sin_phi);
+	vec3 h = vec3(0.0, fm_azimuthal_baseline_h_tt(cos_phi_half, sin_phi_half, eta_prime_inv), FM_AZIMUTHAL_BASELINE_H_TRT);
+#else
 	vec3 h = vec3(0.0, FM_H_TT, FM_H_TRT);
+#endif
 
 	vec3 m_p = fm_longitudinal_scattering(asin(clamp(sin_theta_i, -0.999999, 0.999999)), view_theta_o, lobe_alpha, lobe_variance, cuticle_tilt_value, beta_m_value);
 #if FM_R_LONGITUDINAL_MODE == 1
@@ -630,7 +762,11 @@ vec3 fm_hair_bsdf(vec3 omega_i, vec3 omega_o, float view_cos_theta, float view_t
  *  hoisted to fragment(). Callers must only invoke this with a lut_width
  *  derived from a beta_N inside the generator's beta axis [0.001, 1.0];
  *  light() falls back to fm_hair_bsdf otherwise (lut_azimuthal_compatible)
- *  instead of clamping the roughness. */
+ *  instead of clamping the roughness. FM_AZIMUTHAL_MODE never affects this
+ *  path: its R/TT/TRT azimuthal terms are baked at the fixed-h offsets
+ *  (h_TT = 0, h_TRT = sqrt(3)/2), so the baseline-h diagnostic
+ *  (FM_AZIMUTHAL_MODE 1) applies to the analytic BSDF only and no LUT
+ *  sampling semantics change in any mode. */
 vec3 fm_hair_bsdf_lut(vec3 omega_i, vec3 omega_o, float view_cos_theta, float view_theta_o, vec3 lobe_alpha, vec3 lobe_variance, vec2 azimuthal_s_inv, vec2 logistic_b, vec3 sigma_a, float eta, float lut_width, sampler3D lut_texture, float cuticle_tilt_value, float beta_m_value) {
 	float sin_theta_i = omega_i.x;
 	float sin_theta_o = omega_o.x;
@@ -646,8 +782,9 @@ vec3 fm_hair_bsdf_lut(vec3 omega_i, vec3 omega_o, float view_cos_theta, float vi
 	float cos_theta_d = sqrt(0.5 + 0.5 * cos_theta);
 	float sin_theta_d = sqrt(0.5 - 0.5 * cos_theta) * sign(sin_theta_o * cos_theta_i - cos_theta_o * sin_theta_i);
 
-	// Snell and effective index, matching the analytic attenuation inputs.
-#ifdef FM_ATTENUATION_MODEL_UNITY
+	// Snell and effective index, matching the analytic attenuation inputs:
+	// mode 0 uses the outgoing/view convention, mode 1 the incoming/light one.
+#if FM_ATTENUATION_MODE == FM_ATTENUATION_UNITY_FIXED_H
 	float cos_theta_t = sqrt(max(0.0, 1.0 - sin_theta_o * sin_theta_o / (eta * eta)));
 #else
 	float cos_theta_t = sqrt(max(0.0, 1.0 - sin_theta_i * sin_theta_i / (eta * eta)));
