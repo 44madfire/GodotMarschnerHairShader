@@ -46,7 +46,7 @@ func texture3d_from_resource(data: Resource) -> Texture3D:
 		return null
 	if bytes.size() % sz != 0:
 		return null
-	var slice_bytes := bytes.size() / sz
+	var slice_bytes := int(bytes.size() / sz)
 	var slices: Array[Image] = []
 	for z in sz:
 		var image := Image.create_from_data(sx, sy, false, format, bytes.slice(z * slice_bytes, (z + 1) * slice_bytes))
