@@ -64,22 +64,21 @@ func _parse_args() -> bool:
 			return false
 	return _grid >= 8 and _phi_grid >= 8 and _beta_m > 0.0 and _beta_n > 0.0
 
-func _new_energy() -> Dictionary:
-	return {"direct": Vector3.ZERO, "candidate": Vector3.ZERO}
-
 func _integrate() -> Dictionary:
-	var lobes := [_new_energy(), _new_energy(), _new_energy()]
+	var lobe_direct := Vector3.ZERO
+	var lobe_candidate := Vector3.ZERO
 	var per_theta := []
 	var dtheta := PI / float(_grid)
 	var dphi := TAU / float(_phi_grid)
 	var high_beta_samples := 0
 	var low_beta_samples := 0
-	var total_samples := 0
+	var total_lobe_samples := 0
 
 	for theta_i_deg in THETA_I_DEG:
 		var theta_i := deg_to_rad(theta_i_deg)
 		var sin_i := sin(theta_i)
 		var cos_i := cos(theta_i)
+		var cos_theta_t := sqrt(maxf(0.0, 1.0 - sin_i * sin_i / (ETA * ETA)))
 		var theta_direct := Vector3.ZERO
 		var theta_candidate := Vector3.ZERO
 		for oi in _grid:
@@ -115,15 +114,14 @@ func _integrate() -> Dictionary:
 						high_beta_samples += 1
 					if beta_eff[p] < 0.03:
 						low_beta_samples += 1
-					total_samples += 1
-				var weight := _azimuthal_weight(cos_o, cos_d, cos_phi, sin_phi, cphi, eta_inv, h)
-				var direct_rgb := direct_m * weight
-				var candidate_rgb := candidate_m * weight
-				theta_direct += direct_rgb * domega
-				theta_candidate += candidate_rgb * domega
-				for p in 3:
-					lobes[p]["direct"] += Vector3.ONE * (direct_m[p] * weight[p] * domega)
-					lobes[p]["candidate"] += Vector3.ONE * (candidate_m[p] * weight[p] * domega)
+					total_lobe_samples += 1
+				var weight := _azimuthal_weight(cos_theta_t, cos_d, cos_phi, sin_phi, cphi, eta_inv, h)
+				var direct_lobes := direct_m * weight * domega
+				var candidate_lobes := candidate_m * weight * domega
+				lobe_direct += direct_lobes
+				lobe_candidate += candidate_lobes
+				theta_direct += direct_lobes
+				theta_candidate += candidate_lobes
 		var direct_total := theta_direct.x + theta_direct.y + theta_direct.z
 		var candidate_total := theta_candidate.x + theta_candidate.y + theta_candidate.z
 		per_theta.append({
@@ -136,23 +134,50 @@ func _integrate() -> Dictionary:
 
 	var lobe_report := []
 	var worst_lobe := 0.0
+	var names := ["R", "TT", "TRT"]
 	for p in 3:
-		var direct_value: float = (lobes[p]["direct"] as Vector3).x
-		var candidate_value: float = (lobes[p]["candidate"] as Vector3).x
+		var direct_value := lobe_direct[p]
+		var candidate_value := lobe_candidate[p]
 		var rel := absf(candidate_value - direct_value) / maxf(absf(direct_value), REL_EPS)
 		worst_lobe = maxf(worst_lobe, rel)
-		lobe_report.append({"name": ["R", "TT", "TRT"][p], "direct": direct_value, "candidate": candidate_value, "ratio": candidate_value / maxf(direct_value, REL_EPS), "relative_error": rel})
+		lobe_report.append({
+			"name": names[p],
+			"direct": direct_value,
+			"candidate": candidate_value,
+			"ratio": candidate_value / maxf(direct_value, REL_EPS),
+			"relative_error": rel,
+		})
 	var worst_angle := 0.0
 	for row in per_theta:
 		worst_angle = maxf(worst_angle, float(row["relative_error"]))
 	return {
 		"schema": "marschner_cinematic_complete_energy_v1",
-		"configuration": {"grid": _grid, "phi_grid": _phi_grid, "theta_i_deg": THETA_I_DEG, "beta_m_effective": _beta_m, "beta_n_effective": _beta_n, "cuticle": _cuticle, "lut_dimensions": [_lut.size_x, _lut.size_y, _lut.size_z], "lut_beta_range": [_lut.beta_min, _lut.beta_max]},
+		"configuration": {
+			"grid": _grid,
+			"phi_grid": _phi_grid,
+			"theta_i_deg": THETA_I_DEG,
+			"beta_m_effective": _beta_m,
+			"beta_n_effective": _beta_n,
+			"cuticle": _cuticle,
+			"eta": ETA,
+			"lut_dimensions": [_lut.size_x, _lut.size_y, _lut.size_z],
+			"lut_beta_range": [_lut.beta_min, _lut.beta_max],
+		},
 		"lobes": lobe_report,
 		"per_theta_i": per_theta,
-		"branch_statistics": {"total_lobe_samples": total_samples, "low_beta_sample_share": float(low_beta_samples) / float(maxi(total_samples, 1)), "beta_above_lut_sample_share": float(high_beta_samples) / float(maxi(total_samples, 1))},
-		"summary": {"worst_lobe_relative_error": worst_lobe, "worst_per_theta_relative_error": worst_angle},
-		"gates": {"worst_lobe_relative_error_max": 0.05, "worst_per_theta_relative_error_max": 0.05},
+		"branch_statistics": {
+			"total_lobe_samples": total_lobe_samples,
+			"low_beta_sample_share": float(low_beta_samples) / float(maxi(total_lobe_samples, 1)),
+			"beta_above_lut_sample_share": float(high_beta_samples) / float(maxi(total_lobe_samples, 1)),
+		},
+		"summary": {
+			"worst_lobe_relative_error": worst_lobe,
+			"worst_per_theta_relative_error": worst_angle,
+		},
+		"gates": {
+			"worst_lobe_relative_error_max": 0.05,
+			"worst_per_theta_relative_error_max": 0.05,
+		},
 	}
 
 func _cross_section(cphi: float, sphi: float, eta_inv: float) -> Vector3:
@@ -164,7 +189,10 @@ func _longitudinal_geometry(sin_i: float, cos_d: float, sin_d: float, cphi: floa
 	var k_sq := Vector3.ONE * (sin_d * sin_d) + Vector3.ONE * (cos_d * cos_d) * h * h
 	k_sq = Vector3(clampf(k_sq.x, 0.0, 0.999999), clampf(k_sq.y, 0.0, 0.999999), clampf(k_sq.z, 0.0, 0.999999))
 	var z := Vector3(sqrt(1.0 - k_sq.x), sqrt(1.0 - k_sq.y), sqrt(1.0 - k_sq.z))
-	var z_prime_base := Vector3(sqrt(maxf(ETA * ETA - k_sq.x, 1e-6)), sqrt(maxf(ETA * ETA - k_sq.y, 1e-6)), sqrt(maxf(ETA * ETA - k_sq.z, 1e-6)))
+	var z_prime_base := Vector3(
+		sqrt(maxf(ETA * ETA - k_sq.x, 1e-6)),
+		sqrt(maxf(ETA * ETA - k_sq.y, 1e-6)),
+		sqrt(maxf(ETA * ETA - k_sq.z, 1e-6)))
 	var z_prime := z_prime_base * Vector3(0.0, 1.0, 2.0)
 	var beta_eff := Vector3.ONE * beta_m
 	beta_eff.x *= sqrt(2.0) * cphi
@@ -207,19 +235,17 @@ func _direct_m(sin_cone: float, sin_o: float, beta: float) -> float:
 
 func _log_bessel_zero(x: float) -> float:
 	var x_sq := x * x
-	var v := (0.564187 + 1.01298 / (x_sq + 2.32434)) / sqrt(sqrt(x_sq * 0.25 + 1.0)) * (exp(-2.0 * absf(x)) * 0.5 + 0.5)
-	return log(maxf(v, 1e-300)) + x
+	var value := (0.564187 + 1.01298 / (x_sq + 2.32434)) / sqrt(sqrt(x_sq * 0.25 + 1.0))
+	value *= exp(-2.0 * absf(x)) * 0.5 + 0.5
+	return log(maxf(value, 1e-300)) + x
 
-func _azimuthal_weight(cos_o: float, cos_d: float, cos_phi: float, sin_phi: float, cphi: float, eta_inv: float, h: Vector3) -> Vector3:
+func _azimuthal_weight(cos_theta_t: float, cos_d: float, cos_phi: float, sin_phi: float, cphi: float, eta_inv: float, h: Vector3) -> Vector3:
 	var result := Vector3.ZERO
 	result.x = 0.25 * cphi * _fresnel(cos_d * cphi)
-	var cos_theta_t := sqrt(maxf(0.0, 1.0 - (1.0 - cos_o * cos_o) / (ETA * ETA)))
 	var n_tt := _logistic(_angular_offset(1, cos_phi, sin_phi, eta_inv, h.y), sqrt(2.0) / maxf(_beta_n, 1e-6))
 	var n_trt := _logistic(_angular_offset(2, cos_phi, sin_phi, eta_inv, h.z), 0.5 * sqrt(2.0) / maxf(_beta_n, 1e-6))
-	var a_tt := _attenuation(1, cos_theta_t, cos_d, eta_inv, h.y)
-	var a_trt := _attenuation(2, cos_theta_t, cos_d, eta_inv, h.z)
-	result.y = n_tt * a_tt
-	result.z = n_trt * a_trt
+	result.y = n_tt * _attenuation(1, cos_theta_t, cos_d, eta_inv, h.y)
+	result.z = n_trt * _attenuation(2, cos_theta_t, cos_d, eta_inv, h.z)
 	return result
 
 func _fresnel(cos_theta: float) -> float:
