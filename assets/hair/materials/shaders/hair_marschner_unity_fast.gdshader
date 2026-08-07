@@ -120,10 +120,10 @@ vec3 unity_standard_bsdf(vec3 omega_i, vec3 omega_o_local) {
 	float theta_o = asin(clamp(sin_theta_o, -0.999999, 0.999999));
 	float theta_h = 0.5 * (theta_i + theta_o);
 
-	// Unity keeps phi as phi_i - phi_o in its natural [-2PI,2PI] range.
-	float phi_i = atan(omega_i.z, omega_i.y);
-	float phi_o = atan(omega_o_local.z, omega_o_local.y);
-	float phi = phi_i - phi_o;
+	// Match HDRP's active GetHairAngleWorld path: project L/V to the normal
+	// plane and use the unsigned relative azimuth phi=acos(cosPhi), [0,PI].
+	float cos_phi = clamp(dot(omega_i.yz, omega_o_local.yz) / max(cos_theta_i * cos_theta_o, 1e-5), -1.0, 1.0);
+	float phi = acos(cos_phi);
 
 	float cos_theta = clamp(cos_theta_o * cos_theta_i + sin_theta_o * sin_theta_i, -1.0, 1.0);
 	float cos_theta_d = sqrt(max(0.0, 0.5 + 0.5 * cos_theta));
