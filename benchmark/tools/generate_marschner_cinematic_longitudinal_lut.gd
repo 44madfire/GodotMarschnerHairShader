@@ -9,7 +9,7 @@ const Data := preload("res://benchmark/resources/hair_marschner_cinematic_longit
 const DEFAULT_X := 128
 const DEFAULT_Y := 128
 const DEFAULT_Z := 64
-const BETA_MIN := 0.02
+const BETA_MIN := 0.015
 const BETA_MAX := 64.0
 const INV_LN_2 := 1.4426950408889634
 
