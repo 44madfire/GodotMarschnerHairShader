@@ -1,11 +1,11 @@
 // Standardized projected-R LUT diagnostic wrapper.
 //
 // This wrapper keeps the shipping fast shader untouched and swaps only the R
-// longitudinal/azimuthal product through the fp32-safe standardized-Q body.
-// Low beta uses the asymptotic Q limit and blends into the LUT; the direct
-// rounded-Bessel reference is reserved for beta values above the blend where
-// fp32 cancellation is no longer pathological. TT/TRT and all other Fast
-// Marschner paths remain shipping-equivalent.
+// longitudinal/azimuthal product through the standardized-Q diagnostic body.
+// Low beta uses the fp32-safe asymptotic limit, negligible |q| tails are
+// explicitly zeroed, and grazing LUT footprints use physical-corner
+// renormalized trilinear interpolation. Direct Bessel remains only as a
+// diagnostic fallback for unresolved cone-pole/high-beta cases.
 shader_type spatial;
 render_mode cull_disabled, world_vertex_coords;
 
@@ -35,28 +35,21 @@ uniform bool use_area_light_multipliers = true;
 group_uniforms;
 
 group_uniforms RStandardizedLUT;
-/** Standardized projected-R kernel LUT. The current committed diagnostic
- *  resource is 256x256x128 RGBAF, with R=linear Q and G=log2(Q). */
 uniform sampler3D r_standardized_lut : filter_linear, repeat_disable;
-/** false = linear-Q R channel; true = log2-Q G channel. Linear remains the
- *  default because the 512x128 CPU matrix measured lower aggregate error. */
 uniform bool r_standardized_lut_log_decode = false;
-/** Runtime LUT-domain contract. The controller should bind these from the
- *  resource metadata; defaults match standardized_r_projected_q_v1. */
 uniform vec2 r_standardized_lut_q_range = vec2(-12.0, 12.0);
 uniform vec2 r_standardized_lut_theta_cone_range = vec2(-1.5707963267948966, 1.5707963267948966);
 uniform vec2 r_standardized_lut_beta_range = vec2(0.02, 9.0);
-/** fp32-safe transition: beta<=0.015 is asymptotic only; beta>=0.03 uses the
- *  LUT/direct high-beta boundary policy, with a smooth blend between. */
 uniform vec2 r_standardized_lut_low_beta_blend = vec2(0.015, 0.03);
+/** The 512x128 complete-R matrix measured the total reflected R energy beyond
+ *  |q|=8 at <= ~2e-10 of the tested cases. Return Q=0 outside this threshold
+ *  instead of evaluating the direct reference. */
+uniform float r_standardized_lut_zero_tail_abs : hint_range(4.0, 12.0) = 8.0;
 group_uniforms;
 
 #define FM_LONGITUDINAL_MODE 0
 #define FM_R_LONGITUDINAL_MODE 0
 #define FM_CUTICLE_TILT_CONVENTION 0
-// Keep the old shared standardized implementation compiled out. The corrected
-// diagnostic body below performs the R replacement after evaluating the
-// unmodified shipping analytic BSDF.
 #define FM_R_STANDARDIZED_LUT_MODE 0
 
 #include "./hair_marschner_fast_r_standardized_body.gdshaderinc"
