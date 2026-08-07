@@ -5,11 +5,14 @@ Default flow:
   1. Generate Unity HDRP-style 64^3 RGBA16F azimuthal N LUT.
   2. Validate that LUT off-grid against the direct h integration.
   3. Generate the 128x128x64 R16F physical-domain Cinematic longitudinal LUT.
-  4. Validate it off-grid and by projected longitudinal integrals.
-  5. Run the non-headless GPU comparison unless --skip-runtime is supplied.
+  4. Validate the generic longitudinal LUT off-grid and by projected integrals.
+  5. Validate complete Cinematic R/TT/TRT energy against the analytic baseline.
+  6. Run the non-headless GPU comparison unless --skip-runtime is supplied.
 
-This script intentionally invokes Windows Godot from WSL, matching the rest of
-this repository's benchmark tooling.
+The default candidate dimensions are intentionally fixed here because the
+runtime adapter binds those exact resource paths. Resolution sweeps should run
+the generators/validators directly rather than silently benchmarking a stale
+runtime resource.
 """
 
 from __future__ import annotations
@@ -29,6 +32,7 @@ UNITY_GENERATOR = "res://benchmark/tools/generate_unity_hair_azimuthal_lut.gd"
 UNITY_VALIDATOR = "res://benchmark/tools/validate_unity_hair_azimuthal_lut.gd"
 CINEMATIC_GENERATOR = "res://benchmark/tools/generate_marschner_cinematic_longitudinal_lut.gd"
 CINEMATIC_VALIDATOR = "res://benchmark/tools/validate_marschner_cinematic_longitudinal_lut.gd"
+CINEMATIC_ENERGY = "res://benchmark/tools/validate_marschner_cinematic_energy.gd"
 RUNTIME_BENCHMARK = "res://benchmark/tools/benchmark_marschner_tier_split_runtime.gd"
 TIMEOUT = 7200.0
 
@@ -88,10 +92,8 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--godot", default=DEFAULT_GODOT)
     parser.add_argument("--project", default=DEFAULT_PROJECT)
-    parser.add_argument("--skip-generate", action="store_true", help="reuse already generated LUT resources")
+    parser.add_argument("--skip-generate", action="store_true", help="reuse the fixed default LUT resources")
     parser.add_argument("--skip-runtime", action="store_true", help="run CPU generation/validation only")
-    parser.add_argument("--unity-size", type=int, default=64)
-    parser.add_argument("--cinematic-size", default="128x128x64")
     parser.add_argument("--out", type=Path, default=Path("benchmark/results/marschner_tier_split_study.json"))
     args = parser.parse_args()
 
@@ -101,34 +103,33 @@ def main() -> int:
         die("this runner expects the Windows Godot executable")
 
     if not args.skip_generate:
-        run_godot(args.godot, args.project, UNITY_GENERATOR, headless=True, user_args=[f"--size={args.unity_size}"])
+        run_godot(args.godot, args.project, UNITY_GENERATOR, headless=True, user_args=["--size=64"])
     unity_stdout = run_godot(args.godot, args.project, UNITY_VALIDATOR, headless=True)
 
     if not args.skip_generate:
-        run_godot(args.godot, args.project, CINEMATIC_GENERATOR, headless=True, user_args=[f"--size={args.cinematic_size}"])
+        run_godot(args.godot, args.project, CINEMATIC_GENERATOR, headless=True, user_args=["--size=128x128x64"])
     cinematic_stdout = run_godot(args.godot, args.project, CINEMATIC_VALIDATOR, headless=True)
+    cinematic_energy_stdout = run_godot(args.godot, args.project, CINEMATIC_ENERGY, headless=True, user_args=["--grid=128", "--phi-grid=96", "--contract=report"])
 
     runtime_stdout = ""
     if not args.skip_runtime:
         runtime_stdout = run_godot(args.godot, args.project, RUNTIME_BENCHMARK, headless=False)
 
-    unity_report = extract_json(unity_stdout, "unity_hair_azimuthal_lut_validation_v1")
-    cinematic_report = extract_json(cinematic_stdout, "marschner_cinematic_longitudinal_lut_validation_v1")
-    runtime_report = extract_json(runtime_stdout, "marschner_tier_split_runtime_v1") if runtime_stdout else None
-
     payload = {
         "schema": "marschner_tier_split_study_v1",
         "configuration": {
-            "unity_size": args.unity_size,
-            "cinematic_size": args.cinematic_size,
+            "unity_size": 64,
+            "cinematic_size": "128x128x64",
+            "cinematic_format": "R16F",
             "runtime_executed": not args.skip_runtime,
         },
-        "unity_azimuthal_validation": unity_report,
-        "cinematic_longitudinal_validation": cinematic_report,
-        "runtime": runtime_report,
+        "unity_azimuthal_validation": extract_json(unity_stdout, "unity_hair_azimuthal_lut_validation_v1"),
+        "cinematic_longitudinal_validation": extract_json(cinematic_stdout, "marschner_cinematic_longitudinal_lut_validation_v1"),
+        "cinematic_complete_energy": extract_json(cinematic_energy_stdout, "marschner_cinematic_complete_energy_v1"),
+        "runtime": extract_json(runtime_stdout, "marschner_tier_split_runtime_v1") if runtime_stdout else None,
         "expected_artifacts": {
-            "unity_azimuthal": f"benchmark/resources/luts/unity_hair_azimuthal_lut_{args.unity_size}.res",
-            "cinematic_longitudinal": f"benchmark/resources/luts/marschner_cinematic_longitudinal_{args.cinematic_size}.res",
+            "unity_azimuthal": "benchmark/resources/luts/unity_hair_azimuthal_lut_64.res",
+            "cinematic_longitudinal": "benchmark/resources/luts/marschner_cinematic_longitudinal_128x128x64.res",
         },
     }
     args.out.parent.mkdir(parents=True, exist_ok=True)
