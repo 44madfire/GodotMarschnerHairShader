@@ -6,17 +6,19 @@ class_name HairMarschnerCinematicLongitudinalLUTData
 ## Y = sin(theta_o) in [-1,1]
 ## Z = log2(beta_eff) in [beta_min,beta_max]
 ## R stores conditioned Q = beta * sqrt(cos_cone*cos_o) * cos_o * M.
+## Production candidate uses one R16F channel; RGBA formats remain accepted for
+## diagnostic comparisons without changing the sampling contract.
 
 const INV_LN_2 := 1.4426950408889634
 
 @export var size_x: int = 128
 @export var size_y: int = 128
 @export var size_z: int = 64
-@export var format: int = Image.FORMAT_RGBAH
+@export var format: int = Image.FORMAT_RH
 @export var beta_min: float = 0.02
-@export var beta_max: float = 16.0
+@export var beta_max: float = 64.0
 @export var contract: String = "deon_physical_longitudinal_q_v1"
-@export var channels: String = "R=Q,G=0,B=0,A=1"
+@export var channels: String = "R=Q"
 @export var data: PackedByteArray = PackedByteArray()
 @export var notes: String = ""
 
@@ -24,15 +26,15 @@ func validation_errors() -> PackedStringArray:
 	var errors := PackedStringArray()
 	if size_x < 2 or size_y < 2 or size_z < 2:
 		errors.append("all dimensions must be >= 2")
-	if format != Image.FORMAT_RGBAH and format != Image.FORMAT_RGBAF:
-		errors.append("format must be RGBAH or RGBAF")
+	if format != Image.FORMAT_RH and format != Image.FORMAT_RF and format != Image.FORMAT_RGBAH and format != Image.FORMAT_RGBAF:
+		errors.append("format must be RH, RF, RGBAH, or RGBAF")
 	if not is_finite(beta_min) or not is_finite(beta_max) or beta_min <= 0.0 or beta_max <= beta_min:
 		errors.append("invalid beta range")
 	if contract != "deon_physical_longitudinal_q_v1":
 		errors.append("unexpected contract: %s" % contract)
-	if channels != "R=Q,G=0,B=0,A=1":
+	if channels != "R=Q":
 		errors.append("unexpected channels: %s" % channels)
-	var bytes_per_texel := 8 if format == Image.FORMAT_RGBAH else 16
+	var bytes_per_texel := _bytes_per_texel()
 	var expected := size_x * size_y * size_z * bytes_per_texel
 	if data.size() != expected:
 		errors.append("expected %d bytes, got %d" % [expected, data.size()])
@@ -81,11 +83,20 @@ func regularized_sin_o(sin_o: float) -> float:
 	var half_y := 0.5 / float(size_y)
 	return 2.0 * clampf(0.5 + 0.5 * sin_o, half_y, 1.0 - half_y) - 1.0
 
+func _bytes_per_texel() -> int:
+	if format == Image.FORMAT_RH:
+		return 2
+	if format == Image.FORMAT_RF:
+		return 4
+	if format == Image.FORMAT_RGBAH:
+		return 8
+	return 16
+
 func _texel_r(x: int, y: int, z: int) -> float:
-	var bytes_per_texel := 8 if format == Image.FORMAT_RGBAH else 16
+	var bytes_per_texel := _bytes_per_texel()
 	var offset := ((z * size_y + y) * size_x + x) * bytes_per_texel
 	if offset < 0 or offset + bytes_per_texel > data.size():
 		return 0.0
-	if format == Image.FORMAT_RGBAH:
+	if format == Image.FORMAT_RH or format == Image.FORMAT_RGBAH:
 		return data.decode_half(offset)
 	return data.decode_float(offset)
