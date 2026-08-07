@@ -15,7 +15,7 @@ const INV_LN_2 := 1.4426950408889634
 @export var size_y: int = 128
 @export var size_z: int = 64
 @export var format: int = Image.FORMAT_RH
-@export var beta_min: float = 0.02
+@export var beta_min: float = 0.015
 @export var beta_max: float = 64.0
 @export var contract: String = "deon_physical_longitudinal_q_v1"
 @export var channels: String = "R=Q"
