@@ -68,10 +68,10 @@ func _run() -> void:
 	if material.shader.resource_path != WRAPPER_PATH:
 		_fail("unexpected shader path: %s" % material.shader.resource_path)
 
-	var q_range := material.get_shader_parameter(&"r_standardized_lut_q_range") as Vector2
-	var cone_range := material.get_shader_parameter(&"r_standardized_lut_theta_cone_range") as Vector2
-	var beta_range := material.get_shader_parameter(&"r_standardized_lut_beta_range") as Vector2
-	var blend := material.get_shader_parameter(&"r_standardized_lut_low_beta_blend") as Vector2
+	var q_range: Vector2 = material.get_shader_parameter(&"r_standardized_lut_q_range")
+	var cone_range: Vector2 = material.get_shader_parameter(&"r_standardized_lut_theta_cone_range")
+	var beta_range: Vector2 = material.get_shader_parameter(&"r_standardized_lut_beta_range")
+	var blend: Vector2 = material.get_shader_parameter(&"r_standardized_lut_low_beta_blend")
 	var expected_q := Vector2(float(lut_data.get(&"q_min")), float(lut_data.get(&"q_max")))
 	var expected_cone := Vector2(float(lut_data.get(&"theta_cone_min")), float(lut_data.get(&"theta_cone_max")))
 	var expected_beta := Vector2(float(lut_data.get(&"beta_min")), float(lut_data.get(&"beta_max")))
