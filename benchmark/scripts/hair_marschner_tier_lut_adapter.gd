@@ -67,8 +67,13 @@ func bind_unity_fast(material: ShaderMaterial) -> bool:
 	var texture := texture3d_from_resource(data)
 	if material == null or texture == null:
 		return false
+	var eta := float(data.get(&"eta"))
 	material.set_shader_parameter(&"unity_azimuthal_lut", texture)
-	material.set_shader_parameter(&"unity_azimuthal_lut_eta", float(data.get(&"eta")))
+	material.set_shader_parameter(&"unity_azimuthal_lut_eta", eta)
+	# HDRP's Standard path uses the 1.55-specific ModifiedRefractionIndex fit
+	# and sinThetaT mapping. Pin the project compatibility uniform to the LUT
+	# eta rather than allowing a mathematically inconsistent hybrid.
+	material.set_shader_parameter(&"ior", eta)
 	return true
 
 func bind_cinematic(material: ShaderMaterial) -> bool:
