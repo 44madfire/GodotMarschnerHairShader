@@ -2,32 +2,37 @@
 //
 // The shipping fast body remains untouched. This body reuses every shipping
 // helper with FM_R_STANDARDIZED_LUT_MODE=0, then replaces only the analytic R
-// contribution at light time with the fp32-safe standardized-Q path below.
-// TT, TRT, absorption, Karis/dual scattering, coverage, TBN construction and
-// presentation controls remain identical to hair_marschner_fast_body.gdshaderinc.
+// contribution at light time with the standardized-Q path below.
+//
+// Runtime policy:
+//   * |q| > r_standardized_lut_zero_tail_abs -> Q = 0 (measured negligible)
+//   * low beta -> fp32-safe asymptotic Q
+//   * interior -> hardware trilinear LUT sample
+//   * grazing footprint -> manual trilinear sample with nonphysical corners
+//     discarded and surviving weights renormalized
+//   * cone-pole / beta-above-domain -> retained direct reference diagnostic
+//
+// TT, TRT, absorption, multiple scattering, coverage and presentation remain
+// shipping-equivalent.
 
 #include "./hair_marschner_fast.gdshaderinc"
 
-// The LUT domain is supplied by the top-level diagnostic wrapper. The committed
-// v1 resource uses q=[-12,12], theta_cone=[-PI/2,PI/2], beta=[0.02,9].
 const float FM_R_SAFE_COSINE_EPSILON = 1e-8;
 const float FM_R_SAFE_BETA_EPSILON = 1e-8;
 const float FM_R_SAFE_INV_SQRT_TAU = 0.3989422804014327;
 const float FM_R_SAFE_INV_LN_2 = 1.4426950408889634;
-const float FM_R_SAFE_LOG_Q_FLOOR = -83.17794814081263; // -120*ln(2)
+const float FM_R_SAFE_LOG_Q_FLOOR = -83.17794814081263;
 
 float fm_r_safe_log_bessel_zero(float x) {
 	float x_sq = x * x;
-	float value = (0.564187 + 1.01298 / (x_sq + 2.32434));
+	float value = 0.564187 + 1.01298 / (x_sq + 2.32434);
 	value *= 1.0 / sqrt(sqrt(x_sq * 0.25 + 1.0));
 	value *= exp(-2.0 * abs(x)) * 0.5 + 0.5;
 	return log(max(value, 1e-30)) + x;
 }
 
-// Direct Bessel evaluation is intentionally reserved for beta >= the high
-// end of r_standardized_lut_low_beta_blend. In fp32 the two O(1/beta^2)
-// terms catastrophically cancel for very small beta even though the same
-// expression is stable much farther down in the CPU double-precision port.
+// Retained only for unresolved pole/high-beta diagnostics. Low beta and
+// grazing no longer use this expression.
 float fm_r_safe_direct_q(float theta_o, float theta_cone, float beta_effective) {
 	float beta = max(beta_effective, FM_R_SAFE_BETA_EPSILON);
 	float sin_o = sin(theta_o);
@@ -67,52 +72,102 @@ float fm_r_safe_sample_q(float q, float theta_cone, float beta_r) {
 	return r_standardized_lut_log_decode ? pow(2.0, encoded.g) : max(encoded.r, 0.0);
 }
 
-bool fm_r_safe_requires_geometry_fallback(float q, float theta_cone, float beta_r) {
+bool fm_r_safe_is_pole_band(float theta_cone) {
+	ivec3 lut_size = textureSize(r_standardized_lut, 0);
+	float cone_half_step = 0.5 * (r_standardized_lut_theta_cone_range.y
+		- r_standardized_lut_theta_cone_range.x) / float(lut_size.y);
+	return abs(theta_cone) > r_standardized_lut_theta_cone_range.y - 2.0 * cone_half_step;
+}
+
+bool fm_r_safe_requires_boundary_renormalization(float q, float theta_cone, float beta_r) {
 	if (q < r_standardized_lut_q_range.x || q > r_standardized_lut_q_range.y
 			|| theta_cone < r_standardized_lut_theta_cone_range.x
 			|| theta_cone > r_standardized_lut_theta_cone_range.y
+			|| beta_r < r_standardized_lut_beta_range.x
 			|| beta_r > r_standardized_lut_beta_range.y) {
-		return true;
+		return false;
 	}
-	// beta below the LUT is handled by the asymptotic/LUT blend, not by the
-	// expensive direct reference.
-	float beta_sample = max(beta_r, r_standardized_lut_beta_range.x);
 	ivec3 lut_size = textureSize(r_standardized_lut, 0);
 	float q_half_step = 0.5 * (r_standardized_lut_q_range.y - r_standardized_lut_q_range.x) / float(lut_size.x);
 	float cone_half_step = 0.5 * (r_standardized_lut_theta_cone_range.y - r_standardized_lut_theta_cone_range.x) / float(lut_size.y);
 	float beta_min = max(r_standardized_lut_beta_range.x, FM_R_SAFE_BETA_EPSILON);
 	float beta_max = max(r_standardized_lut_beta_range.y, beta_min + 1e-6);
 	float log2_half_step = 0.5 * (log(beta_max) - log(beta_min)) * FM_R_SAFE_INV_LN_2 / float(lut_size.z);
-	if (theta_cone < r_standardized_lut_theta_cone_range.x + 2.0 * cone_half_step
-			|| theta_cone > r_standardized_lut_theta_cone_range.y - 2.0 * cone_half_step) {
-		return true;
-	}
-	float log2_beta = log(beta_sample) * FM_R_SAFE_INV_LN_2;
+	float log2_beta = log(beta_r) * FM_R_SAFE_INV_LN_2;
 	float beta_lo = max(beta_min, pow(2.0, log2_beta - log2_half_step));
 	float beta_hi = min(beta_max, pow(2.0, log2_beta + log2_half_step));
-	float physical_min = -0.5 * PI;
-	float physical_max = 0.5 * PI;
-	float corner_1 = theta_cone - cone_half_step + (q - q_half_step) * beta_lo;
-	float corner_2 = theta_cone - cone_half_step + (q + q_half_step) * beta_lo;
-	float corner_3 = theta_cone + cone_half_step + (q - q_half_step) * beta_lo;
-	float corner_4 = theta_cone + cone_half_step + (q + q_half_step) * beta_lo;
-	float corner_5 = theta_cone - cone_half_step + (q - q_half_step) * beta_hi;
-	float corner_6 = theta_cone - cone_half_step + (q + q_half_step) * beta_hi;
-	float corner_7 = theta_cone + cone_half_step + (q - q_half_step) * beta_hi;
-	float corner_8 = theta_cone + cone_half_step + (q + q_half_step) * beta_hi;
-	if (corner_1 < physical_min || corner_1 > physical_max
-			|| corner_2 < physical_min || corner_2 > physical_max
-			|| corner_3 < physical_min || corner_3 > physical_max
-			|| corner_4 < physical_min || corner_4 > physical_max
-			|| corner_5 < physical_min || corner_5 > physical_max
-			|| corner_6 < physical_min || corner_6 > physical_max
-			|| corner_7 < physical_min || corner_7 > physical_max
-			|| corner_8 < physical_min || corner_8 > physical_max) {
-		return true;
+	for (int q_side = 0; q_side < 2; q_side++) {
+		float q_corner = q + (q_side == 0 ? -q_half_step : q_half_step);
+		for (int cone_side = 0; cone_side < 2; cone_side++) {
+			float cone_corner = theta_cone + (cone_side == 0 ? -cone_half_step : cone_half_step);
+			float theta_o_lo = cone_corner + q_corner * beta_lo;
+			float theta_o_hi = cone_corner + q_corner * beta_hi;
+			if (abs(theta_o_lo) > 0.5 * PI || abs(theta_o_hi) > 0.5 * PI) {
+				return true;
+			}
+		}
 	}
 	float grazing_margin = 1.25 * (q_half_step * beta_hi + cone_half_step + abs(q) * (beta_hi - beta_lo));
-	float theta_o = theta_cone + q * beta_r;
-	return abs(theta_o) > 0.5 * PI - grazing_margin;
+	return abs(theta_cone + q * beta_r) > 0.5 * PI - grazing_margin;
+}
+
+// Returns (Q, surviving_weight). Q is linear even when the G/log channel is
+// selected: log texels are renormalized in log space, then decoded.
+vec2 fm_r_safe_sample_q_boundary_renormalized(float q, float theta_cone, float beta_r) {
+	ivec3 lut_size = textureSize(r_standardized_lut, 0);
+	float q_span = max(r_standardized_lut_q_range.y - r_standardized_lut_q_range.x, 1e-6);
+	float cone_span = max(r_standardized_lut_theta_cone_range.y - r_standardized_lut_theta_cone_range.x, 1e-6);
+	float beta_min = max(r_standardized_lut_beta_range.x, FM_R_SAFE_BETA_EPSILON);
+	float beta_max = max(r_standardized_lut_beta_range.y, beta_min + 1e-6);
+	float log2_beta_min = log(beta_min) * FM_R_SAFE_INV_LN_2;
+	float log2_beta_span = max((log(beta_max) - log(beta_min)) * FM_R_SAFE_INV_LN_2, 1e-6);
+	vec3 domain = vec3(
+		(q - r_standardized_lut_q_range.x) / q_span,
+		(theta_cone - r_standardized_lut_theta_cone_range.x) / cone_span,
+		(log(beta_r) * FM_R_SAFE_INV_LN_2 - log2_beta_min) / log2_beta_span);
+	vec3 p = clamp(domain * vec3(lut_size) - vec3(0.5), vec3(0.0), vec3(lut_size) - vec3(1.0));
+	ivec3 i0 = ivec3(floor(p));
+	ivec3 i1 = min(i0 + ivec3(1), lut_size - ivec3(1));
+	vec3 t = p - vec3(i0);
+	float accumulated = 0.0;
+	float valid_weight = 0.0;
+	for (int dz = 0; dz < 2; dz++) {
+		int iz = dz == 0 ? i0.z : i1.z;
+		float wz = dz == 0 ? 1.0 - t.z : t.z;
+		float beta_corner = pow(2.0, log2_beta_min + (float(iz) + 0.5) / float(lut_size.z) * log2_beta_span);
+		for (int dy = 0; dy < 2; dy++) {
+			int iy = dy == 0 ? i0.y : i1.y;
+			float wy = dy == 0 ? 1.0 - t.y : t.y;
+			float cone_corner = r_standardized_lut_theta_cone_range.x
+				+ (float(iy) + 0.5) / float(lut_size.y) * cone_span;
+			for (int dx = 0; dx < 2; dx++) {
+				int ix = dx == 0 ? i0.x : i1.x;
+				float wx = dx == 0 ? 1.0 - t.x : t.x;
+				float weight = wx * wy * wz;
+				if (weight <= 0.0) {
+					continue;
+				}
+				float q_corner = r_standardized_lut_q_range.x
+					+ (float(ix) + 0.5) / float(lut_size.x) * q_span;
+				float theta_o_corner = cone_corner + q_corner * beta_corner;
+				if (theta_o_corner < -0.5 * PI || theta_o_corner > 0.5 * PI) {
+					continue;
+				}
+				vec4 encoded = texelFetch(r_standardized_lut, ivec3(ix, iy, iz), 0);
+				float encoded_q = r_standardized_lut_log_decode ? encoded.g : max(encoded.r, 0.0);
+				accumulated += encoded_q * weight;
+				valid_weight += weight;
+			}
+		}
+	}
+	if (valid_weight <= 1e-8) {
+		return vec2(0.0);
+	}
+	float value = accumulated / valid_weight;
+	if (r_standardized_lut_log_decode) {
+		value = pow(2.0, value);
+	}
+	return vec2(max(value, 0.0), valid_weight);
 }
 
 float fm_r_safe_mn_from_q(float q_value, float theta_o, float theta_cone, float beta_m) {
@@ -133,29 +188,48 @@ float fm_r_safe_standardized_mn(float sin_theta_i, float sin_theta_o, float cos_
 	float beta_r = sqrt(2.0) * c_phi * max(beta_m_value, 0.0);
 	float beta_safe = max(beta_r, FM_R_SAFE_BETA_EPSILON);
 	float q = (theta_o - theta_cone) / beta_safe;
+	float zero_tail = max(r_standardized_lut_zero_tail_abs, 0.0);
+
+	// The measured complete-R energy outside |q|=8 was <= O(1e-10) in the
+	// 512x128 matrix. Early-out before exp/log/texture work.
+	if (zero_tail > 0.0 && abs(q) > zero_tail) {
+		return 0.0;
+	}
+
 	float blend_low = min(r_standardized_lut_low_beta_blend.x, r_standardized_lut_low_beta_blend.y);
 	float blend_high = max(r_standardized_lut_low_beta_blend.x, r_standardized_lut_low_beta_blend.y);
 	float q_asym = fm_r_safe_asymptotic_q(theta_o, theta_cone, beta_safe);
 	float q_value = q_asym;
 
 	if (beta_r > blend_low) {
-		bool fallback = fm_r_safe_requires_geometry_fallback(q, theta_cone, beta_r);
-		if (!fallback) {
-			float q_lut = fm_r_safe_sample_q(q, theta_cone, max(beta_r, r_standardized_lut_beta_range.x));
+		bool outside_resource = q < r_standardized_lut_q_range.x || q > r_standardized_lut_q_range.y
+			|| theta_cone < r_standardized_lut_theta_cone_range.x
+			|| theta_cone > r_standardized_lut_theta_cone_range.y;
+		bool beta_above = beta_r > r_standardized_lut_beta_range.y;
+		bool pole = !outside_resource && !beta_above && fm_r_safe_is_pole_band(theta_cone);
+
+		if (outside_resource || beta_above || pole) {
+			if (beta_r >= blend_high) {
+				q_value = fm_r_safe_direct_q(theta_o, theta_cone, beta_r);
+			}
+		} else {
+			float sample_beta = max(beta_r, r_standardized_lut_beta_range.x);
+			float q_lut;
+			if (fm_r_safe_requires_boundary_renormalization(q, theta_cone, sample_beta)) {
+				vec2 boundary_sample = fm_r_safe_sample_q_boundary_renormalized(q, theta_cone, sample_beta);
+				q_lut = boundary_sample.y > 1e-8 ? boundary_sample.x : q_asym;
+			} else {
+				q_lut = fm_r_safe_sample_q(q, theta_cone, sample_beta);
+			}
 			float lut_weight = smoothstep(blend_low, blend_high, beta_r);
 			q_value = mix(q_asym, q_lut, lut_weight);
-		} else if (beta_r >= blend_high) {
-			// Direct Bessel is permitted only in the fp32-stable high-beta
-			// boundary region. Low-beta q tails/poles/grazing remain asymptotic.
-			q_value = fm_r_safe_direct_q(theta_o, theta_cone, beta_r);
 		}
 	}
 	return fm_r_safe_mn_from_q(q_value, theta_o, theta_cone, beta_m_value);
 }
 
 // Reuse the complete shipping analytic BSDF for TT/TRT and subtract only its
-// R term before adding the standardized projected-Q R term. This keeps the
-// diagnostic change strictly R-only without copying or drifting TT/TRT math.
+// R term before adding the standardized projected-Q R term.
 vec3 fm_hair_bsdf_r_standardized_safe(vec3 omega_i, vec3 omega_o, float view_cos_theta,
 		float view_theta_o, vec3 lobe_alpha, vec3 lobe_variance, vec2 azimuthal_s_inv,
 		vec2 logistic_b, vec3 sigma_a_value, float eta, float cuticle_tilt_value,
@@ -291,9 +365,6 @@ void fragment() {
 
 void light() {
 	vec3 omega_i = inv_tangent_matrix * LIGHT;
-	// This diagnostic variant intentionally stays on the analytic azimuthal
-	// path; the controller forces use_azimuthal_lut=false. TT/TRT are evaluated
-	// by the unmodified shipping fm_hair_bsdf inside the replacement helper.
 	vec3 single_scattering = fm_hair_bsdf_r_standardized_safe(omega_i, omega_o,
 		view_yz.x, view_theta_o, lobe_alpha, lobe_variance, azimuthal_s_inv,
 		logistic_b, sigma_a, ior, lobe_cuticle_tilt, lobe_beta_m);
