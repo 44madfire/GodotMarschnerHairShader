@@ -6,8 +6,10 @@ extends Control
 
 const REFRESH_INTERVAL := 0.25
 const PREVIEW_MODE_NAMES := ["NO_HAIR", "INDIVIDUAL_GROOM", "ALL_GROOMS", "REPRESENTATIVE_DEFAULT"]
-const PREVIEW_VARIANT_NAMES := ["NO_HAIR", "COVERAGE_CONTROL", "CURRENT_MARSCHNER_BASELINE", "APPROX_KAJIYA_KAY", "BUILTIN_ALPHA_HASH_CONTROL", "FAST_MARSCHNER"]
+const PREVIEW_VARIANT_NAMES := ["NO_HAIR", "COVERAGE_CONTROL", "CURRENT_MARSCHNER_BASELINE", "APPROX_KAJIYA_KAY", "BUILTIN_ALPHA_HASH_CONTROL", "FAST_MARSCHNER", "FAST_MARSCHNER_R_STANDARDIZED_LUT"]
 const FAST_MARSCHNER_VARIANT_ID := 5
+const FAST_MARSCHNER_R_STANDARDIZED_LUT_VARIANT_ID := 10
+const PREVIEW_VARIANT_IDS := [0, 1, 2, 3, 4, FAST_MARSCHNER_VARIANT_ID, FAST_MARSCHNER_R_STANDARDIZED_LUT_VARIANT_ID]
 
 @export_category("Preview UI")
 @export var show_preview_ui: bool = true
@@ -107,7 +109,7 @@ func _populate_selectors() -> void:
 		mode_select.add_item(mode_name)
 
 	var status: Dictionary = _controller.call(&"get_preview_status")
-	_select_by_int(variant_select, int(status.get("variant", 2)))
+	_select_variant_by_id(int(status.get("variant", 2)))
 	_select_by_int(mode_select, int(status.get("mode", 3)))
 	_select_groom(String(status.get("groom_id", "Blowout")))
 	_on_variant_selected(variant_select.selected)
@@ -117,6 +119,11 @@ func _select_by_int(option: OptionButton, index: int) -> void:
 	if option.item_count == 0:
 		return
 	option.select(clampi(index, 0, option.item_count - 1))
+
+
+func _select_variant_by_id(variant_id: int) -> void:
+	var item_index := PREVIEW_VARIANT_IDS.find(variant_id)
+	_select_by_int(variant_select, item_index if item_index >= 0 else 2)
 
 
 func _select_groom(groom_id: String) -> void:
@@ -135,7 +142,7 @@ func _selected_groom() -> StringName:
 
 
 func _on_variant_selected(_index: int) -> void:
-	var is_fast_marschner := variant_select.selected == FAST_MARSCHNER_VARIANT_ID
+	var is_fast_marschner := _preview_variant_id() == FAST_MARSCHNER_VARIANT_ID
 	fast_settings.visible = is_fast_marschner
 	if variant_select.selected == 0:
 		apply_note.text = "NO_HAIR hides hair regardless of the selected display mode."
@@ -164,6 +171,8 @@ func _on_environment_toggled(enabled: bool) -> void:
 
 
 func _sync_active_variant_name(variant_name: String) -> String:
+	if variant_name == "FAST_MARSCHNER_R_STANDARDIZED_LUT":
+		return variant_name
 	if variant_name.begins_with("FAST_MARSCHNER"):
 		return "FAST_MARSCHNER"
 	return variant_name
@@ -182,9 +191,10 @@ func _preview_settings() -> Dictionary:
 
 
 func _preview_variant_id() -> int:
-	# The UI intentionally collapses all FAST_MARSCHNER_* controller variants
-	# into one canonical shader entry. The settings dictionary is the mode seam.
-	return FAST_MARSCHNER_VARIANT_ID if variant_select.selected == FAST_MARSCHNER_VARIANT_ID else variant_select.selected
+	# The generic FAST_MARSCHNER entry keeps its settings seam; the standardized
+	# R LUT entry maps explicitly to controller enum value 10 rather than the
+	# azimuthal LUT variant at value 6.
+	return PREVIEW_VARIANT_IDS[clampi(variant_select.selected, 0, PREVIEW_VARIANT_IDS.size() - 1)]
 
 
 func _controller_accepts_preview_settings() -> bool:

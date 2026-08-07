@@ -37,10 +37,11 @@ enum BenchmarkVariant {
 	FAST_MARSCHNER_DUAL_SCATTER,
 	FAST_MARSCHNER_ENVIRONMENT,
 	FAST_MARSCHNER_DUAL_SCATTER_PREINTEGRATED,
+	FAST_MARSCHNER_R_STANDARDIZED_LUT,
 }
 
 const MODE_NAMES := ["NO_HAIR", "INDIVIDUAL_GROOM", "ALL_GROOMS", "REPRESENTATIVE_DEFAULT"]
-const VARIANT_NAMES := ["NO_HAIR", "COVERAGE_CONTROL", "CURRENT_MARSCHNER_BASELINE", "APPROX_KAJIYA_KAY", "BUILTIN_ALPHA_HASH_CONTROL", "FAST_MARSCHNER_ANALYTIC", "FAST_MARSCHNER_LUT", "FAST_MARSCHNER_DUAL_SCATTER", "FAST_MARSCHNER_ENVIRONMENT", "FAST_MARSCHNER_DUAL_SCATTER_PREINTEGRATED"]
+const VARIANT_NAMES := ["NO_HAIR", "COVERAGE_CONTROL", "CURRENT_MARSCHNER_BASELINE", "APPROX_KAJIYA_KAY", "BUILTIN_ALPHA_HASH_CONTROL", "FAST_MARSCHNER_ANALYTIC", "FAST_MARSCHNER_LUT", "FAST_MARSCHNER_DUAL_SCATTER", "FAST_MARSCHNER_ENVIRONMENT", "FAST_MARSCHNER_DUAL_SCATTER_PREINTEGRATED", "FAST_MARSCHNER_R_STANDARDIZED_LUT"]
 const STATE_NAMES := ["IDLE", "PREWARM", "SETTLE", "SAMPLE", "CAPTURE", "COMPLETE"]
 
 const PREWARM_DEFAULT := 180
@@ -68,6 +69,15 @@ const FAST_MARSCHNER_LUT_DATA: Resource = preload("res://benchmark/resources/lut
 ## benchmark/tools/generate_marschner_dual_scatter_lut.gd and
 ## validate_marschner_dual_scatter_lut.gd).
 const FAST_MARSCHNER_DUAL_SCATTER_LUT_DATA: Resource = preload("res://benchmark/resources/luts/fast_marschner_dual_scatter_lut_64.res")
+## Diagnostic wrapper for the Phase 4 standardized projected-R LUT path
+## (FM_R_STANDARDIZED_LUT_MODE 1): shares the same body include as the
+## shipping fast wrapper, so the material contract is identical.
+const FAST_MARSCHNER_R_STANDARDIZED_LUT_SHADER: Shader = preload("res://assets/hair/materials/shaders/hair_marschner_fast_r_standardized_lut.gdshader")
+## Committed 256x256x128 RGBAF standardized projected-R kernel LUT data for
+## the FAST_MARSCHNER_R_STANDARDIZED_LUT variant (see
+## benchmark/tools/generate_marschner_r_standardized_lut.gd and
+## benchmark/reference/fast_marschner_r_standardized_kernel_reference.gd).
+const FAST_MARSCHNER_R_STANDARDIZED_LUT_DATA: Resource = preload("res://benchmark/resources/luts/fast_marschner_r_standardized_lut_256x256x128.res")
 ## The committed azimuthal LUT is numerically validated only for azimuthal
 ## roughness >= this value (validate_marschner_azimuthal_lut.gd's realistic
 ## gate). FAST_MARSCHNER_LUT rejects lower values at the application seam;
@@ -129,7 +139,7 @@ const RENDER_INFO_SHADOW := 1
 @export_category("Smoke Run")
 @export_enum("NO_HAIR", "INDIVIDUAL_GROOM", "ALL_GROOMS", "REPRESENTATIVE_DEFAULT") var benchmark_mode: int = BenchmarkMode.REPRESENTATIVE_DEFAULT
 @export var individual_groom: StringName = &"Blowout"
-@export_enum("NO_HAIR", "COVERAGE_CONTROL", "CURRENT_MARSCHNER_BASELINE", "APPROX_KAJIYA_KAY", "BUILTIN_ALPHA_HASH_CONTROL", "FAST_MARSCHNER_ANALYTIC", "FAST_MARSCHNER_LUT", "FAST_MARSCHNER_DUAL_SCATTER", "FAST_MARSCHNER_ENVIRONMENT", "FAST_MARSCHNER_DUAL_SCATTER_PREINTEGRATED") var benchmark_variant: int = BenchmarkVariant.CURRENT_MARSCHNER_BASELINE
+@export_enum("NO_HAIR", "COVERAGE_CONTROL", "CURRENT_MARSCHNER_BASELINE", "APPROX_KAJIYA_KAY", "BUILTIN_ALPHA_HASH_CONTROL", "FAST_MARSCHNER_ANALYTIC", "FAST_MARSCHNER_LUT", "FAST_MARSCHNER_DUAL_SCATTER", "FAST_MARSCHNER_ENVIRONMENT", "FAST_MARSCHNER_DUAL_SCATTER_PREINTEGRATED", "FAST_MARSCHNER_R_STANDARDIZED_LUT") var benchmark_variant: int = BenchmarkVariant.CURRENT_MARSCHNER_BASELINE
 @export var auto_start_smoke: bool = false
 @export_range(0, 100000, 1) var prewarm_frames: int = PREWARM_DEFAULT
 @export_range(0, 100000, 1) var settle_frames: int = SETTLE_DEFAULT
@@ -280,7 +290,7 @@ func apply_preview(requested_mode: int, requested_variant: int, requested_groom:
 		return false
 
 	_active_mode = clampi(requested_mode, BenchmarkMode.NO_HAIR, BenchmarkMode.REPRESENTATIVE_DEFAULT)
-	_active_variant = clampi(requested_variant, BenchmarkVariant.NO_HAIR, BenchmarkVariant.FAST_MARSCHNER_DUAL_SCATTER_PREINTEGRATED)
+	_active_variant = clampi(requested_variant, BenchmarkVariant.NO_HAIR, BenchmarkVariant.FAST_MARSCHNER_R_STANDARDIZED_LUT)
 	if requested_groom != &"":
 		_active_individual_groom = requested_groom
 	last_start_error = ""
@@ -396,7 +406,8 @@ func _variant_freezes_preview_bayer() -> bool:
 		BenchmarkVariant.FAST_MARSCHNER_LUT, \
 		BenchmarkVariant.FAST_MARSCHNER_DUAL_SCATTER, \
 		BenchmarkVariant.FAST_MARSCHNER_ENVIRONMENT, \
-		BenchmarkVariant.FAST_MARSCHNER_DUAL_SCATTER_PREINTEGRATED:
+		BenchmarkVariant.FAST_MARSCHNER_DUAL_SCATTER_PREINTEGRATED, \
+		BenchmarkVariant.FAST_MARSCHNER_R_STANDARDIZED_LUT:
 			return true
 		_:
 			return false
@@ -480,6 +491,43 @@ func _apply_fast_lut_binding() -> bool:
 				override_material.set(&"shader_parameter/use_environment", false)
 				override_material.set(&"shader_parameter/azimuthal_lut", lut_texture)
 				override_material.set(&"shader_parameter/azimuthal_lut_eta", float(FAST_MARSCHNER_LUT_DATA.get(&"eta")))
+	return true
+
+
+## Enables the Phase 4 standardized projected-R LUT path on the live
+## FAST_MARSCHNER_R_STANDARDIZED_LUT surface overrides: binds the committed
+## 256x256x128 Texture3D built from the standardized-R LUT data, sets
+## r_standardized_lut_log_decode=false (the linear-Q decode is the default
+## contract; the runtime test toggles it on the live clone), and forces
+## use_azimuthal_lut=false / use_dual_scatter=false /
+## use_preintegrated_dual_scatter=false / use_environment=false (variant
+## identity is authoritative: the standardized-R diagnostic never combines
+## with the azimuthal LUT, dual scattering, or the environment slice).
+## Returns false (recording a start failure) when the committed LUT data
+## cannot be built into a usable Texture3D, so apply_preview()/benchmark
+## starts reject the variant instead of silently sampling an empty texture.
+func _apply_r_standardized_lut_binding() -> bool:
+	var lut_texture: Texture3D = _material_adapter.standardized_r_lut_texture(FAST_MARSCHNER_R_STANDARDIZED_LUT_DATA)
+	if lut_texture == null:
+		_record_start_failure("FAST_MARSCHNER_R_STANDARDIZED_LUT could not be applied: the committed LUT data failed to build a texture.")
+		return false
+	for groom_data in groom_catalog:
+		var groom := groom_data["node"] as MeshInstance3D
+		if not is_instance_valid(groom):
+			continue
+		for surface_data in groom_data["surfaces"]:
+			if not bool(surface_data["selected"]):
+				continue
+			var override_material := groom.get_surface_override_material(int(surface_data["surface_index"])) as ShaderMaterial
+			if override_material:
+				# Variant identity is authoritative: the standardized-R
+				# diagnostic never combines with any other opt-in slice.
+				override_material.set(&"shader_parameter/use_azimuthal_lut", false)
+				override_material.set(&"shader_parameter/use_dual_scatter", false)
+				override_material.set(&"shader_parameter/use_preintegrated_dual_scatter", false)
+				override_material.set(&"shader_parameter/use_environment", false)
+				override_material.set(&"shader_parameter/r_standardized_lut", lut_texture)
+				override_material.set(&"shader_parameter/r_standardized_lut_log_decode", false)
 	return true
 
 
@@ -594,15 +642,20 @@ func _apply_environment_binding() -> bool:
 
 ## Returns true for the timed Fast Marschner variants that pin the shared-body
 ## material contract: FAST_MARSCHNER_ANALYTIC, FAST_MARSCHNER_LUT,
-## FAST_MARSCHNER_DUAL_SCATTER, FAST_MARSCHNER_ENVIRONMENT, and
-## FAST_MARSCHNER_DUAL_SCATTER_PREINTEGRATED all use hair_marschner_fast.gdshader.
+## FAST_MARSCHNER_DUAL_SCATTER, FAST_MARSCHNER_ENVIRONMENT,
+## FAST_MARSCHNER_DUAL_SCATTER_PREINTEGRATED, and
+## FAST_MARSCHNER_R_STANDARDIZED_LUT all use the shared
+## hair_marschner_fast_body.gdshaderinc body (the diagnostic wrapper only
+## overrides the R-longitudinal selector), so the pinned preview/timing
+## uniforms exist on every one of them.
 func _variant_uses_timed_material_contract(variant_id: int) -> bool:
 	match variant_id:
 		BenchmarkVariant.FAST_MARSCHNER_ANALYTIC, \
 		BenchmarkVariant.FAST_MARSCHNER_LUT, \
 		BenchmarkVariant.FAST_MARSCHNER_DUAL_SCATTER, \
 		BenchmarkVariant.FAST_MARSCHNER_ENVIRONMENT, \
-		BenchmarkVariant.FAST_MARSCHNER_DUAL_SCATTER_PREINTEGRATED:
+		BenchmarkVariant.FAST_MARSCHNER_DUAL_SCATTER_PREINTEGRATED, \
+		BenchmarkVariant.FAST_MARSCHNER_R_STANDARDIZED_LUT:
 			return true
 		_:
 			return false
@@ -698,7 +751,7 @@ func start_benchmark(requested_mode: int = -1, requested_variant: int = -1, requ
 	_begin_manual_run()
 
 	_active_mode = benchmark_mode if requested_mode < 0 else clampi(requested_mode, 0, BenchmarkMode.REPRESENTATIVE_DEFAULT)
-	_active_variant = benchmark_variant if requested_variant < 0 else clampi(requested_variant, 0, BenchmarkVariant.FAST_MARSCHNER_DUAL_SCATTER_PREINTEGRATED)
+	_active_variant = benchmark_variant if requested_variant < 0 else clampi(requested_variant, 0, BenchmarkVariant.FAST_MARSCHNER_R_STANDARDIZED_LUT)
 	_active_individual_groom = individual_groom if requested_groom == &"" else requested_groom
 	if not apply_variant(_active_variant):
 		_set_benchmark_state(BenchmarkState.IDLE)
@@ -794,7 +847,7 @@ func apply_variant(variant_id: int, preview_only: bool = false) -> bool:
 		_discover_grooms()
 	if _material_adapter == null:
 		_material_adapter = HairMaterialAdapter.new()
-	var selected_variant := clampi(variant_id, 0, BenchmarkVariant.FAST_MARSCHNER_DUAL_SCATTER_PREINTEGRATED)
+	var selected_variant := clampi(variant_id, 0, BenchmarkVariant.FAST_MARSCHNER_R_STANDARDIZED_LUT)
 	var display_mode := _active_mode
 	_restore_original_surface_state()
 	_active_variant = selected_variant
@@ -859,6 +912,17 @@ func apply_variant(variant_id: int, preview_only: bool = false) -> bool:
 				# authoritative) and binds the committed 2D LUT.
 				_apply_shader_variant(FAST_MARSCHNER_SHADER, profile)
 				applied = _apply_preintegrated_dual_scatter_binding()
+				_apply_display_mode(display_mode)
+			BenchmarkVariant.FAST_MARSCHNER_R_STANDARDIZED_LUT:
+				# Phase 4 diagnostic wrapper (FM_R_STANDARDIZED_LUT_MODE 1):
+				# the same shared body as the shipping fast shader, with the
+				# R-longitudinal product reconstructed from the committed
+				# standardized projected-R 3D LUT. The variant binds the
+				# Texture3D and forces every other opt-in slice off
+				# (identity authoritative); log decode stays false by
+				# default (the runtime test toggles it on the live clone).
+				_apply_shader_variant(FAST_MARSCHNER_R_STANDARDIZED_LUT_SHADER, profile)
+				applied = _apply_r_standardized_lut_binding()
 				_apply_display_mode(display_mode)
 			BenchmarkVariant.FAST_MARSCHNER_ENVIRONMENT:
 				# Same shared fast shader; the fragment-stage environment
@@ -956,7 +1020,7 @@ func _start_resource_case(case: Resource, expected_token: int, output_directory:
 	_active_coverage_metrics = {}
 	_suite_repeat_count = maxi(repeat_count, 1)
 	_active_mode = clampi(_resource_int(case, &"mode", BenchmarkMode.REPRESENTATIVE_DEFAULT), 0, BenchmarkMode.REPRESENTATIVE_DEFAULT)
-	_active_variant = clampi(_resource_int(case, &"variant", BenchmarkVariant.CURRENT_MARSCHNER_BASELINE), 0, BenchmarkVariant.FAST_MARSCHNER_DUAL_SCATTER_PREINTEGRATED)
+	_active_variant = clampi(_resource_int(case, &"variant", BenchmarkVariant.CURRENT_MARSCHNER_BASELINE), 0, BenchmarkVariant.FAST_MARSCHNER_R_STANDARDIZED_LUT)
 	_active_individual_groom = _resource_string_name(case, &"groom_id", &"")
 	_active_case_profile_id = _resource_string_name(case, &"profile_id", &"source_current")
 	if not apply_variant(_active_variant):

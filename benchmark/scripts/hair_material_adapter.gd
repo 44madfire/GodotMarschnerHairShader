@@ -37,6 +37,13 @@ const FAST_MARSCHNER_UNIFORMS: Array[StringName] = [
 	&"use_environment",
 	&"environment_texture",
 	&"environment_strength",
+	# Phase 4 standardized projected-R LUT diagnostics: declared only by the
+	# diagnostic wrapper hair_marschner_fast_r_standardized_lut.gdshader
+	# (FM_R_STANDARDIZED_LUT_MODE 1). The texture itself is bound through
+	# standardized_r_lut_texture(); the log-decode bool defaults false and is
+	# toggled by the runtime test on the live clone.
+	&"r_standardized_lut",
+	&"r_standardized_lut_log_decode",
 	# Preview/timing/validation uniforms declared only through the shared
 	# includes (hair_marschner_fast_body.gdshaderinc and the fast common
 	# include): the Fast wrapper declares no uniforms of its own, so these
@@ -71,6 +78,7 @@ const FAST_MARSCHNER_SOURCE_UNIFORMS: Array[StringName] = [
 var _alpha_hash_texture_cache: Dictionary = {}
 var _azimuthal_lut_texture_cache: Dictionary = {}
 var _dual_scatter_lut_texture_cache: Dictionary = {}
+var _r_standardized_lut_texture_cache: Dictionary = {}
 
 
 ## Resolves a profile_id to its HairBenchmarkProfile resource, or null when the
@@ -336,6 +344,62 @@ func dual_scatter_lut_texture(lut_data: Resource) -> Texture2D:
 	if texture.get_width() != size or texture.get_height() != size:
 		return null
 	_dual_scatter_lut_texture_cache[cache_key] = texture
+	return texture
+
+
+## Builds (and caches) the non-cubic ImageTexture3D for the committed
+## FastMarschnerRStandardizedLUTData resource (Phase 4 standardized projected-R
+## kernel LUT, committed at 256x256x128 RGBAF; see
+## benchmark/tools/generate_marschner_r_standardized_lut.gd). Godot 4.7's
+## ResourceSaver cannot self-contain an ImageTexture3D, so the texture is
+## built at runtime from the committed raw RGBAF data with the same defensive
+## shape checks as azimuthal_lut_texture(): exact byte count for the
+## non-cubic size_x*size_y*size_z grid, a successful per-Z-slice image
+## decode, a valid texture RID, and matching dimensions. Returns null on any
+## failure so the controller can reject the variant instead of silently
+## sampling an empty texture.
+func standardized_r_lut_texture(lut_data: Resource) -> Texture3D:
+	if lut_data == null:
+		return null
+	var cache_key: int = lut_data.get_instance_id()
+	if _r_standardized_lut_texture_cache.has(cache_key):
+		var cached_value: Variant = _r_standardized_lut_texture_cache[cache_key]
+		return cached_value as Texture3D
+	var data_value: Variant = lut_data.get(&"data")
+	var size_x_value: Variant = lut_data.get(&"size_x")
+	var size_y_value: Variant = lut_data.get(&"size_y")
+	var size_z_value: Variant = lut_data.get(&"size_z")
+	var format_value: Variant = lut_data.get(&"format")
+	if not (data_value is PackedByteArray) or not (size_x_value is int) or not (size_y_value is int) or not (size_z_value is int) or not (format_value is int):
+		return null
+	var data: PackedByteArray = data_value
+	var size_x: int = size_x_value
+	var size_y: int = size_y_value
+	var size_z: int = size_z_value
+	var format: int = format_value
+	if size_x <= 0 or size_y <= 0 or size_z <= 0:
+		return null
+	if data.size() != size_x * size_y * size_z * 16:
+		return null
+	# Same Godot 4.7 workaround as azimuthal_lut_texture(): split the packed
+	# RGBAF bytes into per-Z-slice Images, which Image.create_from_data
+	# accepts.
+	var slice_bytes := size_x * size_y * 16
+	var slices: Array[Image] = []
+	for z in size_z:
+		var slice_image: Image = Image.create_from_data(size_x, size_y, false, format, data.slice(z * slice_bytes, (z + 1) * slice_bytes))
+		if slice_image == null:
+			return null
+		slices.append(slice_image)
+	var texture := ImageTexture3D.new()
+	texture.create(format, size_x, size_y, size_z, false, slices)
+	# Verify the texture is actually usable before caching: a failed create can
+	# leave an uninitialized RID that renders nothing.
+	if not texture.get_rid().is_valid():
+		return null
+	if texture.get_width() != size_x or texture.get_height() != size_y or texture.get_depth() != size_z:
+		return null
+	_r_standardized_lut_texture_cache[cache_key] = texture
 	return texture
 
 

@@ -95,6 +95,31 @@
 #define FM_R_LONGITUDINAL_MODE 0
 #endif
 
+// Standardized projected-R longitudinal LUT model: single numeric selector
+// for the R lobe product only, applied in both the analytic and LUT BSDF
+// result accumulations. 0 = shipping default: the R lobe keeps the analytic
+// 0.25*cos_phi_half*M_R product (current behavior unchanged). 1 =
+// diagnostic: the R product M_R*N_R is reconstructed from the committed
+// standardized projected-R LUT
+// (M_R*N_R = Q / (4*sqrt(2)*beta_m*cos(theta_o)
+//                 * sqrt(cos(theta_cone)*cos(theta_o))), Q sampled from
+// r_standardized_lut) instead of evaluating 0.25*cos_phi_half*M_R, avoiding
+// the 0*infinity form as beta_r -> 0 (see
+// fm_r_standardized_longitudinal_product below and the CPU reference in
+// benchmark/reference/fast_marschner_r_standardized_kernel_reference.gd).
+// The direct/asymptotic Q reference fallback covers q/beta outside the LUT
+// support, the cone-pole outer two theta_cone texel bands, grazing
+// footprints, and beta_r <= 1e-8. TT/TRT are never modified in either mode,
+// and mode 0 remains the shipping default. The #ifndef guard honors a
+// selector defined by a wrapper shader before including the body; the
+// default applies when this include is used directly. Only wrappers that
+// declare the r_standardized_lut / r_standardized_lut_log_decode uniforms
+// may define mode 1 (the committed diagnostic wrapper
+// hair_marschner_fast_r_standardized_lut.gdshader declares both).
+#ifndef FM_R_STANDARDIZED_LUT_MODE
+#define FM_R_STANDARDIZED_LUT_MODE 0
+#endif
+
 // Attenuation model: single numeric selector (no boolean/legacy macros).
 // 0 = Unity-style fixed-h family (shipping default, current behavior
 // unchanged); 1 = legacy diagnostic branch (the previous folded-constant
@@ -489,6 +514,224 @@ float fm_r_longitudinal_nonseparable(float sin_theta_i, float sin_theta_o, float
 #endif
 
 
+#if FM_R_STANDARDIZED_LUT_MODE == 1
+// --- Standardized projected-R LUT constants ---
+// CPU contract: benchmark/reference/fast_marschner_r_standardized_kernel_reference.gd
+// and benchmark/resources/fast_marschner_r_standardized_lut_data.gd. Axes
+// (texel centers at (i + 0.5) / N): X = q = (theta_o - theta_cone) / beta_r
+// in [-12, 12], Y = theta_cone in [-PI/2, PI/2], Z = log2(beta_r) linear with
+// beta_r in [0.02, 9]. Channels: R = linear Q, G = log2(Q) (floor -120),
+// B = 0, A = 1. Q = beta_r * sqrt(cos(theta_cone) * cos(theta_o))
+// * cos(theta_o) * M_R; the reconstruction below recovers M_R*N_R
+// (N_R = 0.25*cos_phi_half) without ever evaluating the 0*infinity form.
+const float FM_R_STD_Q_MIN = -12.0;
+const float FM_R_STD_Q_MAX = 12.0;
+const float FM_R_STD_BETA_MIN = 0.02;
+const float FM_R_STD_BETA_MAX = 9.0;
+const float FM_R_STD_LOG2_VALUE_FLOOR = -120.0;
+const float FM_R_STD_COSINE_EPSILON = 1e-12;
+const float FM_R_STD_BETA_NUMERIC_EPSILON = 1e-8;
+const float FM_R_STD_INV_SQRT_TAU = 0.3989422804014327;
+const float FM_R_STD_INV_LN_2 = 1.4426950408889634;
+const float FM_R_STD_LOG_Q_CLAMP_FLOOR = -83.17794814081263; // -120 * log(2), the CPU's LOG2_VALUE_FLOOR * log(2)
+
+
+/** Rounded-Bessel log approximation, matching the CPU reference
+ *  log_bessel_zero(). The 1e-30 argument floor keeps log() finite in float32
+ *  when the Bessel product underflows; the final clamp in fm_r_std_direct_q
+ *  tames any residual -inf the same way the CPU's double-precision floor
+ *  does. */
+float fm_r_std_log_bessel_zero(float x) {
+	float x_sq = x * x;
+	float value = (0.564187 + 1.01298 / (x_sq + 2.32434));
+	value *= 1.0 / sqrt(sqrt(x_sq * 0.25 + 1.0));
+	value *= exp(-2.0 * abs(x)) * 0.5 + 0.5;
+	return log(max(value, 1e-30)) + x;
+}
+
+
+/** Direct-branch log Q (theta_o, theta_cone, beta_r), matching the CPU's
+ *  direct_log_q_value(): the d'Eon 2011 Bessel form of M_R scaled by
+ *  beta_r * sqrt(cos_cone * cos_o) * cos_o, with beta floored at
+ *  BETA_NUMERIC_EPSILON and the cosines floored at COSINE_EPSILON. */
+float fm_r_std_direct_log_q(float theta_o, float theta_cone, float beta_effective) {
+	float beta = max(beta_effective, FM_R_STD_BETA_NUMERIC_EPSILON);
+	float sin_o = sin(theta_o);
+	float cos_o = max(cos(theta_o), FM_R_STD_COSINE_EPSILON);
+	float sin_cone = sin(theta_cone);
+	float cos_cone = max(cos(theta_cone), FM_R_STD_COSINE_EPSILON);
+	float variance_inverse = 1.0 / (beta * beta);
+	return (sin_cone * sin_o - 1.0) * variance_inverse
+		+ fm_r_std_log_bessel_zero(cos_cone * cos_o * variance_inverse)
+		+ log(variance_inverse) - log(cos_o)
+		+ log(beta) + 0.5 * log(cos_cone) + 1.5 * log(cos_o);
+}
+
+
+/** Direct-branch Q with the CPU's log clamp: exp(clamp(log_q,
+ *  LOG2_VALUE_FLOOR * log(2), 80)). The clamp floor keeps the float32
+ *  cancellation/underflow tails finite and bounded (never inf/NaN). */
+float fm_r_std_direct_q(float theta_o, float theta_cone, float beta_effective) {
+	return exp(clamp(fm_r_std_direct_log_q(theta_o, theta_cone, beta_effective), FM_R_STD_LOG_Q_CLAMP_FLOOR, 80.0));
+}
+
+
+/** Asymptotic (large variance-argument) Gaussian limit of Q, matching the
+ *  CPU's asymptotic_q_value(): Q ~ 1/sqrt(2*pi) * exp(-2*sin(delta/2)^2 /
+ *  beta^2), delta = theta_o - theta_cone. The exponent uses
+ *  -2*sin(delta/2)^2 instead of cos(delta) - 1 to avoid catastrophic
+ *  cancellation for tiny delta; beta is floored at BETA_NUMERIC_EPSILON so
+ *  beta_r == 0 (and the exact c_phi == 0 seam) stays finite. */
+float fm_r_std_asymptotic_q(float theta_o, float theta_cone, float beta_effective) {
+	float beta = max(beta_effective, FM_R_STD_BETA_NUMERIC_EPSILON);
+	float half_delta = 0.5 * (theta_o - theta_cone);
+	return FM_R_STD_INV_SQRT_TAU * exp(-2.0 * sin(half_delta) * sin(half_delta) / (beta * beta));
+}
+
+
+/** Reference Q dispatcher matching the CPU branch contract: beta_r above
+ *  BETA_NUMERIC_EPSILON uses the direct Bessel form, at or below it the
+ *  asymptotic Gaussian limit. */
+float fm_r_std_reference_q(float theta_o, float theta_cone, float beta_effective) {
+	if (beta_effective > FM_R_STD_BETA_NUMERIC_EPSILON) {
+		return fm_r_std_direct_q(theta_o, theta_cone, beta_effective);
+	}
+	return fm_r_std_asymptotic_q(theta_o, theta_cone, beta_effective);
+}
+
+
+/** True when the (q, theta_cone, beta_r) sample must use the direct/asymptotic
+ *  reference instead of the clamped trilinear LUT read, matching the CPU's
+ *  requires_reference_fallback() priority order:
+ *    1. q/beta out of support (theta_cone is inside [-PI/2, PI/2] by
+ *       construction: it comes from asin() of a clamped sine),
+ *    2. cone-pole band: theta_cone inside the outer two Y-axis texel bands
+ *       (reconstructing a pole-clamped cone with the exact cos(theta_cone)
+ *       denominator would divide by the epsilon floor rather than the sampled
+ *       edge cone),
+ *    3. grazing footprint: any trilinear corner (or the grazing margin)
+ *       straddles the physical outgoing-angle boundary |theta_o| <= PI/2.
+ * The half-step extents are derived from the texture's own size. */
+bool fm_r_std_requires_fallback(float q, float theta_cone, float beta_r, sampler3D lut_texture) {
+	if (q < FM_R_STD_Q_MIN || q > FM_R_STD_Q_MAX
+			|| beta_r < FM_R_STD_BETA_MIN || beta_r > FM_R_STD_BETA_MAX) {
+		return true;
+	}
+	ivec3 lut_size = textureSize(lut_texture, 0);
+	float q_half_step = 0.5 * (FM_R_STD_Q_MAX - FM_R_STD_Q_MIN) / float(lut_size.x);
+	float cone_half_step = 0.5 * PI / float(lut_size.y);
+	float log2_half_step = 0.5 * (log(FM_R_STD_BETA_MAX) - log(FM_R_STD_BETA_MIN)) * FM_R_STD_INV_LN_2 / float(lut_size.z);
+	// Cone-pole band: the Y-axis texel centers stop short of the poles.
+	if (abs(theta_cone) > PI * 0.5 - 2.0 * cone_half_step) {
+		return true;
+	}
+	float beta_lo = max(FM_R_STD_BETA_MIN, pow(2.0, log(beta_r) * FM_R_STD_INV_LN_2 - log2_half_step));
+	float beta_hi = min(FM_R_STD_BETA_MAX, pow(2.0, log(beta_r) * FM_R_STD_INV_LN_2 + log2_half_step));
+	// Grazing footprint: the 8 trilinear corners (unrolled).
+	float corner_1 = theta_cone - cone_half_step + (q - q_half_step) * beta_lo;
+	float corner_2 = theta_cone - cone_half_step + (q + q_half_step) * beta_lo;
+	float corner_3 = theta_cone + cone_half_step + (q - q_half_step) * beta_lo;
+	float corner_4 = theta_cone + cone_half_step + (q + q_half_step) * beta_lo;
+	float corner_5 = theta_cone - cone_half_step + (q - q_half_step) * beta_hi;
+	float corner_6 = theta_cone - cone_half_step + (q + q_half_step) * beta_hi;
+	float corner_7 = theta_cone + cone_half_step + (q - q_half_step) * beta_hi;
+	float corner_8 = theta_cone + cone_half_step + (q + q_half_step) * beta_hi;
+	if (abs(corner_1) > PI * 0.5 || abs(corner_2) > PI * 0.5 || abs(corner_3) > PI * 0.5
+			|| abs(corner_4) > PI * 0.5 || abs(corner_5) > PI * 0.5 || abs(corner_6) > PI * 0.5
+			|| abs(corner_7) > PI * 0.5 || abs(corner_8) > PI * 0.5) {
+		return true;
+	}
+	// Grazing margin: the CPU's 1.25 * (q_half_step*beta_hi + cone_half_step
+	// + abs(q)*(beta_hi - beta_lo)).
+	float grazing_margin = 1.25 * (q_half_step * beta_hi + cone_half_step + abs(q) * (beta_hi - beta_lo));
+	return abs(theta_cone + q * beta_r) > PI * 0.5 - grazing_margin;
+}
+
+
+/** Clamp/no-wrap trilinear Q sample from r_standardized_lut at (q,
+ *  theta_cone, beta_r), matching the CPU's sample_q(): texel centers at
+ *  (i + 0.5) / N on every axis, half-texel clamped into the interior
+ *  texel-center range so the repeat-disabled sampler never wraps. log_decode
+ *  reads the G channel (log2(Q)) and decodes Q = 2^G (trilinear
+ *  interpolation in log2 space, matching the log2-beta axis); both decodes
+ *  return linear Q. */
+float fm_r_std_sample_q(float q, float theta_cone, float beta_r, sampler3D lut_texture, bool log_decode) {
+	ivec3 lut_size = textureSize(lut_texture, 0);
+	float half_x = 0.5 / float(lut_size.x);
+	float half_y = 0.5 / float(lut_size.y);
+	float half_z = 0.5 / float(lut_size.z);
+	float log2_beta_min = log(FM_R_STD_BETA_MIN) * FM_R_STD_INV_LN_2;
+	float log2_beta_span = (log(FM_R_STD_BETA_MAX) - log(FM_R_STD_BETA_MIN)) * FM_R_STD_INV_LN_2;
+	vec3 uvw = vec3(
+		clamp((q - FM_R_STD_Q_MIN) / (FM_R_STD_Q_MAX - FM_R_STD_Q_MIN), half_x, 1.0 - half_x),
+		clamp((theta_cone - (-PI * 0.5)) / PI, half_y, 1.0 - half_y),
+		clamp((log(beta_r) * FM_R_STD_INV_LN_2 - log2_beta_min) / log2_beta_span, half_z, 1.0 - half_z));
+	vec4 sample_value = texture(lut_texture, uvw);
+	if (log_decode) {
+		return pow(2.0, sample_value.g);
+	}
+	return sample_value.r;
+}
+
+
+/** Reconstructs M_R*N_R from Q (the CPU's direct_r_mn_from_q()):
+ *     M_R*N_R = Q / (4*sqrt(2)*beta_m*cos(theta_o)
+ *                     * sqrt(cos(theta_cone)*cos(theta_o)))
+ * The denominator floors mirror the CPU (beta_m at BETA_NUMERIC_EPSILON,
+ * cosines at COSINE_EPSILON, and a 1e-30 absolute floor), so beta_m == 0 and
+ * grazing never evaluate 0*infinity or divide by zero: Q stays bounded while
+ * M_R diverges like 1/beta_r^2, and the product stays finite and
+ * nonnegative. */
+float fm_r_std_mn_from_q(float q_value, float theta_o, float theta_cone, float beta_m) {
+	float beta_m_safe = max(beta_m, FM_R_STD_BETA_NUMERIC_EPSILON);
+	float cos_o = max(cos(theta_o), FM_R_STD_COSINE_EPSILON);
+	float cos_cone = max(cos(theta_cone), FM_R_STD_COSINE_EPSILON);
+	float denominator = 4.0 * sqrt(2.0) * beta_m_safe * cos_o * sqrt(cos_cone * cos_o);
+	return max(q_value, 0.0) / max(denominator, 1e-30);
+}
+
+
+/** Diagnostic standardized-R longitudinal product (FM_R_STANDARDIZED_LUT_MODE
+ *  1): the full R product M_R*N_R for the analytic and LUT BSDFs, matching
+ *  the CPU coordinate derivation (derive_r_coordinates + sample/fallback
+ *  seam):
+ *
+ *    c_phi = clamp(cos_phi_half, 0, 1)
+ *    z_r = max(cos(theta_d) * c_phi, 0)
+ *    sin_theta_cone = clamp(-sin_theta_i + 2*z_r*cuticle_tilt_value, -1, 1)
+ *    theta_cone = asin(sin_theta_cone)
+ *    beta_r = sqrt(2) * c_phi * max(beta_m, 0)
+ *    q = (theta_o - theta_cone) / max(beta_r, 1e-8)
+ *
+ *  Q comes from the clamped trilinear LUT read when inside the support
+ *  (linear or log2 decode), and from the direct/asymptotic reference
+ *  otherwise (q/beta outside support, cone-pole outer two theta_cone texel
+ *  bands, grazing footprints, or beta_r <= 1e-8 -> asymptotic Gaussian
+ *  limit, which is exactly the beta_r -> 0 resolution of the 0*infinity
+ *  form). The caller multiplies the reconstructed product by the Fresnel
+ *  term. */
+float fm_r_standardized_longitudinal_product(float sin_theta_i, float sin_theta_o, float cos_theta_d, float cos_phi_half, float cuticle_tilt_value, float beta_m_value, sampler3D lut_texture, bool log_decode) {
+	float c_phi = clamp(cos_phi_half, 0.0, 1.0);
+	float z_r = max(cos_theta_d * c_phi, 0.0);
+	float sin_cone = clamp(-sin_theta_i + 2.0 * z_r * cuticle_tilt_value, -1.0, 1.0);
+	float theta_cone = asin(sin_cone);
+	float theta_o = asin(clamp(sin_theta_o, -0.999999, 0.999999));
+	float beta_r = sqrt(2.0) * c_phi * max(beta_m_value, 0.0);
+	float beta_safe = max(beta_r, FM_R_STD_BETA_NUMERIC_EPSILON);
+	float q = (theta_o - theta_cone) / beta_safe;
+	float q_value;
+	if (beta_r <= FM_R_STD_BETA_NUMERIC_EPSILON) {
+		q_value = fm_r_std_asymptotic_q(theta_o, theta_cone, beta_r);
+	} else if (fm_r_std_requires_fallback(q, theta_cone, beta_r, lut_texture)) {
+		q_value = fm_r_std_reference_q(theta_o, theta_cone, beta_r);
+	} else {
+		q_value = fm_r_std_sample_q(q, theta_cone, beta_r, lut_texture, log_decode);
+	}
+	return fm_r_std_mn_from_q(q_value, theta_o, theta_cone, beta_m_value);
+}
+#endif
+
+
 /** Chiang et al. (2016) albedo-to-absorption reparameterization, matching the
  *  current high-tier shader's default path. Clamped for near-black albedo. */
 vec3 fm_sigma_a_from_albedo(vec3 base_color, float beta_n) {
@@ -733,9 +976,22 @@ vec3 fm_hair_bsdf(vec3 omega_i, vec3 omega_o, float view_cos_theta, float view_t
 
 	vec3 result = vec3(0.0);
 #ifdef FM_LOBE_R
+#if FM_R_STANDARDIZED_LUT_MODE == 1
+	// Diagnostic standardized-R path: the reconstructed R product M_R*N_R
+	// from the committed LUT times the analytic Fresnel, replacing the
+	// shipping 0.25*cos_phi_half*M_R product (which evaluates 0*infinity as
+	// beta_r -> 0). m_p[FM_R] is unused for R in this mode (its unit is M_R
+	// alone, while the reconstruction returns the full product); TT/TRT keep
+	// the shared m_p path below. Only reachable in the committed diagnostic
+	// wrapper (FM_R_STANDARDIZED_LUT_MODE 1), which declares the LUT
+	// uniforms.
+	result += vec3(fm_r_standardized_longitudinal_product(sin_theta_i, sin_theta_o, cos_theta_d, cos_phi_half, cuticle_tilt_value, beta_m_value, r_standardized_lut, r_standardized_lut_log_decode)
+		* fm_fresnel(cos_theta_d * cos_phi_half, eta) * lobe_scales[FM_R]);
+#else
 	// R is a special case with a simple cosine azimuthal lobe and Fresnel
 	// attenuation; it carries no absorption color.
 	result += vec3((0.25 * cos_phi_half) * fm_fresnel(cos_theta_d * cos_phi_half, eta) * m_p[FM_R] * lobe_scales[FM_R]);
+#endif
 #endif
 #ifdef FM_LOBE_TT
 	result += fm_logistic(fm_azimuthal_angular_offset(FM_TT, cos_phi, sin_phi, eta_prime_inv, h[FM_TT]), azimuthal_s_inv.x, logistic_b.x)
@@ -818,8 +1074,23 @@ vec3 fm_hair_bsdf_lut(vec3 omega_i, vec3 omega_o, float view_cos_theta, float vi
 
 	vec3 result = vec3(0.0);
 #ifdef FM_LOBE_R
+#if FM_R_STANDARDIZED_LUT_MODE == 1
+	// Diagnostic standardized-R path (mirrors the analytic BSDF exactly): the
+	// reconstructed R product M_R*N_R times the analytic Fresnel, replacing
+	// azimuthal.r * m_p[FM_R] (the baked 0.25*cos_phi_half*Fresnel form).
+	// The LUT R channel's baked 0.25*cos_phi_half*Fresnel factor is not
+	// reused because dividing the reconstruction by 0.25*cos_phi_half would
+	// reintroduce the 0*infinity form at the c_phi seam. The committed
+	// diagnostic wrapper forces use_azimuthal_lut=false, so this branch is
+	// the defensive consistency path; TT/TRT keep the LUT azimuthal terms
+	// below.
+	float cos_phi_half = max(1e-6, sqrt(0.5 + 0.5 * cos_phi));
+	result += vec3(fm_r_standardized_longitudinal_product(sin_theta_i, sin_theta_o, cos_theta_d, cos_phi_half, cuticle_tilt_value, beta_m_value, r_standardized_lut, r_standardized_lut_log_decode)
+		* fm_fresnel(cos_theta_d * cos_phi_half, eta) * lobe_scales[FM_R]);
+#else
 	// LUT R channel already includes 0.25*cos(phi/2)*Fresnel(cos_theta_d*cos(phi/2)).
 	result += azimuthal.r * m_p[FM_R] * lobe_scales[FM_R];
+#endif
 #endif
 #ifdef FM_LOBE_TT
 	result += azimuthal.g * fm_att_fixed_h(FM_TT, cos_theta_o, cos_theta_d, cos_theta_t, eta_prime, sigma_a, eta) * m_p[FM_TT] * lobe_scales[FM_TT];
