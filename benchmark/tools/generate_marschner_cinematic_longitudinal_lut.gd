@@ -3,13 +3,14 @@ extends SceneTree
 ## Generates a generic d'Eon-style energy-conserving longitudinal kernel in a
 ## physical rectangular domain. The runtime derives each lobe's non-separable
 ## sin(theta_cone) and beta_eff analytically, then samples this single scalar LUT.
+## Default storage is R16F: 128x128x64 is 2 MiB.
 
 const Data := preload("res://benchmark/resources/hair_marschner_cinematic_longitudinal_lut_data.gd")
 const DEFAULT_X := 128
 const DEFAULT_Y := 128
 const DEFAULT_Z := 64
 const BETA_MIN := 0.02
-const BETA_MAX := 16.0
+const BETA_MAX := 64.0
 const INV_LN_2 := 1.4426950408889634
 
 func _initialize() -> void:
@@ -35,7 +36,7 @@ func _initialize() -> void:
 	for z in sz:
 		var beta := pow(2.0, log_beta_min + (float(z) + 0.5) / float(sz) * log_beta_span)
 		var slice_floats := PackedFloat32Array()
-		slice_floats.resize(sx * sy * 4)
+		slice_floats.resize(sx * sy)
 		var index := 0
 		for y in sy:
 			var sin_o := -1.0 + 2.0 * (float(y) + 0.5) / float(sy)
@@ -45,26 +46,23 @@ func _initialize() -> void:
 				var cos_cone := sqrt(maxf(1.0 - sin_cone * sin_cone, 1e-16))
 				var q := _conditioned_q(sin_o, cos_o, sin_cone, cos_cone, beta)
 				slice_floats[index] = q
-				slice_floats[index + 1] = 0.0
-				slice_floats[index + 2] = 0.0
-				slice_floats[index + 3] = 1.0
-				index += 4
+				index += 1
 				min_q = minf(min_q, q)
 				max_q = maxf(max_q, q)
-		var image := Image.create_from_data(sx, sy, false, Image.FORMAT_RGBAF, slice_floats.to_byte_array())
-		image.convert(Image.FORMAT_RGBAH)
+		var image := Image.create_from_data(sx, sy, false, Image.FORMAT_RF, slice_floats.to_byte_array())
+		image.convert(Image.FORMAT_RH)
 		all_bytes.append_array(image.get_data())
 
 	var resource: HairMarschnerCinematicLongitudinalLUTData = Data.new()
 	resource.size_x = sx
 	resource.size_y = sy
 	resource.size_z = sz
-	resource.format = Image.FORMAT_RGBAH
+	resource.format = Image.FORMAT_RH
 	resource.beta_min = BETA_MIN
 	resource.beta_max = BETA_MAX
 	resource.contract = "deon_physical_longitudinal_q_v1"
-	resource.channels = "R=Q,G=0,B=0,A=1"
-	resource.notes = "%dx%dx%d RGBA16F physical-domain conditioned d'Eon longitudinal kernel. X=sin(theta_cone), Y=sin(theta_o), Z=log2(beta_eff), beta=[%.4f,%.4f]." % [sx, sy, sz, BETA_MIN, BETA_MAX]
+	resource.channels = "R=Q"
+	resource.notes = "%dx%dx%d R16F physical-domain conditioned d'Eon longitudinal kernel. X=sin(theta_cone), Y=sin(theta_o), Z=log2(beta_eff), beta=[%.4f,%.4f]." % [sx, sy, sz, BETA_MIN, BETA_MAX]
 	resource.data = all_bytes
 	var errors := resource.validation_errors()
 	if not errors.is_empty():
@@ -81,7 +79,7 @@ func _initialize() -> void:
 		push_error("round-trip validation failed")
 		quit(1)
 		return
-	print("MARSCHNER_CINEMATIC_LONGITUDINAL_LUT_GENERATED path=%s size=%dx%dx%d bytes=%d Q=[%s,%s]" % [out_path, sx, sy, sz, all_bytes.size(), String.num_scientific(min_q), String.num_scientific(max_q)])
+	print("MARSCHNER_CINEMATIC_LONGITUDINAL_LUT_GENERATED path=%s size=%dx%dx%d format=R16F bytes=%d Q=[%s,%s]" % [out_path, sx, sy, sz, all_bytes.size(), String.num_scientific(min_q), String.num_scientific(max_q)])
 	print("MARSCHNER_CINEMATIC_LONGITUDINAL_LUT_GENERATION_OK")
 	quit(0)
 
