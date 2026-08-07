@@ -10,7 +10,6 @@ const SIZE := 64
 const ETA := 1.55
 const DH := 0.1
 const SQRT_PI_OVER_8 := 0.6266570686577501
-const OUT_PATH := "res://benchmark/resources/luts/unity_hair_azimuthal_lut_64.res"
 
 func _initialize() -> void:
 	var size := SIZE
@@ -48,7 +47,7 @@ func _initialize() -> void:
 					h += DH
 				# Unity's compute integration stores half the h integral because h spans a diameter of length 2.
 				n *= 0.5
-				n = max(n, Vector3.ZERO)
+				n = Vector3(maxf(n.x, 0.0), maxf(n.y, 0.0), maxf(n.z, 0.0))
 				slice_floats[index] = n.x
 				slice_floats[index + 1] = n.y
 				slice_floats[index + 2] = n.z
@@ -68,7 +67,7 @@ func _initialize() -> void:
 	resource.eta = ETA
 	resource.contract = "unity_hdrp_azimuthal_n_v1"
 	resource.channels = "R=N_R,G=N_TT,B=N_TRT,A=1"
-	resource.notes = "%d^3 RGBA16F Unity HDRP-style preintegrated azimuthal N. X=phi[-2PI,2PI], Y=cosThetaD, Z=perceptual radial roughness; h midpoint/increment integration DH=0.1, eta=1.55." % size
+	resource.notes = "%d^3 RGBA16F Unity HDRP-style preintegrated azimuthal N. X=phi[-2PI,2PI], Y=cosThetaD, Z=perceptual radial roughness; h integration DH=0.1, eta=1.55." % size
 	resource.data = all_bytes
 	var errors := resource.validation_errors()
 	if not errors.is_empty():
