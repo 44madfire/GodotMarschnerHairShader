@@ -1,10 +1,8 @@
 extends SceneTree
 
-## Focused runtime contract test for the corrected standardized-R diagnostic.
-## Verifies that the material adapter binds the committed LUT's coordinate
-## metadata into the wrapper and that a deliberately low longitudinal
-## roughness render (which drives beta_r below the LUT domain near backward
-## azimuths) remains finite through the asymptotic path.
+## Runtime contract test for the standardized-R diagnostic. Verifies resource
+## metadata binding, the |q| zero-tail threshold, low-beta stability and clean
+## switching back to the shipping Fast analytic variant.
 
 const GROOM_ID := &"Blowout"
 const INDIVIDUAL_GROOM := 1
@@ -13,6 +11,7 @@ const FAST_MARSCHNER_R_STANDARDIZED_LUT := 10
 const LUT_PATH := "res://benchmark/resources/luts/fast_marschner_r_standardized_lut_256x256x128.res"
 const WRAPPER_PATH := "res://assets/hair/materials/shaders/hair_marschner_fast_r_standardized_lut.gdshader"
 const EXPECTED_BLEND := Vector2(0.015, 0.03)
+const EXPECTED_ZERO_TAIL := 8.0
 
 var _failures := PackedStringArray()
 
@@ -72,6 +71,7 @@ func _run() -> void:
 	var cone_range: Vector2 = material.get_shader_parameter(&"r_standardized_lut_theta_cone_range")
 	var beta_range: Vector2 = material.get_shader_parameter(&"r_standardized_lut_beta_range")
 	var blend: Vector2 = material.get_shader_parameter(&"r_standardized_lut_low_beta_blend")
+	var zero_tail := float(material.get_shader_parameter(&"r_standardized_lut_zero_tail_abs"))
 	var expected_q := Vector2(float(lut_data.get(&"q_min")), float(lut_data.get(&"q_max")))
 	var expected_cone := Vector2(float(lut_data.get(&"theta_cone_min")), float(lut_data.get(&"theta_cone_max")))
 	var expected_beta := Vector2(float(lut_data.get(&"beta_min")), float(lut_data.get(&"beta_max")))
@@ -83,12 +83,11 @@ func _run() -> void:
 		_fail("beta range not bound from LUT metadata: %s vs %s" % [beta_range, expected_beta])
 	if not blend.is_equal_approx(EXPECTED_BLEND):
 		_fail("low-beta blend mismatch: %s" % blend)
+	if not is_equal_approx(zero_tail, EXPECTED_ZERO_TAIL):
+		_fail("zero-tail threshold mismatch: %.6f" % zero_tail)
 	if material.get_shader_parameter(&"r_standardized_lut_log_decode") != false:
 		_fail("linear Q must remain the default decode")
 
-	# Force an artist-facing low roughness. The shared fragment reparameterizer
-	# floors beta_M at 1e-3; near backward azimuth this still yields beta_r well
-	# below the 0.02 LUT minimum and therefore exercises the asymptotic region.
 	material.set_shader_parameter(&"longitudinal_roughness", 0.0)
 	material.set_shader_parameter(&"freeze_bayer_phase", true)
 	for i in 4:
@@ -111,8 +110,6 @@ func _run() -> void:
 		if finite_pixels == 0 or nonblack_pixels == 0:
 			_fail("low-beta standardized render produced no finite/nonblack sampled pixels")
 
-	# Reset verifies the diagnostic still cannot contaminate the shipping Fast
-	# analytic preview after variant switching.
 	if not bool(controller.call(&"apply_preview", INDIVIDUAL_GROOM, FAST_MARSCHNER_ANALYTIC, GROOM_ID)):
 		_fail("analytic reset failed")
 	_finish()
