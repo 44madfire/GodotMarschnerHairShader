@@ -38,3 +38,41 @@ func validation_errors() -> PackedStringArray:
 
 func is_valid() -> bool:
 	return validation_errors().is_empty()
+
+func sample_n(phi: float, cos_theta_d: float, radial_roughness: float) -> Vector3:
+	if data.is_empty():
+		return Vector3.ZERO
+	var half_x := 0.5 / float(size_x)
+	var half_y := 0.5 / float(size_y)
+	var half_z := 0.5 / float(size_z)
+	var u := clampf((phi + TAU) / (2.0 * TAU), half_x, 1.0 - half_x)
+	var v := clampf(cos_theta_d, half_y, 1.0 - half_y)
+	var w := clampf(radial_roughness, half_z, 1.0 - half_z)
+	var px := u * float(size_x) - 0.5
+	var py := v * float(size_y) - 0.5
+	var pz := w * float(size_z) - 0.5
+	var x0 := int(floor(px))
+	var y0 := int(floor(py))
+	var z0 := int(floor(pz))
+	var tx := px - float(x0)
+	var ty := py - float(y0)
+	var tz := pz - float(z0)
+	var result := Vector3.ZERO
+	for dz in 2:
+		for dy in 2:
+			for dx in 2:
+				var x := clampi(x0 + dx, 0, size_x - 1)
+				var y := clampi(y0 + dy, 0, size_y - 1)
+				var z := clampi(z0 + dz, 0, size_z - 1)
+				var weight := (tx if dx == 1 else 1.0 - tx) * (ty if dy == 1 else 1.0 - ty) * (tz if dz == 1 else 1.0 - tz)
+				result += _texel_rgb(x, y, z) * weight
+	return Vector3(maxf(result.x, 0.0), maxf(result.y, 0.0), maxf(result.z, 0.0))
+
+func _texel_rgb(x: int, y: int, z: int) -> Vector3:
+	var bytes_per_texel := 8 if format == Image.FORMAT_RGBAH else 16
+	var offset := ((z * size_y + y) * size_x + x) * bytes_per_texel
+	if offset < 0 or offset + bytes_per_texel > data.size():
+		return Vector3.ZERO
+	if format == Image.FORMAT_RGBAH:
+		return Vector3(data.decode_half(offset), data.decode_half(offset + 2), data.decode_half(offset + 4))
+	return Vector3(data.decode_float(offset), data.decode_float(offset + 4), data.decode_float(offset + 8))
