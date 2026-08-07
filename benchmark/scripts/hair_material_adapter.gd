@@ -11,6 +11,7 @@ const R_STANDARDIZED_LUT_DATA_PATH := "res://benchmark/resources/luts/fast_marsc
 const R_STANDARDIZED_CONTRACT := "standardized_r_projected_q_v1"
 const R_STANDARDIZED_CHANNELS := "R=linear_Q,G=log2_Q,B=0,A=1"
 const R_STANDARDIZED_LOW_BETA_BLEND := Vector2(0.015, 0.03)
+const R_STANDARDIZED_ZERO_TAIL_ABS := 8.0
 
 const FAST_MARSCHNER_UNIFORMS: Array[StringName] = [
 	&"absorption_mode",
@@ -38,6 +39,7 @@ const FAST_MARSCHNER_UNIFORMS: Array[StringName] = [
 	&"r_standardized_lut_theta_cone_range",
 	&"r_standardized_lut_beta_range",
 	&"r_standardized_lut_low_beta_blend",
+	&"r_standardized_lut_zero_tail_abs",
 	&"comparison_exposure_gain",
 	&"freeze_bayer_phase",
 	&"use_area_light_multipliers",
@@ -72,8 +74,7 @@ func resolve_profile(profile_id: StringName) -> Resource:
 	var profile_path := "%s/%s.tres" % [PROFILES_DIRECTORY, profile_id_text]
 	if not ResourceLoader.exists(profile_path):
 		return null
-	var profile: Resource = load(profile_path)
-	return profile
+	return load(profile_path)
 
 func make_shader_variant_material(source_material: ShaderMaterial, benchmark_shader: Shader, profile: Resource) -> ShaderMaterial:
 	var cloned_material := source_material.duplicate() as ShaderMaterial
@@ -88,12 +89,6 @@ func make_shader_variant_material(source_material: ShaderMaterial, benchmark_sha
 	for parameter_name in source_parameters:
 		cloned_material.set("shader_parameter/%s" % String(parameter_name), source_parameters[parameter_name])
 	apply_profile_parameters(cloned_material, profile)
-
-	# The standardized diagnostic owns an additional LUT-domain contract that
-	# source materials/profiles do not carry. Bind it here, where the adapter
-	# already owns texture creation, so shader sampling cannot silently drift
-	# from the committed resource metadata. The controller may subsequently
-	# re-bind the same cached texture/selector while forcing variant flags off.
 	if benchmark_shader != null and benchmark_shader.resource_path == R_STANDARDIZED_SHADER_PATH:
 		var lut_data: Resource = load(R_STANDARDIZED_LUT_DATA_PATH)
 		if not apply_standardized_r_lut_contract(cloned_material, lut_data):
@@ -106,14 +101,7 @@ func apply_profile_parameters(material: ShaderMaterial, profile: Resource) -> vo
 	_apply_tier2_parameters(material, profile)
 	if bool(profile.get(&"preserve_source_parameters")):
 		return
-	var parameter_names: Array[StringName] = [
-		&"shader_parameter/albedo",
-		&"shader_parameter/longitudinal_roughness",
-		&"shader_parameter/azimuthal_roughness",
-		&"shader_parameter/cuticle_tilt_offset",
-		&"shader_parameter/specular",
-	]
-	for parameter_name in parameter_names:
+	for parameter_name in [&"shader_parameter/albedo", &"shader_parameter/longitudinal_roughness", &"shader_parameter/azimuthal_roughness", &"shader_parameter/cuticle_tilt_offset", &"shader_parameter/specular"]:
 		var parameter_value: Variant = profile.get(String(parameter_name).trim_prefix("shader_parameter/"))
 		material.set(parameter_name, parameter_value)
 	var coords_value: Variant = profile.get(&"coords_texture")
@@ -126,8 +114,7 @@ func apply_profile_parameters(material: ShaderMaterial, profile: Resource) -> vo
 func make_builtin_alpha_hash_material(source_material: ShaderMaterial, profile: Resource) -> StandardMaterial3D:
 	if source_material == null:
 		return null
-	var attributes_value: Variant = source_material.get(&"shader_parameter/attributes_texture")
-	var attributes_texture: Texture2D = attributes_value as Texture2D
+	var attributes_texture := source_material.get(&"shader_parameter/attributes_texture") as Texture2D
 	if not attributes_texture:
 		return null
 	var alpha_texture: ImageTexture = alpha_texture_for(attributes_texture)
@@ -259,10 +246,6 @@ func dual_scatter_lut_texture(lut_data: Resource) -> Texture2D:
 	_dual_scatter_lut_texture_cache[cache_key] = texture
 	return texture
 
-## Returns contract errors for the current standardized-R diagnostic resource.
-## This is deliberately stricter than generic Resource.validation_errors(): a
-## resource may be structurally valid yet incompatible with this wrapper's
-## channel/decode contract.
 func standardized_r_lut_contract_errors(lut_data: Resource) -> PackedStringArray:
 	var errors := PackedStringArray()
 	if lut_data == null:
@@ -327,9 +310,6 @@ func standardized_r_lut_texture(lut_data: Resource) -> Texture3D:
 	_r_standardized_lut_texture_cache[cache_key] = texture
 	return texture
 
-## Bind the texture and every coordinate-domain uniform from resource metadata.
-## This makes the resource, rather than duplicated shader constants, the
-## authoritative sampling contract for the current diagnostic wrapper.
 func apply_standardized_r_lut_contract(material: ShaderMaterial, lut_data: Resource) -> bool:
 	if material == null or material.shader == null:
 		return false
@@ -346,6 +326,7 @@ func apply_standardized_r_lut_contract(material: ShaderMaterial, lut_data: Resou
 	material.set(&"shader_parameter/r_standardized_lut_theta_cone_range", Vector2(float(lut_data.get(&"theta_cone_min")), float(lut_data.get(&"theta_cone_max"))))
 	material.set(&"shader_parameter/r_standardized_lut_beta_range", Vector2(float(lut_data.get(&"beta_min")), float(lut_data.get(&"beta_max"))))
 	material.set(&"shader_parameter/r_standardized_lut_low_beta_blend", R_STANDARDIZED_LOW_BETA_BLEND)
+	material.set(&"shader_parameter/r_standardized_lut_zero_tail_abs", R_STANDARDIZED_ZERO_TAIL_ABS)
 	return true
 
 func source_albedo_color(source_material: ShaderMaterial) -> Color:
