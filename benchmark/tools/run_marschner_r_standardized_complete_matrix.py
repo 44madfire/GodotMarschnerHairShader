@@ -1,11 +1,5 @@
 #!/usr/bin/env python3
-"""Run the Fresnel-weighted standardized-R validator over a designed matrix.
-
-This replaces the R-specific albedo-only cases with parameters that actually
-change R: longitudinal roughness, cuticle tilt and IOR. The script intentionally
-uses the Windows Godot executable from WSL by default, matching the repository's
-existing benchmark tooling.
-"""
+"""Run the Fresnel-weighted standardized-R validator over a designed matrix."""
 
 from __future__ import annotations
 
@@ -15,11 +9,12 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, NoReturn
 
 DEFAULT_GODOT = "/mnt/c/Tools/Godot/godot.exe"
 DEFAULT_PROJECT = "//wsl.localhost/Ubuntu/home/jeffreymwang/godot-hair-shader"
 VALIDATOR = "res://benchmark/tools/validate_marschner_r_standardized_complete_energy.gd"
+VALIDATOR_SCHEMA = "standardized_r_complete_energy_v3"
 CASE_TIMEOUT_SECONDS = 3600.0
 
 CASES = [
@@ -38,7 +33,7 @@ CASES = [
 ]
 
 
-def die(message: str) -> "NoReturn":
+def die(message: str) -> NoReturn:
     sys.stderr.write(f"run_marschner_r_standardized_complete_matrix: error: {message}\n")
     raise SystemExit(1)
 
@@ -57,39 +52,25 @@ def parse_report(stdout: str) -> dict[str, Any]:
         except json.JSONDecodeError:
             index += 1
             continue
-        if isinstance(obj, dict) and obj.get("schema") == "standardized_r_complete_energy_v2":
+        if isinstance(obj, dict) and obj.get("schema") == VALIDATOR_SCHEMA:
             candidates.append(obj)
         index = end
     if not candidates:
-        raise RuntimeError("validator output did not contain standardized_r_complete_energy_v2 JSON")
+        raise RuntimeError(f"validator output did not contain {VALIDATOR_SCHEMA} JSON")
     return candidates[-1]
 
 
 def run_case(godot: str, project: str, grid: int, phi_grid: int, case: dict[str, Any]) -> dict[str, Any]:
     command = [
-        godot,
-        "--headless",
-        "--path",
-        project,
-        "--script",
-        VALIDATOR,
-        "--",
-        f"--grid={grid}",
-        f"--phi-grid={phi_grid}",
-        f"--beta-m={case['beta_m']}",
-        f"--cuticle={case['cuticle']}",
-        f"--eta={case['eta']}",
+        godot, "--headless", "--path", project, "--script", VALIDATOR, "--",
+        f"--grid={grid}", f"--phi-grid={phi_grid}",
+        f"--beta-m={case['beta_m']}", f"--cuticle={case['cuticle']}", f"--eta={case['eta']}",
         "--contract=report",
     ]
     try:
         completed = subprocess.run(
-            command,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            capture_output=True,
-            check=False,
-            timeout=CASE_TIMEOUT_SECONDS,
+            command, text=True, encoding="utf-8", errors="replace",
+            capture_output=True, check=False, timeout=CASE_TIMEOUT_SECONDS,
         )
     except subprocess.TimeoutExpired as exc:
         raise RuntimeError(f"{case['name']} timed out") from exc
@@ -98,8 +79,7 @@ def run_case(godot: str, project: str, grid: int, phi_grid: int, case: dict[str,
             f"{case['name']} failed with code {completed.returncode}\n"
             f"STDOUT:\n{completed.stdout}\nSTDERR:\n{completed.stderr}"
         )
-    report = parse_report(completed.stdout)
-    return {"name": case["name"], "parameters": case, "report": report}
+    return {"name": case["name"], "parameters": case, "report": parse_report(completed.stdout)}
 
 
 def main() -> int:
@@ -132,12 +112,17 @@ def main() -> int:
     worst_log = {"value": -1.0, "case": ""}
     worst_direct_share = {"value": -1.0, "case": ""}
     worst_direct_energy_share = {"value": -1.0, "case": ""}
+    largest_boundary_share = {"value": -1.0, "case": ""}
+    smallest_boundary_weight = {"value": 2.0, "case": ""}
     for record in records:
         report = record["report"]
+        branches = report["branch_statistics"]
         linear_error = float(report["complete_r"]["linear_relative_error"])
         log_error = float(report["complete_r"]["log_relative_error"])
-        direct_share = float(report["branch_statistics"]["expensive_direct_sample_share"])
-        direct_energy_share = float(report["branch_statistics"]["expensive_direct_complete_r_energy_share"])
+        direct_share = float(branches["expensive_direct_sample_share"])
+        direct_energy_share = float(branches["expensive_direct_complete_r_energy_share"])
+        boundary_share = float(branches["grazing_boundary_lut"]["sample_share"])
+        boundary_min = float(branches["boundary_valid_weight"]["min"])
         if linear_error > worst_linear["value"]:
             worst_linear = {"value": linear_error, "case": record["name"]}
         if log_error > worst_log["value"]:
@@ -146,9 +131,13 @@ def main() -> int:
             worst_direct_share = {"value": direct_share, "case": record["name"]}
         if direct_energy_share > worst_direct_energy_share["value"]:
             worst_direct_energy_share = {"value": direct_energy_share, "case": record["name"]}
+        if boundary_share > largest_boundary_share["value"]:
+            largest_boundary_share = {"value": boundary_share, "case": record["name"]}
+        if boundary_min > 0.0 and boundary_min < smallest_boundary_weight["value"]:
+            smallest_boundary_weight = {"value": boundary_min, "case": record["name"]}
 
     payload = {
-        "schema": "standardized_r_complete_matrix_v2",
+        "schema": "standardized_r_complete_matrix_v3",
         "grid": args.grid,
         "phi_grid": args.phi_grid,
         "case_count": len(records),
@@ -158,6 +147,8 @@ def main() -> int:
             "worst_log_complete_r_relative_error": worst_log,
             "worst_expensive_direct_sample_share": worst_direct_share,
             "worst_expensive_direct_complete_r_energy_share": worst_direct_energy_share,
+            "largest_grazing_boundary_lut_sample_share": largest_boundary_share,
+            "smallest_nonzero_boundary_valid_weight": smallest_boundary_weight,
         },
         "acceptance_targets": {
             "complete_r_aggregate_ratio": [0.98, 1.02],
@@ -168,6 +159,7 @@ def main() -> int:
             "CPU projected-solid-angle integration only; GPU timing is a separate benchmark.",
             "The shader-relative azimuth cosine is clamped to [-0.9999,0.9999] before c_phi, matching the Fast analytic path.",
             "The committed 256x256x128 RGBAF LUT remains a diagnostic reference and is not a production memory target.",
+            "This pass evaluates q-tail zeroing and manual physical-boundary trilinear renormalization; pole/high-beta direct fallback is still diagnostic.",
         ],
     }
     args.out.parent.mkdir(parents=True, exist_ok=True)
