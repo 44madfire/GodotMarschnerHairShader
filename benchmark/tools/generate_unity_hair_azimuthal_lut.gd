@@ -20,7 +20,7 @@ func _initialize() -> void:
 		push_error("--size must be in [8,256]")
 		quit(1)
 		return
-	var out_path := "res://benchmark/resources/luts/unity_hair_azimuthal_lut_%d.res" % size
+	var out_path := "res://benchmark/resources/luts/unity_azimuthal_%d.res" % size
 	var all_bytes := PackedByteArray()
 	var min_n := INF
 	var max_n := 0.0
