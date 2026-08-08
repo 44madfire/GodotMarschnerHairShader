@@ -5,8 +5,8 @@ Default flow:
   1. Generate Unity HDRP-style 64^3 RGBA16F azimuthal N LUT.
   2. Validate Unity LUT texel-center parity with HDRP's compute generator and
      report off-grid continuous-integral error as approximation characterization.
-  3. Generate the 128x128x64 R16F physical-domain Cinematic longitudinal LUT.
-  4. Validate the generic longitudinal LUT off-grid and by projected integrals.
+  3. Generate the 128x128x64 R16F angle-domain/log-Q Cinematic longitudinal LUT.
+  4. Validate the Cinematic LUT off-grid and through the actual low-beta runtime path.
   5. Validate production profile selection, uniform reflection, and LUT binding.
   6. Report complete Cinematic R/TT/TRT energy against the analytic baseline.
   7. Run the non-headless GPU comparison unless --skip-runtime is supplied.
@@ -134,11 +134,13 @@ def main() -> int:
             "unity_off_grid_error": "characterization_only",
             "cinematic_size": "128x128x64",
             "cinematic_format": "R16F",
+            "cinematic_representation": "theta_cone,theta_o,log2(beta_eff); R=log2(Q)",
+            "cinematic_low_beta_transition": [0.05, 0.10],
             "production_profile_wiring": "passed",
             "runtime_executed": not args.skip_runtime,
         },
         "unity_azimuthal_validation": extract_json(unity_stdout, "unity_hair_azimuthal_lut_validation_v1"),
-        "cinematic_longitudinal_validation": extract_json(cinematic_stdout, "marschner_cinematic_longitudinal_lut_validation_v1"),
+        "cinematic_longitudinal_validation": extract_json(cinematic_stdout, "marschner_cinematic_longitudinal_lut_validation_v2"),
         "cinematic_complete_energy": extract_json(cinematic_energy_stdout, "marschner_cinematic_complete_energy_v1"),
         "runtime": extract_json(runtime_stdout, "marschner_tier_split_runtime_v1") if runtime_stdout else None,
         "expected_artifacts": {
