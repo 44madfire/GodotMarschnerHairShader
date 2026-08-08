@@ -131,10 +131,10 @@ func _candidate_q(theta_o: float, theta_cone: float, beta_r: float, q: float, de
 	if beta_r <= blend_low:
 		return {"q": asym, "bucket": "low_beta_asymptotic", "direct_expensive": false, "boundary_valid_weight": 0.0}
 
-	var outside_resource := q < _lut.q_min or q > _lut.q_max \
+	var outside_resource: bool = q < _lut.q_min or q > _lut.q_max \
 		or theta_cone < _lut.theta_cone_min or theta_cone > _lut.theta_cone_max
-	var beta_above := beta_r > _lut.beta_max
-	var pole := not outside_resource and not beta_above and _lut.requires_pole_band_fallback(theta_cone)
+	var beta_above: bool = beta_r > _lut.beta_max
+	var pole: bool = not outside_resource and not beta_above and _lut.requires_pole_band_fallback(theta_cone)
 	if outside_resource or beta_above or pole:
 		var bucket := "resource_outside_fallback" if outside_resource else ("beta_above_domain" if beta_above else "cone_pole_fallback")
 		if beta_r < blend_high:

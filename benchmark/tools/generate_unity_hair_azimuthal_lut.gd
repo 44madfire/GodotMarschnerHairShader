@@ -59,7 +59,7 @@ func _initialize() -> void:
 		image.convert(Image.FORMAT_RGBAH)
 		all_bytes.append_array(image.get_data())
 
-	var resource: UnityHairAzimuthalLUTData = Data.new()
+	var resource = Data.new()
 	resource.size_x = size
 	resource.size_y = size
 	resource.size_z = size
@@ -69,7 +69,7 @@ func _initialize() -> void:
 	resource.channels = "R=N_R,G=N_TT,B=N_TRT,A=1"
 	resource.notes = "%d^3 RGBA16F Unity HDRP-style preintegrated azimuthal N. X=phi[-2PI,2PI], Y=cosThetaD, Z=perceptual radial roughness; h integration DH=0.1, eta=1.55." % size
 	resource.data = all_bytes
-	var errors := resource.validation_errors()
+	var errors: PackedStringArray = resource.validation_errors()
 	if not errors.is_empty():
 		push_error("generated resource invalid: %s" % "; ".join(errors))
 		quit(1)
