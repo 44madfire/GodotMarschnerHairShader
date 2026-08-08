@@ -6,8 +6,8 @@ class_name HairMarschnerLUTAdapter
 ## Godot 4.7 cannot reliably self-contain ImageTexture3D data in .res files, so
 ## this adapter reconstructs and caches Texture3D instances at runtime.
 
-const DEFAULT_UNITY_LUT_PATH := "res://benchmark/resources/luts/unity_hair_azimuthal_lut_64.res"
-const DEFAULT_CINEMATIC_LUT_PATH := "res://benchmark/resources/luts/marschner_cinematic_longitudinal_128x128x64.res"
+const DEFAULT_UNITY_LUT_PATH := "res://benchmark/resources/luts/unity_azimuthal_64.res"
+const DEFAULT_CINEMATIC_LUT_PATH := "res://benchmark/resources/luts/cinematic_longitudinal_kernel_128x128x64.res"
 const UNITY_CONTRACT := "unity_hdrp_azimuthal_n_v1"
 const CINEMATIC_CONTRACT := "deon_physical_longitudinal_q_v1"
 const CINEMATIC_LOW_BETA_BLEND := Vector2(0.015, 0.03)
@@ -131,6 +131,8 @@ func _resource_matches_contract(data: Resource, contract: String) -> bool:
 		return false
 	if data.has_method(&"validation_errors"):
 		var errors: Variant = data.call(&"validation_errors")
-		if errors is PackedStringArray and not (errors as PackedStringArray).is_empty():
-			return false
+		if errors is PackedStringArray:
+			var typed_errors: PackedStringArray = errors
+			if not typed_errors.is_empty():
+				return false
 	return true
