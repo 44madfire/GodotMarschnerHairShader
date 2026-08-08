@@ -3,7 +3,7 @@ extends SceneTree
 ## Headless production-tier wiring test. Run after generating the two default
 ## LUT resources. It verifies explicit shader selection, top-level uniform
 ## reflection, Texture3D reconstruction/binding, Unity eta pinning, and
-## Cinematic beta-domain propagation without starting a timed benchmark.
+## Cinematic beta-domain/transition propagation without starting a timed benchmark.
 ## Explicit local types are intentional: Godot 4.7 rejects inference from
 ## Script.new(), dynamic property access, and some Variant-returning APIs.
 
@@ -12,6 +12,8 @@ const LUTAdapterScript := preload("res://assets/hair/materials/HairMarschnerLUTA
 const FAST_SHADER_PATH: String = "res://assets/hair/materials/shaders/hair_marschner_unity_fast.gdshader"
 const CINEMATIC_SHADER_PATH: String = "res://assets/hair/materials/shaders/hair_marschner_cinematic.gdshader"
 const REFERENCE_SHADER_PATH: String = "res://assets/hair/materials/shaders/hair.gdshader"
+const CINEMATIC_CONTRACT: String = "deon_physical_longitudinal_log2q_v2"
+const CINEMATIC_BLEND: Vector2 = Vector2(0.05, 0.10)
 
 const TIER_FAST: int = 1
 const TIER_CINEMATIC: int = 2
@@ -60,7 +62,8 @@ func _run() -> void:
 	cinematic.shader = profile.call(&"get_shader_resource") as Shader
 	_assert_required_uniforms(cinematic.shader, [
 		&"albedo", &"coords_texture", &"attributes_texture", &"cinematic_longitudinal_lut",
-		&"cinematic_longitudinal_beta_range", &"ior", &"freeze_bayer_phase", &"lobe_scales",
+		&"cinematic_longitudinal_beta_range", &"cinematic_longitudinal_low_beta_blend",
+		&"ior", &"freeze_bayer_phase", &"lobe_scales",
 	])
 	profile.call(&"apply_to_shader_material", cinematic)
 	var cinematic_texture: Texture3D = cinematic.get_shader_parameter(&"cinematic_longitudinal_lut") as Texture3D
@@ -68,6 +71,7 @@ func _run() -> void:
 	_check(is_equal_approx(float(cinematic.get_shader_parameter(&"ior")), 1.42), "Cinematic should preserve the profile IOR instead of pinning to 1.55")
 	var cinematic_data: Resource = adapter.call(&"load_default_cinematic_data") as Resource
 	if cinematic_data != null:
+		_check(String(cinematic_data.get(&"contract")) == CINEMATIC_CONTRACT, "Cinematic LUT contract was not the angle/log-Q v2 contract")
 		var expected_beta: Vector2 = Vector2(float(cinematic_data.get(&"beta_min")), float(cinematic_data.get(&"beta_max")))
 		var actual_beta_value: Variant = cinematic.get_shader_parameter(&"cinematic_longitudinal_beta_range")
 		if actual_beta_value is Vector2:
@@ -75,6 +79,12 @@ func _run() -> void:
 			_check(actual_beta.is_equal_approx(expected_beta), "Cinematic beta range did not match LUT metadata")
 		else:
 			_check(false, "Cinematic beta range was not a Vector2")
+		var blend_value: Variant = cinematic.get_shader_parameter(&"cinematic_longitudinal_low_beta_blend")
+		if blend_value is Vector2:
+			var actual_blend: Vector2 = blend_value
+			_check(actual_blend.is_equal_approx(CINEMATIC_BLEND), "Cinematic low-beta transition did not match the v2 contract")
+		else:
+			_check(false, "Cinematic low-beta transition was not a Vector2")
 		_check(cinematic_texture.get_width() == int(cinematic_data.get(&"size_x")), "Cinematic Texture3D width did not match LUT metadata")
 		_check(cinematic_texture.get_height() == int(cinematic_data.get(&"size_y")), "Cinematic Texture3D height did not match LUT metadata")
 		_check(cinematic_texture.get_depth() == int(cinematic_data.get(&"size_z")), "Cinematic Texture3D depth did not match LUT metadata")
