@@ -1,8 +1,8 @@
 extends RefCounted
 class_name HairMarschnerTierLUTAdapter
 
-const UNITY_LUT_PATH := "res://benchmark/resources/luts/unity_hair_azimuthal_lut_64.res"
-const CINEMATIC_LUT_PATH := "res://benchmark/resources/luts/marschner_cinematic_longitudinal_128x128x64.res"
+const UNITY_LUT_PATH := "res://benchmark/resources/luts/unity_azimuthal_64.res"
+const CINEMATIC_LUT_PATH := "res://benchmark/resources/luts/cinematic_longitudinal_kernel_128x128x64.res"
 const UNITY_CONTRACT := "unity_hdrp_azimuthal_n_v1"
 const CINEMATIC_CONTRACT := "deon_physical_longitudinal_q_v1"
 
