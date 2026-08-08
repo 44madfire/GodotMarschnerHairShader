@@ -1,6 +1,6 @@
 extends SceneTree
 
-const LUT_PATH := "res://benchmark/resources/luts/marschner_cinematic_longitudinal_128x128x64.res"
+const LUT_PATH := "res://benchmark/resources/luts/cinematic_longitudinal_kernel_128x128x64.res"
 const INV_LN_2 := 1.4426950408889634
 const REL_EPS := 1e-8
 
@@ -44,7 +44,6 @@ func _validate(lut: Resource) -> Dictionary:
 				var sampled_q := float(lut.sample_q(sin_cone, sin_o, beta))
 				var abs_error := absf(sampled_q - direct_q)
 				var rel := abs_error / maxf(absf(direct_q), REL_EPS)
-				# Very deep tails have negligible energy and produce meaningless huge relative ratios.
 				if direct_q > 1e-6:
 					relative_errors.append(rel)
 					rel_sq += rel * rel
