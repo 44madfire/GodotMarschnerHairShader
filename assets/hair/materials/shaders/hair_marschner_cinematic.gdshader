@@ -4,8 +4,8 @@ render_mode cull_disabled, world_vertex_coords;
 // Production Cinematic Marschner tier.
 // The high-tier baseline's non-separable azimuth-dependent cone/width and
 // analytic N/A behavior are preserved. Only the expensive d'Eon longitudinal
-// kernel is replaced by a generic physical-domain scalar 3D LUT sampled once
-// for each of R/TT/TRT, with a low-beta asymptotic fallback/transition.
+// kernel is replaced by a generic angle-domain log-Q 3D LUT sampled once for
+// each of R/TT/TRT, with a narrow-beta analytic fallback/transition.
 //
 // Uniforms remain in this top-level wrapper because Godot 4.7 runtime uniform
 // reflection is unreliable for interfaces declared solely through includes.
@@ -24,8 +24,8 @@ group_uniforms;
 
 group_uniforms Cinematic;
 uniform float ior : hint_range(1.0, 2.0) = 1.55;
-uniform vec2 cinematic_longitudinal_beta_range = vec2(0.015, 64.0);
-uniform vec2 cinematic_longitudinal_low_beta_blend = vec2(0.015, 0.03);
+uniform vec2 cinematic_longitudinal_beta_range = vec2(0.05, 64.0);
+uniform vec2 cinematic_longitudinal_low_beta_blend = vec2(0.05, 0.10);
 group_uniforms;
 
 group_uniforms Debug;
