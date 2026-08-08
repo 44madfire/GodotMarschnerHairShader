@@ -6,18 +6,21 @@ extends SceneTree
 ##   direct    = analytic d'Eon-style log-Bessel approximation
 ##   candidate = physical-domain Q LUT + low-beta asymptotic transition
 
-const LUT_PATH := "res://benchmark/resources/luts/marschner_cinematic_longitudinal_128x128x64.res"
+const LUT_PATH := "res://benchmark/resources/luts/cinematic_longitudinal_kernel_128x128x64.res"
 const ETA := 1.55
 const THETA_I_DEG := [-60.0, -30.0, 0.0, 30.0, 60.0]
 const DEFAULT_GRID := 128
 const DEFAULT_PHI_GRID := 96
 const REL_EPS := 1e-10
+const LOBE_ERROR_GATE := 0.02
+const PER_ANGLE_ERROR_GATE := 0.05
 
 var _grid := DEFAULT_GRID
 var _phi_grid := DEFAULT_PHI_GRID
 var _beta_m := 0.3
 var _beta_n := 0.8
 var _cuticle := 0.087
+var _report_only := false
 var _lut: Resource
 
 func _initialize() -> void:
@@ -38,11 +41,15 @@ func _initialize() -> void:
 	print(JSON.stringify(report, "\t"))
 	var worst_lobe := float(report["summary"]["worst_lobe_relative_error"])
 	var worst_angle := float(report["summary"]["worst_per_theta_relative_error"])
-	if worst_lobe > 0.05 or worst_angle > 0.05:
-		push_error("Cinematic complete-energy gates failed: lobe=%g angle=%g" % [worst_lobe, worst_angle])
+	var gate_failed := worst_lobe > LOBE_ERROR_GATE or worst_angle > PER_ANGLE_ERROR_GATE
+	if gate_failed and not _report_only:
+		push_error("Cinematic complete-energy gates failed: lobe=%g (max %g) angle=%g (max %g)" % [worst_lobe, LOBE_ERROR_GATE, worst_angle, PER_ANGLE_ERROR_GATE])
 		quit(1)
 		return
-	print("MARSCHNER_CINEMATIC_COMPLETE_ENERGY_OK")
+	if gate_failed:
+		print("MARSCHNER_CINEMATIC_COMPLETE_ENERGY_REPORT_OUTSIDE_GATE")
+	else:
+		print("MARSCHNER_CINEMATIC_COMPLETE_ENERGY_OK")
 	quit(0)
 
 func _parse_args() -> bool:
@@ -58,7 +65,7 @@ func _parse_args() -> bool:
 		elif arg.begins_with("--cuticle="):
 			_cuticle = float(arg.trim_prefix("--cuticle="))
 		elif arg == "--contract=report":
-			pass
+			_report_only = true
 		else:
 			push_error("unsupported argument: %s" % arg)
 			return false
@@ -150,6 +157,7 @@ func _integrate() -> Dictionary:
 	var worst_angle := 0.0
 	for row in per_theta:
 		worst_angle = maxf(worst_angle, float(row["relative_error"]))
+	var gate_passed := worst_lobe <= LOBE_ERROR_GATE and worst_angle <= PER_ANGLE_ERROR_GATE
 	return {
 		"schema": "marschner_cinematic_complete_energy_v1",
 		"configuration": {
@@ -173,10 +181,11 @@ func _integrate() -> Dictionary:
 		"summary": {
 			"worst_lobe_relative_error": worst_lobe,
 			"worst_per_theta_relative_error": worst_angle,
+			"gate_passed": gate_passed,
 		},
 		"gates": {
-			"worst_lobe_relative_error_max": 0.05,
-			"worst_per_theta_relative_error_max": 0.05,
+			"worst_lobe_relative_error_max": LOBE_ERROR_GATE,
+			"worst_per_theta_relative_error_max": PER_ANGLE_ERROR_GATE,
 		},
 	}
 
