@@ -27,7 +27,7 @@ func _initialize() -> void:
 			sx = dims[0]
 			sy = dims[1]
 			sz = dims[2]
-	var out_path := "res://benchmark/resources/luts/marschner_cinematic_longitudinal_%dx%dx%d.res" % [sx, sy, sz]
+	var out_path := "res://benchmark/resources/luts/cinematic_longitudinal_kernel_%dx%dx%d.res" % [sx, sy, sz]
 	var all_bytes := PackedByteArray()
 	var log_beta_min := log(BETA_MIN) * INV_LN_2
 	var log_beta_span := (log(BETA_MAX) - log(BETA_MIN)) * INV_LN_2
