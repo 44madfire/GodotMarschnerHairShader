@@ -4,7 +4,8 @@ class_name HairMarschnerTierLUTAdapter
 const UNITY_LUT_PATH: String = "res://benchmark/resources/luts/unity_azimuthal_64.res"
 const CINEMATIC_LUT_PATH: String = "res://benchmark/resources/luts/cinematic_longitudinal_kernel_128x128x64.res"
 const UNITY_CONTRACT: String = "unity_hdrp_azimuthal_n_v1"
-const CINEMATIC_CONTRACT: String = "deon_physical_longitudinal_q_v1"
+const CINEMATIC_CONTRACT: String = "deon_physical_longitudinal_log2q_v2"
+const CINEMATIC_LOW_BETA_BLEND: Vector2 = Vector2(0.05, 0.10)
 
 var _texture_cache: Dictionary = {}
 
@@ -95,7 +96,7 @@ func bind_cinematic(material: ShaderMaterial) -> bool:
 		return false
 	material.set_shader_parameter(&"cinematic_longitudinal_lut", texture)
 	material.set_shader_parameter(&"cinematic_longitudinal_beta_range", Vector2(float(data.get(&"beta_min")), float(data.get(&"beta_max"))))
-	material.set_shader_parameter(&"cinematic_longitudinal_low_beta_blend", Vector2(0.015, 0.03))
+	material.set_shader_parameter(&"cinematic_longitudinal_low_beta_blend", CINEMATIC_LOW_BETA_BLEND)
 	return true
 
 func missing_resource_instructions() -> PackedStringArray:
