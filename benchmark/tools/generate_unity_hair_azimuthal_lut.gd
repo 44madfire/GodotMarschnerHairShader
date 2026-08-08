@@ -62,7 +62,7 @@ func _initialize() -> void:
 		image.convert(Image.FORMAT_RGBAH)
 		all_bytes.append_array(image.get_data())
 
-	var resource: UnityHairAzimuthalLUTData = Data.new()
+	var resource = Data.new()
 	resource.size_x = size
 	resource.size_y = size
 	resource.size_z = size
