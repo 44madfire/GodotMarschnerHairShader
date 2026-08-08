@@ -9,8 +9,8 @@ class_name HairMarschnerLUTAdapter
 const DEFAULT_UNITY_LUT_PATH: String = "res://benchmark/resources/luts/unity_azimuthal_64.res"
 const DEFAULT_CINEMATIC_LUT_PATH: String = "res://benchmark/resources/luts/cinematic_longitudinal_kernel_128x128x64.res"
 const UNITY_CONTRACT: String = "unity_hdrp_azimuthal_n_v1"
-const CINEMATIC_CONTRACT: String = "deon_physical_longitudinal_q_v1"
-const CINEMATIC_LOW_BETA_BLEND: Vector2 = Vector2(0.015, 0.03)
+const CINEMATIC_CONTRACT: String = "deon_physical_longitudinal_log2q_v2"
+const CINEMATIC_LOW_BETA_BLEND: Vector2 = Vector2(0.05, 0.10)
 
 var _texture_cache: Dictionary = {}
 
