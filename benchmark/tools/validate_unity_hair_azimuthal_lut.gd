@@ -1,6 +1,6 @@
 extends SceneTree
 
-const LUT_PATH := "res://benchmark/resources/luts/unity_hair_azimuthal_lut_64.res"
+const LUT_PATH := "res://benchmark/resources/luts/unity_azimuthal_64.res"
 const DH := 0.1
 const SQRT_PI_OVER_8 := 0.6266570686577501
 const REL_EPS := 1e-6
