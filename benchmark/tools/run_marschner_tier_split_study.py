@@ -3,7 +3,8 @@
 
 Default flow:
   1. Generate Unity HDRP-style 64^3 RGBA16F azimuthal N LUT.
-  2. Validate that LUT off-grid against the direct h integration.
+  2. Validate Unity LUT texel-center parity with HDRP's compute generator and
+     report off-grid continuous-integral error as approximation characterization.
   3. Generate the 128x128x64 R16F physical-domain Cinematic longitudinal LUT.
   4. Validate the generic longitudinal LUT off-grid and by projected integrals.
   5. Validate production profile selection, uniform reflection, and LUT binding.
@@ -129,6 +130,8 @@ def main() -> int:
         "schema": "marschner_tier_split_study_v1",
         "configuration": {
             "unity_size": 64,
+            "unity_validation_oracle": "texel_center_parity_with_unity_compute_generator",
+            "unity_off_grid_error": "characterization_only",
             "cinematic_size": "128x128x64",
             "cinematic_format": "R16F",
             "production_profile_wiring": "passed",
