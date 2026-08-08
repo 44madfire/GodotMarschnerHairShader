@@ -4,7 +4,7 @@ extends SceneTree
 ## Direct and candidate paths share the same baseline non-separable geometry,
 ## analytic azimuthal distribution and attenuation. Only M differs:
 ##   direct    = analytic d'Eon-style log-Bessel approximation
-##   candidate = physical-domain Q LUT + low-beta asymptotic transition
+##   candidate = angle-domain log-Q LUT + low-beta asymptotic transition
 
 const LUT_PATH := "res://benchmark/resources/luts/cinematic_longitudinal_kernel_128x128x64.res"
 const ETA := 1.55
@@ -14,6 +14,8 @@ const DEFAULT_PHI_GRID := 96
 const REL_EPS := 1e-10
 const LOBE_ERROR_GATE := 0.02
 const PER_ANGLE_ERROR_GATE := 0.05
+const LOW_BETA_ASYMPTOTIC_MAX := 0.05
+const LOW_BETA_BLEND_MAX := 0.10
 
 var _grid := DEFAULT_GRID
 var _phi_grid := DEFAULT_PHI_GRID
@@ -119,7 +121,7 @@ func _integrate() -> Dictionary:
 				for p in 3:
 					if beta_eff[p] > float(_lut.beta_max):
 						high_beta_samples += 1
-					if beta_eff[p] < 0.03:
+					if beta_eff[p] < LOW_BETA_BLEND_MAX:
 						low_beta_samples += 1
 					total_lobe_samples += 1
 				var weight := _azimuthal_weight(cos_theta_t, cos_d, cos_phi, sin_phi, cphi, eta_inv, h)
@@ -170,6 +172,8 @@ func _integrate() -> Dictionary:
 			"eta": ETA,
 			"lut_dimensions": [_lut.size_x, _lut.size_y, _lut.size_z],
 			"lut_beta_range": [_lut.beta_min, _lut.beta_max],
+			"lut_contract": _lut.contract,
+			"low_beta_transition": [LOW_BETA_ASYMPTOTIC_MAX, LOW_BETA_BLEND_MAX],
 		},
 		"lobes": lobe_report,
 		"per_theta_i": per_theta,
@@ -214,12 +218,12 @@ func _longitudinal_geometry(sin_i: float, cos_d: float, sin_d: float, cphi: floa
 
 func _candidate_m(sin_cone: float, sin_o: float, beta: float) -> float:
 	var q_asym := _asym_q(sin_cone, sin_o, beta)
-	if beta <= 0.015:
+	if beta <= LOW_BETA_ASYMPTOTIC_MAX:
 		return _m_from_q(q_asym, sin_cone, sin_o, beta)
 	var q_lut := float(_lut.sample_q(sin_cone, sin_o, beta))
 	var q := q_lut
-	if beta < 0.03:
-		q = lerpf(q_asym, q_lut, smoothstep(0.015, 0.03, beta))
+	if beta < LOW_BETA_BLEND_MAX:
+		q = lerpf(q_asym, q_lut, smoothstep(LOW_BETA_ASYMPTOTIC_MAX, LOW_BETA_BLEND_MAX, beta))
 	var sc := float(_lut.regularized_sin_cone(sin_cone))
 	var so := float(_lut.regularized_sin_o(sin_o))
 	return _m_from_q(q, sc, so, clampf(beta, float(_lut.beta_min), float(_lut.beta_max)))
