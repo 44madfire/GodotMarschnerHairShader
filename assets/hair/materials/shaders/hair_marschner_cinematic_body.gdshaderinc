@@ -38,22 +38,21 @@ vec3 cinematic_azimuthal_attenuation(int mode, float cos_theta_t, float cos_thet
 	return one_minus_f * one_minus_f * pow(f, float(mode - 1)) * transmittance;
 }
 
-float cinematic_asymptotic_q(float sin_cone, float sin_o, float beta_eff) {
+float cinematic_asymptotic_q(float theta_cone, float theta_o, float beta_eff) {
 	float beta = max(beta_eff, 1e-8);
-	float theta_cone = asin(clamp(sin_cone, -0.999999, 0.999999));
-	float theta_o = asin(clamp(sin_o, -0.999999, 0.999999));
 	float delta = theta_o - theta_cone;
 	return inversesqrt(TAU) * exp((cos(delta) - 1.0) / (beta * beta));
 }
 
-float cinematic_sample_m(float sin_cone, float sin_o, float beta_eff) {
+float cinematic_sample_m(float sin_cone, float theta_o, float beta_eff) {
 	float beta = max(beta_eff, 1e-8);
 	float blend_low = cinematic_longitudinal_low_beta_blend.x;
 	float blend_high = cinematic_longitudinal_low_beta_blend.y;
-	float q_asym = cinematic_asymptotic_q(sin_cone, sin_o, beta);
+	float theta_cone = asin(clamp(sin_cone, -0.999999, 0.999999));
+	float q_asym = cinematic_asymptotic_q(theta_cone, theta_o, beta);
 	if (beta <= blend_low) {
-		float cos_o = max(sqrt(max(0.0, 1.0 - sin_o * sin_o)), 1e-5);
-		float cos_cone = max(sqrt(max(0.0, 1.0 - sin_cone * sin_cone)), 1e-5);
+		float cos_o = max(cos(theta_o), 1e-5);
+		float cos_cone = max(cos(theta_cone), 1e-5);
 		return q_asym / max(beta * sqrt(cos_cone * cos_o) * cos_o, 1e-8);
 	}
 
@@ -65,23 +64,26 @@ float cinematic_sample_m(float sin_cone, float sin_o, float beta_eff) {
 	float log_min = log2(beta_min);
 	float log_span = max(log2(beta_max) - log_min, 1e-6);
 
-	// Physical rectangular coordinates: grazing simply maps to the texture edge.
-	float u = clamp(0.5 + 0.5 * sin_cone, half_texel.x, 1.0 - half_texel.x);
-	float v = clamp(0.5 + 0.5 * sin_o, half_texel.y, 1.0 - half_texel.y);
+	// The LUT is uniform in physical angle rather than sin(theta), preserving
+	// resolution at grazing. R stores log2(Q), so hardware trilinear filtering
+	// interpolates the smooth log-kernel instead of the sharp linear peak.
+	float u = clamp(0.5 + theta_cone / PI, half_texel.x, 1.0 - half_texel.x);
+	float v = clamp(0.5 + theta_o / PI, half_texel.y, 1.0 - half_texel.y);
 	float w = clamp((log2(beta_sample) - log_min) / log_span, half_texel.z, 1.0 - half_texel.z);
-	float q_lut = max(texture(cinematic_longitudinal_lut, vec3(u, v, w)).r, 0.0);
+	float log2_q_lut = max(texture(cinematic_longitudinal_lut, vec3(u, v, w)).r, -120.0);
+	float q_lut = exp2(log2_q_lut);
 	float q_value = q_lut;
 	if (beta < blend_high) {
 		float t = smoothstep(blend_low, blend_high, beta);
 		q_value = mix(q_asym, q_lut, t);
 	}
 
-	// Reconstruct M from bounded Q using the same regularized coordinates used
-	// for the texture fetch. No corner reconstruction or boundary renormalization.
-	float sin_cone_eval = 2.0 * u - 1.0;
-	float sin_o_eval = 2.0 * v - 1.0;
-	float cos_cone_eval = max(sqrt(max(0.0, 1.0 - sin_cone_eval * sin_cone_eval)), 1e-5);
-	float cos_o_eval = max(sqrt(max(0.0, 1.0 - sin_o_eval * sin_o_eval)), 1e-5);
+	// Reconstruct M using the same regularized angular coordinates used by the
+	// texture sample. Narrower beta values use the analytic asymptotic path.
+	float theta_cone_eval = (u - 0.5) * PI;
+	float theta_o_eval = (v - 0.5) * PI;
+	float cos_cone_eval = max(cos(theta_cone_eval), 1e-5);
+	float cos_o_eval = max(cos(theta_o_eval), 1e-5);
 	return q_value / max(beta_sample * sqrt(cos_cone_eval * cos_o_eval) * cos_o_eval, 1e-8);
 }
 
@@ -99,10 +101,11 @@ vec3 cinematic_longitudinal(float sin_theta_i, float sin_theta_o, float cos_thet
 	// Preserve the analytic baseline's azimuth-dependent effective cone/width
 	// before sampling one generic scalar longitudinal volume for all three paths.
 	vec3 sin_cone = clamp(-vec3(sin_theta_i) + (2.0 * z_prime - 2.0 * z) * alpha_internal, vec3(-1.0), vec3(1.0));
+	float theta_o = asin(clamp(sin_theta_o, -0.999999, 0.999999));
 	return vec3(
-		cinematic_sample_m(sin_cone[R], sin_theta_o, beta_eff[R]),
-		cinematic_sample_m(sin_cone[TT], sin_theta_o, beta_eff[TT]),
-		cinematic_sample_m(sin_cone[TRT], sin_theta_o, beta_eff[TRT]));
+		cinematic_sample_m(sin_cone[R], theta_o, beta_eff[R]),
+		cinematic_sample_m(sin_cone[TT], theta_o, beta_eff[TT]),
+		cinematic_sample_m(sin_cone[TRT], theta_o, beta_eff[TRT]));
 }
 
 vec3 cinematic_bsdf(vec3 omega_i, vec3 omega_o_local) {
