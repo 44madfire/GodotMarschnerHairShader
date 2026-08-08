@@ -1,0 +1,107 @@
+extends SceneTree
+
+## Headless production-tier wiring test. Run after generating the two default
+## LUT resources. It verifies explicit shader selection, top-level uniform
+## reflection, Texture3D reconstruction/binding, Unity eta pinning, and
+## Cinematic beta-domain propagation without starting a timed benchmark.
+
+const ProfileScript := preload("res://assets/hair/materials/HairMaterialProfile.gd")
+const LUTAdapterScript := preload("res://assets/hair/materials/HairMarschnerLUTAdapter.gd")
+const FAST_SHADER_PATH := "res://assets/hair/materials/shaders/hair_marschner_unity_fast.gdshader"
+const CINEMATIC_SHADER_PATH := "res://assets/hair/materials/shaders/hair_marschner_cinematic.gdshader"
+const REFERENCE_SHADER_PATH := "res://assets/hair/materials/shaders/hair.gdshader"
+
+const TIER_FAST := 1
+const TIER_CINEMATIC := 2
+const TIER_REFERENCE := 3
+
+var _failures := PackedStringArray()
+
+
+func _initialize() -> void:
+	call_deferred("_run")
+
+
+func _run() -> void:
+	var adapter := LUTAdapterScript.new()
+	var missing: PackedStringArray = adapter.missing_default_resources()
+	if not missing.is_empty():
+		for message in missing:
+			push_error(message)
+		quit(1)
+		return
+
+	var profile := ProfileScript.new()
+	_assert_shader(profile, TIER_FAST, FAST_SHADER_PATH)
+	_assert_shader(profile, TIER_CINEMATIC, CINEMATIC_SHADER_PATH)
+	_assert_shader(profile, TIER_REFERENCE, REFERENCE_SHADER_PATH)
+
+	var fast := ShaderMaterial.new()
+	profile.quality_tier = TIER_FAST
+	fast.shader = profile.get_shader_resource()
+	_assert_required_uniforms(fast.shader, [
+		&"albedo", &"coords_texture", &"attributes_texture", &"unity_azimuthal_lut",
+		&"ior", &"absorption_mode", &"freeze_bayer_phase", &"lobe_scales",
+	])
+	profile.apply_to_shader_material(fast)
+	var fast_texture := fast.get_shader_parameter(&"unity_azimuthal_lut") as Texture3D
+	_check(fast_texture != null and fast_texture.get_rid().is_valid(), "Fast Unity azimuthal LUT was not bound as a valid Texture3D")
+	var unity_data: Resource = adapter.load_default_unity_data()
+	if unity_data != null:
+		var eta := float(unity_data.get(&"eta"))
+		_check(is_equal_approx(float(fast.get_shader_parameter(&"ior")), eta), "Fast ior was not pinned to the Unity LUT eta")
+		_check(is_equal_approx(float(fast.get_shader_parameter(&"unity_azimuthal_lut_eta")), eta), "Fast LUT eta metadata was not propagated")
+
+	var cinematic := ShaderMaterial.new()
+	profile.quality_tier = TIER_CINEMATIC
+	profile.ior = 1.42
+	cinematic.shader = profile.get_shader_resource()
+	_assert_required_uniforms(cinematic.shader, [
+		&"albedo", &"coords_texture", &"attributes_texture", &"cinematic_longitudinal_lut",
+		&"cinematic_longitudinal_beta_range", &"ior", &"freeze_bayer_phase", &"lobe_scales",
+	])
+	profile.apply_to_shader_material(cinematic)
+	var cinematic_texture := cinematic.get_shader_parameter(&"cinematic_longitudinal_lut") as Texture3D
+	_check(cinematic_texture != null and cinematic_texture.get_rid().is_valid(), "Cinematic longitudinal LUT was not bound as a valid Texture3D")
+	_check(is_equal_approx(float(cinematic.get_shader_parameter(&"ior")), 1.42), "Cinematic should preserve the profile IOR instead of pinning to 1.55")
+	var cinematic_data: Resource = adapter.load_default_cinematic_data()
+	if cinematic_data != null:
+		var expected_beta := Vector2(float(cinematic_data.get(&"beta_min")), float(cinematic_data.get(&"beta_max")))
+		var actual_beta: Vector2 = cinematic.get_shader_parameter(&"cinematic_longitudinal_beta_range")
+		_check(actual_beta.is_equal_approx(expected_beta), "Cinematic beta range did not match LUT metadata")
+		_check(cinematic_texture.get_width() == int(cinematic_data.get(&"size_x")), "Cinematic Texture3D width did not match LUT metadata")
+		_check(cinematic_texture.get_height() == int(cinematic_data.get(&"size_y")), "Cinematic Texture3D height did not match LUT metadata")
+		_check(cinematic_texture.get_depth() == int(cinematic_data.get(&"size_z")), "Cinematic Texture3D depth did not match LUT metadata")
+
+	if not _failures.is_empty():
+		for failure in _failures:
+			push_error(failure)
+		quit(1)
+		return
+	print("MARSCHNER_PRODUCTION_PROFILE_TEST_OK")
+	quit(0)
+
+
+func _assert_shader(profile: Resource, tier: int, expected_path: String) -> void:
+	profile.set(&"quality_tier", tier)
+	var shader: Shader = profile.call(&"get_shader_resource")
+	_check(shader != null, "quality tier %d returned a null shader" % tier)
+	if shader != null:
+		_check(shader.resource_path == expected_path, "quality tier %d selected %s instead of %s" % [tier, shader.resource_path, expected_path])
+
+
+func _assert_required_uniforms(shader: Shader, required: Array[StringName]) -> void:
+	if shader == null:
+		return
+	var names: Dictionary = {}
+	for info in shader.get_shader_uniform_list():
+		var name := StringName(info.get(&"name", ""))
+		if name != &"":
+			names[name] = true
+	for required_name in required:
+		_check(names.has(required_name), "%s is missing reflected uniform %s" % [shader.resource_path, String(required_name)])
+
+
+func _check(condition: bool, message: String) -> void:
+	if not condition:
+		_failures.append(message)
