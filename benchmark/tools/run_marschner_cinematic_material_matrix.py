@@ -347,6 +347,35 @@ def summarize(records: list[dict[str, Any]]) -> dict[str, Any]:
             "gated": row["gated"],
         }
 
+    gated_theta_rows = [
+        (row, theta_row)
+        for row in gated
+        for theta_row in row.get("per_theta_i", [])
+        if isinstance(theta_row.get("ratio"), (int, float))
+    ]
+    ratio_bias = None
+    if gated_theta_rows:
+        min_pair = min(gated_theta_rows, key=lambda pair: float(pair[1]["ratio"]))
+        max_pair = max(gated_theta_rows, key=lambda pair: float(pair[1]["ratio"]))
+        mean_ratio = sum(float(pair[1]["ratio"]) for pair in gated_theta_rows) / float(len(gated_theta_rows))
+        ratio_bias = {
+            "sample_count": len(gated_theta_rows),
+            "mean_candidate_to_direct_ratio": mean_ratio,
+            "min_candidate_to_direct_ratio": {
+                "case": min_pair[0]["name"],
+                "parameters": min_pair[0]["parameters"],
+                "theta_i_deg": float(min_pair[1]["theta_i_deg"]),
+                "ratio": float(min_pair[1]["ratio"]),
+            },
+            "max_candidate_to_direct_ratio": {
+                "case": max_pair[0]["name"],
+                "parameters": max_pair[0]["parameters"],
+                "theta_i_deg": float(max_pair[1]["theta_i_deg"]),
+                "ratio": float(max_pair[1]["ratio"]),
+            },
+            "samples_above_unity": sum(1 for _, theta_row in gated_theta_rows if float(theta_row["ratio"]) > 1.0),
+        }
+
     return {
         "gate_passed": not failures,
         "gated_case_count": len(gated),
@@ -356,6 +385,7 @@ def summarize(records: list[dict[str, Any]]) -> dict[str, Any]:
         "worst_gated_lobe": worst_case(gated, "worst_lobe_relative_error"),
         "worst_gated_per_theta": worst_case(gated, "worst_per_theta_relative_error"),
         "worst_gated_per_lobe": per_lobe,
+        "gated_per_theta_ratio_bias": ratio_bias,
         "highest_low_beta_sample_share": branch_peak("low_beta_sample_share"),
         "highest_beta_above_lut_sample_share": branch_peak("beta_above_lut_sample_share"),
         "worst_stress_lobe": worst_case(stress, "worst_lobe_relative_error"),

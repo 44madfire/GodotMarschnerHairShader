@@ -57,6 +57,30 @@ The promotion preset also records five **report-only UI-edge stress cases**:
 
 These stress rows expose beta-domain clamping and extreme shader-UI behavior without redefining the intended human-hair promotion domain.
 
+## Promotion result
+
+The local Godot 4.7 promotion matrix at `128×96` integration sampling passed all **33/33 gated cases**.
+
+```text
+worst aggregate lobe error: 0.5377%   (gate 2%)
+worst per-angle total error: 0.7010%   (gate 5%)
+worst R error:              0.5377%
+worst TT error:             0.4625%
+worst TRT error:            0.3345%
+```
+
+The worst aggregate lobe case was `beta_m=0.08`, `beta_n=0.8`, `cuticle=0.2`, `eta=1.8`, where R reached `0.5377%`. The worst per-angle case was `beta_m=0.08`, `beta_n=0.8`, `cuticle=0`, `eta=1.3` at `theta_i=0°`, with `0.7010%` total-energy error.
+
+The low-roughness end remains the hardest part of the domain, as expected from the narrow longitudinal distribution and the `0.05..0.10` asymptotic/LUT transition. The maximum low-beta-path sample share was `35.38%` at `beta_m=0.08`, `cuticle=0`, `eta=1.3`; despite that exposure the corresponding per-angle error remained below `0.71%`.
+
+No gated or report-only stress case produced any `beta_eff > LUT beta_max` samples. Therefore the selected `beta_max=64` domain is not relying on high-beta clamping anywhere exercised by the promotion or UI-edge characterization.
+
+All five report-only stress cases also remained inside the normal `2%/5%` thresholds. Their worst lobe error was `0.3003%` at `eta=1.05`; their worst per-angle error was `0.2988%` at the azimuthal roughness UI maximum.
+
+Across the gated rows the candidate showed a small directional energy bias: the LUT result stayed slightly below the analytic reference at every reported incoming angle, with the largest shortfall equal to the `0.7010%` worst-case error above. This is well inside the acceptance contract and does not justify a global correction factor; applying one would risk trading a small, bounded interpolation bias for material-dependent over-compensation.
+
+The promotion matrix is therefore sufficient evidence to keep the Cinematic v2 LUT representation and current `0.05/0.10` low-beta transition unchanged. The optional `full` 81-case Cartesian preset remains useful as a final exhaustive confirmation of the selected three-point domain before the PR leaves draft state.
+
 ## Presets
 
 ### Smoke
