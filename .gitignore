@@ -10,3 +10,8 @@
 
 # imgui-godot build temp files
 addons/imgui-godot/bin/~*
+
+# Generated Marschner tier-split benchmark artifacts
+benchmark/resources/luts/unity_azimuthal_64.res
+benchmark/resources/luts/cinematic_longitudinal_kernel_128x128x64.res
+benchmark/results/marschner_tier_split_study*.json
