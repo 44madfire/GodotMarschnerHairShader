@@ -143,9 +143,7 @@ func _is_property_relevant(property_name: StringName) -> bool:
 			return quality_tier == QualityTier.CINEMATIC_MARSCHNER
 
 		# Approx-only lobe controls.
-		&"primary_color", &"secondary_color", &"primary_shift", &"secondary_shift", \
-		&"primary_roughness", &"secondary_roughness", &"primary_strength", \
-		&"secondary_strength", &"scatter":
+		&"primary_color", &"secondary_color", &"primary_shift", &"secondary_shift", &"primary_roughness", &"secondary_roughness", &"primary_strength", &"secondary_strength", &"scatter":
 			return quality_tier == QualityTier.APPROX
 
 	return true
