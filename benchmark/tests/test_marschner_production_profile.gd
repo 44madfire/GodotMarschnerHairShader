@@ -110,7 +110,7 @@ func _assert_required_uniforms(shader: Shader, required: Array[StringName]) -> v
 	if shader == null:
 		return
 	var names: Dictionary = {}
-	var uniform_list: Array[Dictionary] = shader.get_shader_uniform_list()
+	var uniform_list: Array = shader.get_shader_uniform_list()
 	for info in uniform_list:
 		var name: StringName = StringName(info.get(&"name", ""))
 		if name != &"":

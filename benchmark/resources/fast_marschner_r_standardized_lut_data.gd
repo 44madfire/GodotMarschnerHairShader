@@ -157,7 +157,7 @@ func requires_boundary_renormalization(q: float, theta_cone: float, beta_r: floa
 	for q_offset in [-q_half_step, q_half_step]:
 		for cone_offset in [-cone_half_step, cone_half_step]:
 			for beta_corner in [beta_lo, beta_hi]:
-				var theta_o_corner := theta_cone + cone_offset + (q + q_offset) * beta_corner
+				var theta_o_corner: float = theta_cone + cone_offset + (q + q_offset) * beta_corner
 				if absf(theta_o_corner) > 0.5 * PI:
 					return true
 	var grazing_margin := 1.25 * (q_half_step * beta_hi + cone_half_step + absf(q) * (beta_hi - beta_lo))
