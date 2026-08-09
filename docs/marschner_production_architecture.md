@@ -7,7 +7,7 @@ This branch promotes the recent Unity/Cinematic experiments into an explicit pro
 | Tier | Shader | Longitudinal M | Azimuthal N | Correctness oracle |
 | --- | --- | --- | --- | --- |
 | Fast | `hair_marschner_unity_fast.gdshader` | Unity Standard separable Gaussian | Unity preintegrated RGB 3D LUT | Unity Standard source/generator parity |
-| Cinematic | `hair_marschner_cinematic.gdshader` | Energy-conserving angle-domain log-Q 3D LUT | Existing analytic baseline N/A | Full analytic reference |
+| Cinematic | `hair_marschner_cinematic.gdshader` | angle-domain/log-Q energy-conserving 3D LUT | Existing analytic baseline N/A | Full analytic reference |
 | Reference | `hair.gdshader` | Full analytic non-separable d'Eon path | Existing baseline | Validation only |
 
 `HairMaterialProfile` exposes `APPROX`, `FAST_MARSCHNER`, `CINEMATIC_MARSCHNER`, and `REFERENCE_MARSCHNER`. Existing serialized tier value `2` selects Cinematic; the analytic reference is value `3`.
@@ -25,7 +25,7 @@ Fast is intentionally a coherent Unity HDRP Standard-style model rather than a p
 
 The Unity azimuthal/modified-refraction contract is baked at human-hair eta `1.55`. `HairMarschnerLUTAdapter` therefore pins Fast `ior` to the LUT eta instead of permitting an inconsistent arbitrary-IOR combination.
 
-The azimuthal volume is generated according to Unity's actual `ComputeAzimuthalScattering` implementation rather than an idealized continuous version: 64³ texel-center coordinates, the `1.19 / cosThetaD + 0.36 * cosThetaD` modified-refraction fit, Unity's `FastASin`, `h` integrated over `[-1, 1)` in `0.1` increments, and RGBA16F storage.
+The azimuthal volume is generated according to Unity's actual `ComputeAzimuthalScattering` implementation: 64³ texel-center coordinates, the `1.19 / cosThetaD + 0.36 * cosThetaD` modified-refraction fit, Unity's `FastASin`, `h` integrated over `[-1, 1)` in `0.1` increments, and RGBA16F storage.
 
 Fast is **not** required to match the analytic reference's integrated energy. Baseline energy/angular/visual differences are diagnostic quality measurements, not the Fast correctness oracle.
 
@@ -33,42 +33,35 @@ Fast is **not** required to match the analytic reference's integrated energy. Ba
 
 A first validation attempt compared trilinearly filtered values from Unity's fixed 64³ table to the continuous direct fiber-width integral at arbitrary off-grid coordinates. That produced very large pointwise relative errors at narrow azimuthal roughness, including a local measured p95 near 99%. This is not an appropriate port-correctness test: the coarse 64³ filtered table is itself Unity Standard's approximation, so comparing it to the continuous distribution measures the approximation Unity chose rather than whether the Godot table matches Unity.
 
-The production Fast gate is therefore **texel-center parity with Unity's compute generator**, allowing only the expected RGBA16F quantization error. The validator currently requires:
+The production Fast gate is therefore **texel-center parity with Unity's compute generator**, allowing only expected RGBA16F quantization error. The validator requires:
 
 - p99 relative error at active texel-center samples `<= 0.1%`;
 - maximum absolute texel-center error `<= 0.01`.
 
-The previous off-grid direct-integral comparison is retained in the JSON report as `characterization_only`, including a separate `beta >= 0.2` slice. It remains useful for understanding the quality cost of Unity's 64³ approximation but cannot fail the Godot port.
+The off-grid direct-integral comparison remains in the JSON report as `characterization_only`, including a separate `beta >= 0.2` slice.
 
 ## Cinematic contract
 
 Cinematic keeps the high-tier baseline's non-separable geometry and analytic azimuthal/attenuation behavior. The only intended single-scattering approximation is longitudinal preintegration.
 
-The original 128×128×64 candidate stored linear `Q` on uniform `sin(theta)` axes. Local validation exposed two distinct conditioning problems:
+The original v1 representation used uniform `sin(theta_cone)` / `sin(theta_o)` axes and stored linear `Q`. Local validation measured an off-grid p95 relative error of about `18.55%` and a maximum projected-integral relative error of about `7.18%`, outside the intended `10%/5%` gates.
 
-- off-grid p95 relative error was about `18.55%`, above the `10%` target, because linearly interpolating the very narrow positive kernel loses peak shape;
-- the worst projected-integral error was about `7.18%`, above the `5%` target, because uniform `sin(theta)` sampling loses angular density near grazing and then reconstructs `M` from a regularized edge sample.
+The v2 representation keeps the same **128×128×64 R16F / 2 MiB** budget but changes the conditioning:
 
-The v2 representation keeps the same **128×128×64 R16F / 2 MiB** budget but changes the coordinates and stored quantity:
+- X = `theta_cone` in `[-PI/2, PI/2]`;
+- Y = `theta_o` in `[-PI/2, PI/2]`;
+- Z = normalized `log2(beta_eff)` over `[0.05, 64]`;
+- R = `log2(Q)`, where `Q = beta * sqrt(cos(theta_cone) * cos(theta_o)) * cos(theta_o) * M`.
 
-- `U = 0.5 + theta_cone / PI`;
-- `V = 0.5 + theta_o / PI`;
-- `W = normalized log2(beta_eff)` over `beta_eff in [0.05, 64]`;
-- `R = log2(Q)`, where `Q = beta * sqrt(cos(theta_cone) * cos(theta_o)) * cos(theta_o) * M`.
+The runtime derives `theta_cone` and `beta_eff` separately for R/TT/TRT using the analytic baseline's azimuth-dependent geometry, then samples the same scalar volume three times. Azimuth therefore still moves/broadens the longitudinal lobes without becoming another LUT dimension.
 
-Uniform angle coordinates preserve resolution at grazing. Storing `log2(Q)` makes hardware trilinear filtering interpolate the smooth log-kernel instead of blending a near-delta linear peak. Runtime converts the filtered value back with `exp2` and reconstructs `M` using the same regularized angular coordinates.
+The narrow-beta path is:
 
-The runtime derives `sin(theta_cone)` and `beta_eff` separately for R/TT/TRT using the analytic baseline's azimuth-dependent geometry, then samples the same scalar volume three times. Azimuth therefore still moves and broadens the longitudinal lobes without becoming another LUT dimension.
-
-Narrow lobes remain cheaper and more accurate analytically:
-
-- `beta_eff <= 0.05`: asymptotic longitudinal form;
+- `beta_eff <= 0.05`: analytic asymptotic;
 - `0.05 < beta_eff < 0.10`: asymptotic/LUT transition;
 - `beta_eff >= 0.10`: LUT.
 
-This keeps the 3D resource focused on the range where interpolation is useful, instead of spending z-resolution on extremely narrow lobes that the asymptotic form already represents accurately.
-
-Normal Cinematic sampling is still one filtered 3D texture lookup per lobe. There is no valid-corner reconstruction, boundary renormalization, or direct Bessel fallback in the shader.
+Normal Cinematic sampling is one filtered 3D texture lookup per lobe. There is no valid-corner reconstruction, boundary renormalization, or direct Bessel fallback in the shader.
 
 ## Shader layout
 
@@ -124,14 +117,31 @@ The longitudinal resource validator gates:
 - off-grid p95 relative error in the stored/runtime `Q` reconstruction: `<= 10%`;
 - maximum projected-integral relative error through the actual low-beta runtime path: `<= 5%`.
 
-The complete single-scattering validator then targets:
+The complete single-scattering validator targets:
 
 - worst aggregate R/TT/TRT lobe energy relative error: `<= 2%`;
 - worst per-incoming-angle total energy relative error: `<= 5%`;
-- R, TT, and TRT reported independently;
-- material-domain sweeps across roughness, cuticle, and IOR before final promotion.
+- R, TT, and TRT reported independently.
 
-`validate_marschner_cinematic_energy.gd --contract=report` records results without turning an out-of-gate candidate into a process failure; omit `--contract=report` to enforce the current complete-energy gates.
+`validate_marschner_cinematic_energy.gd` accepts `--beta-m`, `--beta-n`, `--cuticle`, and `--eta` so the same direct-vs-candidate oracle can be used across the material domain. `--contract=report` records results without turning an out-of-gate candidate into a process failure.
+
+Material-domain validation is defined in `docs/marschner_cinematic_material_matrix.md` and implemented by `benchmark/tools/run_marschner_cinematic_material_matrix.py`.
+
+The final local Godot 4.7 full Cartesian material sweep evaluated all `3×3×3×3 = 81` selected-domain material combinations at `128×96` integration sampling and passed **81/81** cases:
+
+```text
+worst aggregate lobe error: 0.5377%   (gate 2%)
+worst per-angle total error: 0.7670%   (gate 5%)
+worst R error:              0.5377%
+worst TT error:             0.5062%
+worst TRT error:            0.3348%
+```
+
+The hardest region is the narrow `beta_m=0.08` end. The worst aggregate lobe case was R at `beta_m=0.08`, `beta_n=0.08`, `cuticle=0.2`, `eta=1.8`. The worst per-angle case was `beta_m=0.08`, `beta_n=1.8`, `cuticle=0`, `eta=1.3`, `theta_i=0°`.
+
+Across all 405 material/angle rows, the mean candidate/direct ratio was `0.99760485`, the minimum was `0.99232977`, the maximum was `0.99951286`, and no sample exceeded unity. This small under-energy interpolation bias is bounded well inside the acceptance contract and is not globally corrected.
+
+The maximum low-beta-path sample share was `35.38%`, while `beta_eff > LUT beta_max` sample share remained `0%` across the full domain. The Cinematic v2 LUT representation, `beta_max=64`, `128×128×64` resolution, and `0.05/0.10` low-beta transition are therefore considered **material-domain validated** and should remain unchanged unless later renderer-level evidence identifies a distinct failure mode.
 
 ## One-command local study
 
@@ -159,8 +169,16 @@ For a CPU/resource-only pass:
 python3 benchmark/tools/run_marschner_tier_split_study.py --skip-runtime
 ```
 
+The separate material matrix can be rerun with:
+
+```bash
+python3 benchmark/tools/run_marschner_cinematic_material_matrix.py \
+  --preset full \
+  --project "//wsl.localhost/Ubuntu/path/to/your/checkout"
+```
+
 ## Deferred work
 
 The production split deliberately does not fold the older Fast experimental selector family into either new shader. In particular, the standardized-R LUT, local/preintegrated dual scattering, and camera-space environment stand-in remain benchmark evidence until independently justified.
 
-Full world-space environment/irradiance and screen-indirect hair lighting also remain a separate architectural milestone. Direct-light Marschner parity should be settled before those features are added.
+Full world-space environment/irradiance and screen-indirect hair lighting also remain a separate architectural milestone. Direct-light Marschner parity is now settled for the current Cinematic longitudinal path; those lighting features should be evaluated as separate renderer-level work.

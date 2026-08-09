@@ -7,7 +7,7 @@ extends SceneTree
 ##   candidate = angle-domain log-Q LUT + low-beta asymptotic transition
 
 const LUT_PATH := "res://benchmark/resources/luts/cinematic_longitudinal_kernel_128x128x64.res"
-const ETA := 1.55
+const DEFAULT_ETA := 1.55
 const THETA_I_DEG := [-60.0, -30.0, 0.0, 30.0, 60.0]
 const DEFAULT_GRID := 128
 const DEFAULT_PHI_GRID := 96
@@ -22,6 +22,7 @@ var _phi_grid := DEFAULT_PHI_GRID
 var _beta_m := 0.3
 var _beta_n := 0.8
 var _cuticle := 0.087
+var _eta := DEFAULT_ETA
 var _report_only := false
 var _lut: Resource
 
@@ -66,12 +67,15 @@ func _parse_args() -> bool:
 			_beta_n = float(arg.trim_prefix("--beta-n="))
 		elif arg.begins_with("--cuticle="):
 			_cuticle = float(arg.trim_prefix("--cuticle="))
+		elif arg.begins_with("--eta="):
+			_eta = float(arg.trim_prefix("--eta="))
 		elif arg == "--contract=report":
 			_report_only = true
 		else:
 			push_error("unsupported argument: %s" % arg)
 			return false
-	return _grid >= 8 and _phi_grid >= 8 and _beta_m > 0.0 and _beta_n > 0.0
+	return _grid >= 8 and _phi_grid >= 8 and _beta_m > 0.0 and _beta_n > 0.0 \
+		and is_finite(_eta) and _eta >= 1.0 and _eta <= 2.0
 
 func _integrate() -> Dictionary:
 	var lobe_direct := Vector3.ZERO
@@ -87,7 +91,7 @@ func _integrate() -> Dictionary:
 		var theta_i := deg_to_rad(theta_i_deg)
 		var sin_i := sin(theta_i)
 		var cos_i := cos(theta_i)
-		var cos_theta_t := sqrt(maxf(0.0, 1.0 - sin_i * sin_i / (ETA * ETA)))
+		var cos_theta_t := sqrt(maxf(0.0, 1.0 - sin_i * sin_i / (_eta * _eta)))
 		var theta_direct := Vector3.ZERO
 		var theta_candidate := Vector3.ZERO
 		for oi in _grid:
@@ -104,7 +108,7 @@ func _integrate() -> Dictionary:
 				var cos_theta := clampf(cos_o * cos_i + sin_o * sin_i, -1.0, 1.0)
 				var cos_d := sqrt(maxf(0.0, 0.5 + 0.5 * cos_theta))
 				var sin_d := sqrt(maxf(0.0, 0.5 - 0.5 * cos_theta)) * signf(sin_o * cos_i - cos_o * sin_i)
-				var eta_prime := sqrt(maxf(ETA * ETA - sin_d * sin_d, 1e-8)) / maxf(cos_d, 1e-6)
+				var eta_prime := sqrt(maxf(_eta * _eta - sin_d * sin_d, 1e-8)) / maxf(cos_d, 1e-6)
 				var eta_inv := 1.0 / maxf(eta_prime, 1e-6)
 				var h := _cross_section(cphi, sphi, eta_inv)
 				var geometry := _longitudinal_geometry(sin_i, cos_d, sin_d, cphi, -_cuticle, _beta_m, h)
@@ -169,7 +173,7 @@ func _integrate() -> Dictionary:
 			"beta_m_effective": _beta_m,
 			"beta_n_effective": _beta_n,
 			"cuticle": _cuticle,
-			"eta": ETA,
+			"eta": _eta,
 			"lut_dimensions": [_lut.size_x, _lut.size_y, _lut.size_z],
 			"lut_beta_range": [_lut.beta_min, _lut.beta_max],
 			"lut_contract": _lut.contract,
@@ -203,14 +207,14 @@ func _longitudinal_geometry(sin_i: float, cos_d: float, sin_d: float, cphi: floa
 	k_sq = Vector3(clampf(k_sq.x, 0.0, 0.999999), clampf(k_sq.y, 0.0, 0.999999), clampf(k_sq.z, 0.0, 0.999999))
 	var z := Vector3(sqrt(1.0 - k_sq.x), sqrt(1.0 - k_sq.y), sqrt(1.0 - k_sq.z))
 	var z_prime_base := Vector3(
-		sqrt(maxf(ETA * ETA - k_sq.x, 1e-6)),
-		sqrt(maxf(ETA * ETA - k_sq.y, 1e-6)),
-		sqrt(maxf(ETA * ETA - k_sq.z, 1e-6)))
+		sqrt(maxf(_eta * _eta - k_sq.x, 1e-6)),
+		sqrt(maxf(_eta * _eta - k_sq.y, 1e-6)),
+		sqrt(maxf(_eta * _eta - k_sq.z, 1e-6)))
 	var z_prime := z_prime_base * Vector3(0.0, 1.0, 2.0)
 	var beta_eff := Vector3.ONE * beta_m
 	beta_eff.x *= sqrt(2.0) * cphi
 	beta_eff.y *= (z.y + 0.5 * z_prime.y) / maxf(cos_d, 1e-5)
-	beta_eff.z *= 2.0 * sqrt(maxf(ETA * ETA - sin_d * sin_d, 1e-6)) / maxf(cos_d, 1e-5) - 1.0
+	beta_eff.z *= 2.0 * sqrt(maxf(_eta * _eta - sin_d * sin_d, 1e-6)) / maxf(cos_d, 1e-5) - 1.0
 	beta_eff = Vector3(maxf(beta_eff.x, 1e-8), maxf(beta_eff.y, 1e-8), maxf(beta_eff.z, 1e-8))
 	var sin_cone := -Vector3.ONE * sin_i + (2.0 * z_prime - 2.0 * z) * alpha_internal
 	sin_cone = Vector3(clampf(sin_cone.x, -1.0, 1.0), clampf(sin_cone.y, -1.0, 1.0), clampf(sin_cone.z, -1.0, 1.0))
@@ -262,7 +266,7 @@ func _azimuthal_weight(cos_theta_t: float, cos_d: float, cos_phi: float, sin_phi
 	return result
 
 func _fresnel(cos_theta: float) -> float:
-	var f0 := (1.0 - ETA) * (1.0 - ETA) / ((1.0 + ETA) * (1.0 + ETA))
+	var f0 := (1.0 - _eta) * (1.0 - _eta) / ((1.0 + _eta) * (1.0 + _eta))
 	var p := 1.0 - clampf(cos_theta, 0.0, 1.0)
 	return lerpf(p * p * p * p * p, 1.0, f0)
 
