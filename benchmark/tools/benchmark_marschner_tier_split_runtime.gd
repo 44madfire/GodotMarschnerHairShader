@@ -66,7 +66,11 @@ func _run() -> void:
 		quit(1)
 		return
 
-	var source := groom.mesh.surface_get_material(0) as ShaderMaterial
+	var source := groom.material_override as ShaderMaterial
+	if source == null:
+		source = groom.get_surface_override_material(0) as ShaderMaterial
+	if source == null and groom.mesh:
+		source = groom.mesh.surface_get_material(0) as ShaderMaterial
 	if source == null:
 		push_error("Blowout source ShaderMaterial missing")
 		quit(1)

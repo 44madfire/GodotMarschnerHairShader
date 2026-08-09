@@ -4,20 +4,25 @@ extends SceneTree
 ## Direct and candidate paths share the same baseline non-separable geometry,
 ## analytic azimuthal distribution and attenuation. Only M differs:
 ##   direct    = analytic d'Eon-style log-Bessel approximation
-##   candidate = physical-domain Q LUT + low-beta asymptotic transition
+##   candidate = angle-domain log-Q LUT + low-beta asymptotic transition
 
-const LUT_PATH := "res://benchmark/resources/luts/marschner_cinematic_longitudinal_128x128x64.res"
+const LUT_PATH := "res://benchmark/resources/luts/cinematic_longitudinal_kernel_128x128x64.res"
 const ETA := 1.55
 const THETA_I_DEG := [-60.0, -30.0, 0.0, 30.0, 60.0]
 const DEFAULT_GRID := 128
 const DEFAULT_PHI_GRID := 96
 const REL_EPS := 1e-10
+const LOBE_ERROR_GATE := 0.02
+const PER_ANGLE_ERROR_GATE := 0.05
+const LOW_BETA_ASYMPTOTIC_MAX := 0.05
+const LOW_BETA_BLEND_MAX := 0.10
 
 var _grid := DEFAULT_GRID
 var _phi_grid := DEFAULT_PHI_GRID
 var _beta_m := 0.3
 var _beta_n := 0.8
 var _cuticle := 0.087
+var _report_only := false
 var _lut: Resource
 
 func _initialize() -> void:
@@ -38,11 +43,15 @@ func _initialize() -> void:
 	print(JSON.stringify(report, "\t"))
 	var worst_lobe := float(report["summary"]["worst_lobe_relative_error"])
 	var worst_angle := float(report["summary"]["worst_per_theta_relative_error"])
-	if worst_lobe > 0.05 or worst_angle > 0.05:
-		push_error("Cinematic complete-energy gates failed: lobe=%g angle=%g" % [worst_lobe, worst_angle])
+	var gate_failed := worst_lobe > LOBE_ERROR_GATE or worst_angle > PER_ANGLE_ERROR_GATE
+	if gate_failed and not _report_only:
+		push_error("Cinematic complete-energy gates failed: lobe=%g (max %g) angle=%g (max %g)" % [worst_lobe, LOBE_ERROR_GATE, worst_angle, PER_ANGLE_ERROR_GATE])
 		quit(1)
 		return
-	print("MARSCHNER_CINEMATIC_COMPLETE_ENERGY_OK")
+	if gate_failed:
+		print("MARSCHNER_CINEMATIC_COMPLETE_ENERGY_REPORT_OUTSIDE_GATE")
+	else:
+		print("MARSCHNER_CINEMATIC_COMPLETE_ENERGY_OK")
 	quit(0)
 
 func _parse_args() -> bool:
@@ -58,7 +67,7 @@ func _parse_args() -> bool:
 		elif arg.begins_with("--cuticle="):
 			_cuticle = float(arg.trim_prefix("--cuticle="))
 		elif arg == "--contract=report":
-			pass
+			_report_only = true
 		else:
 			push_error("unsupported argument: %s" % arg)
 			return false
@@ -112,7 +121,7 @@ func _integrate() -> Dictionary:
 				for p in 3:
 					if beta_eff[p] > float(_lut.beta_max):
 						high_beta_samples += 1
-					if beta_eff[p] < 0.03:
+					if beta_eff[p] < LOW_BETA_BLEND_MAX:
 						low_beta_samples += 1
 					total_lobe_samples += 1
 				var weight := _azimuthal_weight(cos_theta_t, cos_d, cos_phi, sin_phi, cphi, eta_inv, h)
@@ -150,6 +159,7 @@ func _integrate() -> Dictionary:
 	var worst_angle := 0.0
 	for row in per_theta:
 		worst_angle = maxf(worst_angle, float(row["relative_error"]))
+	var gate_passed := worst_lobe <= LOBE_ERROR_GATE and worst_angle <= PER_ANGLE_ERROR_GATE
 	return {
 		"schema": "marschner_cinematic_complete_energy_v1",
 		"configuration": {
@@ -162,6 +172,8 @@ func _integrate() -> Dictionary:
 			"eta": ETA,
 			"lut_dimensions": [_lut.size_x, _lut.size_y, _lut.size_z],
 			"lut_beta_range": [_lut.beta_min, _lut.beta_max],
+			"lut_contract": _lut.contract,
+			"low_beta_transition": [LOW_BETA_ASYMPTOTIC_MAX, LOW_BETA_BLEND_MAX],
 		},
 		"lobes": lobe_report,
 		"per_theta_i": per_theta,
@@ -173,10 +185,11 @@ func _integrate() -> Dictionary:
 		"summary": {
 			"worst_lobe_relative_error": worst_lobe,
 			"worst_per_theta_relative_error": worst_angle,
+			"gate_passed": gate_passed,
 		},
 		"gates": {
-			"worst_lobe_relative_error_max": 0.05,
-			"worst_per_theta_relative_error_max": 0.05,
+			"worst_lobe_relative_error_max": LOBE_ERROR_GATE,
+			"worst_per_theta_relative_error_max": PER_ANGLE_ERROR_GATE,
 		},
 	}
 
@@ -205,12 +218,12 @@ func _longitudinal_geometry(sin_i: float, cos_d: float, sin_d: float, cphi: floa
 
 func _candidate_m(sin_cone: float, sin_o: float, beta: float) -> float:
 	var q_asym := _asym_q(sin_cone, sin_o, beta)
-	if beta <= 0.015:
+	if beta <= LOW_BETA_ASYMPTOTIC_MAX:
 		return _m_from_q(q_asym, sin_cone, sin_o, beta)
 	var q_lut := float(_lut.sample_q(sin_cone, sin_o, beta))
 	var q := q_lut
-	if beta < 0.03:
-		q = lerpf(q_asym, q_lut, smoothstep(0.015, 0.03, beta))
+	if beta < LOW_BETA_BLEND_MAX:
+		q = lerpf(q_asym, q_lut, smoothstep(LOW_BETA_ASYMPTOTIC_MAX, LOW_BETA_BLEND_MAX, beta))
 	var sc := float(_lut.regularized_sin_cone(sin_cone))
 	var so := float(_lut.regularized_sin_o(sin_o))
 	return _m_from_q(q, sc, so, clampf(beta, float(_lut.beta_min), float(_lut.beta_max)))

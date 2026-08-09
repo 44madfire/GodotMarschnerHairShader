@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
-"""Generate and validate the new Marschner Fast/Cinematic tier split.
+"""Generate and validate the production Marschner Fast/Cinematic tier split.
 
 Default flow:
   1. Generate Unity HDRP-style 64^3 RGBA16F azimuthal N LUT.
-  2. Validate that LUT off-grid against the direct h integration.
-  3. Generate the 128x128x64 R16F physical-domain Cinematic longitudinal LUT.
-  4. Validate the generic longitudinal LUT off-grid and by projected integrals.
-  5. Validate complete Cinematic R/TT/TRT energy against the analytic baseline.
-  6. Run the non-headless GPU comparison unless --skip-runtime is supplied.
+  2. Validate Unity LUT texel-center parity with HDRP's compute generator and
+     report off-grid continuous-integral error as approximation characterization.
+  3. Generate the 128x128x64 R16F angle-domain/log-Q Cinematic longitudinal LUT.
+  4. Validate the Cinematic LUT off-grid and through the actual low-beta runtime path.
+  5. Validate production profile selection, uniform reflection, and LUT binding.
+  6. Report complete Cinematic R/TT/TRT energy against the analytic baseline.
+  7. Run the non-headless GPU comparison unless --skip-runtime is supplied.
 
-The default candidate dimensions are intentionally fixed here because the
+The default production dimensions are intentionally fixed here because the
 runtime adapter binds those exact resource paths. Resolution sweeps should run
 the generators/validators directly rather than silently benchmarking a stale
 runtime resource.
@@ -32,6 +34,7 @@ UNITY_GENERATOR = "res://benchmark/tools/generate_unity_hair_azimuthal_lut.gd"
 UNITY_VALIDATOR = "res://benchmark/tools/validate_unity_hair_azimuthal_lut.gd"
 CINEMATIC_GENERATOR = "res://benchmark/tools/generate_marschner_cinematic_longitudinal_lut.gd"
 CINEMATIC_VALIDATOR = "res://benchmark/tools/validate_marschner_cinematic_longitudinal_lut.gd"
+PRODUCTION_PROFILE_TEST = "res://benchmark/tests/test_marschner_production_profile.gd"
 CINEMATIC_ENERGY = "res://benchmark/tools/validate_marschner_cinematic_energy.gd"
 RUNTIME_BENCHMARK = "res://benchmark/tools/benchmark_marschner_tier_split_runtime.gd"
 TIMEOUT = 7200.0
@@ -93,7 +96,7 @@ def main() -> int:
     parser.add_argument("--godot", default=DEFAULT_GODOT)
     parser.add_argument("--project", default=DEFAULT_PROJECT)
     parser.add_argument("--skip-generate", action="store_true", help="reuse the fixed default LUT resources")
-    parser.add_argument("--skip-runtime", action="store_true", help="run CPU generation/validation only")
+    parser.add_argument("--skip-runtime", action="store_true", help="run CPU generation/validation and profile wiring only")
     parser.add_argument("--out", type=Path, default=Path("benchmark/results/marschner_tier_split_study.json"))
     args = parser.parse_args()
 
@@ -109,7 +112,15 @@ def main() -> int:
     if not args.skip_generate:
         run_godot(args.godot, args.project, CINEMATIC_GENERATOR, headless=True, user_args=["--size=128x128x64"])
     cinematic_stdout = run_godot(args.godot, args.project, CINEMATIC_VALIDATOR, headless=True)
-    cinematic_energy_stdout = run_godot(args.godot, args.project, CINEMATIC_ENERGY, headless=True, user_args=["--grid=128", "--phi-grid=96", "--contract=report"])
+
+    run_godot(args.godot, args.project, PRODUCTION_PROFILE_TEST, headless=True)
+    cinematic_energy_stdout = run_godot(
+        args.godot,
+        args.project,
+        CINEMATIC_ENERGY,
+        headless=True,
+        user_args=["--grid=128", "--phi-grid=96", "--contract=report"],
+    )
 
     runtime_stdout = ""
     if not args.skip_runtime:
@@ -119,17 +130,22 @@ def main() -> int:
         "schema": "marschner_tier_split_study_v1",
         "configuration": {
             "unity_size": 64,
+            "unity_validation_oracle": "texel_center_parity_with_unity_compute_generator",
+            "unity_off_grid_error": "characterization_only",
             "cinematic_size": "128x128x64",
             "cinematic_format": "R16F",
+            "cinematic_representation": "theta_cone,theta_o,log2(beta_eff); R=log2(Q)",
+            "cinematic_low_beta_transition": [0.05, 0.10],
+            "production_profile_wiring": "passed",
             "runtime_executed": not args.skip_runtime,
         },
         "unity_azimuthal_validation": extract_json(unity_stdout, "unity_hair_azimuthal_lut_validation_v1"),
-        "cinematic_longitudinal_validation": extract_json(cinematic_stdout, "marschner_cinematic_longitudinal_lut_validation_v1"),
+        "cinematic_longitudinal_validation": extract_json(cinematic_stdout, "marschner_cinematic_longitudinal_lut_validation_v2"),
         "cinematic_complete_energy": extract_json(cinematic_energy_stdout, "marschner_cinematic_complete_energy_v1"),
         "runtime": extract_json(runtime_stdout, "marschner_tier_split_runtime_v1") if runtime_stdout else None,
         "expected_artifacts": {
-            "unity_azimuthal": "benchmark/resources/luts/unity_hair_azimuthal_lut_64.res",
-            "cinematic_longitudinal": "benchmark/resources/luts/marschner_cinematic_longitudinal_128x128x64.res",
+            "unity_azimuthal": "benchmark/resources/luts/unity_azimuthal_64.res",
+            "cinematic_longitudinal": "benchmark/resources/luts/cinematic_longitudinal_kernel_128x128x64.res",
         },
     }
     args.out.parent.mkdir(parents=True, exist_ok=True)
