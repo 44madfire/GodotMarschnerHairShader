@@ -36,7 +36,7 @@ The default `promotion` preset uses two complementary gated sub-matrices:
 1. **Geometry product** — `beta_m × cuticle × eta`, holding `beta_n=0.8`.
 2. **Azimuthal-weighting plane** — `beta_m × beta_n`, holding cuticle/IOR nominal.
 
-The nominal overlap is deduplicated. This gives 35 gated cases rather than a largely redundant 81-case four-dimensional Cartesian product while still covering the interactions most likely to change LUT coordinates or reweight the R/TT/TRT residuals.
+The three nominal-`beta_n` rows in the weighting plane duplicate rows already present in the geometry product and are removed. This gives **33 gated cases** (`27 + 9 - 3`) rather than the largely redundant 81-case four-dimensional Cartesian product while still covering the interactions most likely to change LUT coordinates or reweight the R/TT/TRT residuals.
 
 The gated values are:
 
@@ -73,7 +73,7 @@ Use this first after validator/parser changes.
 
 ### Promotion
 
-Default 35 gated cases plus five report-only stress cases, at the same `128×96` integration sampling used by the nominal complete-energy validation:
+Default 33 gated cases plus five report-only stress cases, at the same `128×96` integration sampling used by the nominal complete-energy validation:
 
 ```bash
 python3 benchmark/tools/run_marschner_cinematic_material_matrix.py \
