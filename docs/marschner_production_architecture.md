@@ -10,7 +10,7 @@ This branch promotes the recent Unity/Cinematic experiments into an explicit pro
 | Cinematic | `hair_marschner_cinematic.gdshader` | angle-domain/log-Q energy-conserving 3D LUT | Existing analytic baseline N/A | Full analytic reference |
 | Reference | `hair.gdshader` | Full analytic non-separable d'Eon path | Existing baseline | Validation only |
 
-`HairMaterialProfile` now exposes `APPROX`, `FAST_MARSCHNER`, `CINEMATIC_MARSCHNER`, and `REFERENCE_MARSCHNER`. Existing serialized tier value `2` now selects Cinematic; the analytic reference is value `3`.
+`HairMaterialProfile` exposes `APPROX`, `FAST_MARSCHNER`, `CINEMATIC_MARSCHNER`, and `REFERENCE_MARSCHNER`. Existing serialized tier value `2` selects Cinematic; the analytic reference is value `3`.
 
 ## Fast contract
 
@@ -33,12 +33,12 @@ Fast is **not** required to match the analytic reference's integrated energy. Ba
 
 A first validation attempt compared trilinearly filtered values from Unity's fixed 64³ table to the continuous direct fiber-width integral at arbitrary off-grid coordinates. That produced very large pointwise relative errors at narrow azimuthal roughness, including a local measured p95 near 99%. This is not an appropriate port-correctness test: the coarse 64³ filtered table is itself Unity Standard's approximation, so comparing it to the continuous distribution measures the approximation Unity chose rather than whether the Godot table matches Unity.
 
-The production Fast gate is therefore **texel-center parity with Unity's compute generator**, allowing only expected RGBA16F quantization error. The validator currently requires:
+The production Fast gate is therefore **texel-center parity with Unity's compute generator**, allowing only expected RGBA16F quantization error. The validator requires:
 
 - p99 relative error at active texel-center samples `<= 0.1%`;
 - maximum absolute texel-center error `<= 0.01`.
 
-The off-grid direct-integral comparison remains in the JSON report as `characterization_only`, including a separate `beta >= 0.2` slice. It remains useful for understanding the quality cost of Unity's 64³ approximation but cannot fail the Godot port.
+The off-grid direct-integral comparison remains in the JSON report as `characterization_only`, including a separate `beta >= 0.2` slice.
 
 ## Cinematic contract
 
@@ -46,7 +46,7 @@ Cinematic keeps the high-tier baseline's non-separable geometry and analytic azi
 
 The original v1 representation used uniform `sin(theta_cone)` / `sin(theta_o)` axes and stored linear `Q`. Local validation measured an off-grid p95 relative error of about `18.55%` and a maximum projected-integral relative error of about `7.18%`, outside the intended `10%/5%` gates.
 
-The v2 candidate keeps the same **128×128×64 R16F / 2 MiB** budget but changes the conditioning:
+The v2 representation keeps the same **128×128×64 R16F / 2 MiB** budget but changes the conditioning:
 
 - X = `theta_cone` in `[-PI/2, PI/2]`;
 - Y = `theta_o` in `[-PI/2, PI/2]`;
@@ -61,7 +61,7 @@ The narrow-beta path is:
 - `0.05 < beta_eff < 0.10`: asymptotic/LUT transition;
 - `beta_eff >= 0.10`: LUT.
 
-Normal Cinematic sampling is still one filtered 3D texture lookup per lobe. There is no valid-corner reconstruction, boundary renormalization, or direct Bessel fallback in the shader.
+Normal Cinematic sampling is one filtered 3D texture lookup per lobe. There is no valid-corner reconstruction, boundary renormalization, or direct Bessel fallback in the shader.
 
 ## Shader layout
 
@@ -117,15 +117,31 @@ The longitudinal resource validator gates:
 - off-grid p95 relative error in the stored/runtime `Q` reconstruction: `<= 10%`;
 - maximum projected-integral relative error through the actual low-beta runtime path: `<= 5%`.
 
-The complete single-scattering validator then targets:
+The complete single-scattering validator targets:
 
 - worst aggregate R/TT/TRT lobe energy relative error: `<= 2%`;
 - worst per-incoming-angle total energy relative error: `<= 5%`;
 - R, TT, and TRT reported independently.
 
-`validate_marschner_cinematic_energy.gd` accepts `--beta-m`, `--beta-n`, `--cuticle`, and `--eta` so the same direct-vs-candidate oracle can be used across the material domain. `--contract=report` records results without turning an out-of-gate candidate into a process failure; omit it to enforce the current complete-energy gates.
+`validate_marschner_cinematic_energy.gd` accepts `--beta-m`, `--beta-n`, `--cuticle`, and `--eta` so the same direct-vs-candidate oracle can be used across the material domain. `--contract=report` records results without turning an out-of-gate candidate into a process failure.
 
-Material-domain promotion validation is defined in `docs/marschner_cinematic_material_matrix.md` and implemented by `benchmark/tools/run_marschner_cinematic_material_matrix.py`. The default promotion matrix covers the dominant `beta_m × cuticle × IOR` geometry interactions plus a `beta_m × beta_n` azimuthal-weighting plane, while a full `3×3×3×3` Cartesian preset is available for exhaustive confirmation.
+Material-domain validation is defined in `docs/marschner_cinematic_material_matrix.md` and implemented by `benchmark/tools/run_marschner_cinematic_material_matrix.py`.
+
+The final local Godot 4.7 full Cartesian material sweep evaluated all `3×3×3×3 = 81` selected-domain material combinations at `128×96` integration sampling and passed **81/81** cases:
+
+```text
+worst aggregate lobe error: 0.5377%   (gate 2%)
+worst per-angle total error: 0.7670%   (gate 5%)
+worst R error:              0.5377%
+worst TT error:             0.5062%
+worst TRT error:            0.3348%
+```
+
+The hardest region is the narrow `beta_m=0.08` end. The worst aggregate lobe case was R at `beta_m=0.08`, `beta_n=0.08`, `cuticle=0.2`, `eta=1.8`. The worst per-angle case was `beta_m=0.08`, `beta_n=1.8`, `cuticle=0`, `eta=1.3`, `theta_i=0°`.
+
+Across all 405 material/angle rows, the mean candidate/direct ratio was `0.99760485`, the minimum was `0.99232977`, the maximum was `0.99951286`, and no sample exceeded unity. This small under-energy interpolation bias is bounded well inside the acceptance contract and is not globally corrected.
+
+The maximum low-beta-path sample share was `35.38%`, while `beta_eff > LUT beta_max` sample share remained `0%` across the full domain. The Cinematic v2 LUT representation, `beta_max=64`, `128×128×64` resolution, and `0.05/0.10` low-beta transition are therefore considered **material-domain validated** and should remain unchanged unless later renderer-level evidence identifies a distinct failure mode.
 
 ## One-command local study
 
@@ -153,11 +169,11 @@ For a CPU/resource-only pass:
 python3 benchmark/tools/run_marschner_tier_split_study.py --skip-runtime
 ```
 
-Run the separate Cinematic material promotion matrix after the nominal tier study passes:
+The separate material matrix can be rerun with:
 
 ```bash
 python3 benchmark/tools/run_marschner_cinematic_material_matrix.py \
-  --preset promotion \
+  --preset full \
   --project "//wsl.localhost/Ubuntu/path/to/your/checkout"
 ```
 
@@ -165,4 +181,4 @@ python3 benchmark/tools/run_marschner_cinematic_material_matrix.py \
 
 The production split deliberately does not fold the older Fast experimental selector family into either new shader. In particular, the standardized-R LUT, local/preintegrated dual scattering, and camera-space environment stand-in remain benchmark evidence until independently justified.
 
-Full world-space environment/irradiance and screen-indirect hair lighting also remain a separate architectural milestone. Direct-light Marschner parity should be settled before those features are added.
+Full world-space environment/irradiance and screen-indirect hair lighting also remain a separate architectural milestone. Direct-light Marschner parity is now settled for the current Cinematic longitudinal path; those lighting features should be evaluated as separate renderer-level work.
