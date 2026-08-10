@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="HairMaterialProfile" format=3 uid="uid://bnm7w384e34w6"]
+
+[ext_resource type="Script" uid="uid://cbjbs0ipg6v51" path="res://assets/hair/materials/HairMaterialProfile.gd" id="1_profile"]
+
+[resource]
+script = ExtResource("1_profile")
+quality_tier = 3
+albedo = Color(0.24774602, 0.12215338, 0.09630052, 1)
+longitudinal_roughness = 0.2
+azimuthal_roughness = 0.75
+specular = 1.0
+cuticle_tilt_offset = 0.087
+primary_color = Color(1, 0.72, 0.48, 1)
+secondary_color = Color(0.38, 0.12, 0.055, 1)
+primary_shift = 0.02
+secondary_shift = 0.14
+primary_roughness = 0.25
+secondary_roughness = 0.52
+primary_strength = 1.15
+secondary_strength = 0.38
+scatter = 0.42

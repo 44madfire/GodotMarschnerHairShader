@@ -1,0 +1,146 @@
+[gd_scene format=3 uid="uid://dg8mbfj8253ds"]
+
+[ext_resource type="Script" uid="uid://2t46vwivo4mb" path="res://demos/hair_material_profile_preview.gd" id="1_preview"]
+[ext_resource type="Resource" path="res://demos/resources/hair_material_profile_demo.tres" id="2_profile"]
+[ext_resource type="PackedScene" uid="uid://0kfhl4adgyut" path="res://assets/hair/models/blowout/blowout.glb" id="3_groom"]
+[ext_resource type="ArrayMesh" uid="uid://cwuw3j5gfe4nc" path="res://assets/hair/head.obj" id="4_head"]
+[ext_resource type="Shader" uid="uid://bn82eehj8tcof" path="res://assets/hair/materials/shaders/hair.gdshader" id="5_hair_shader"]
+[ext_resource type="Texture2D" uid="uid://dej1f2lud0wqc" path="res://assets/hair/models/blowout/blowout_coords.png" id="6_coords"]
+[ext_resource type="Texture2D" uid="uid://b63emy2bx1uwh" path="res://assets/hair/models/blowout/blowout_attrib.png" id="7_attributes"]
+[ext_resource type="Shader" uid="uid://jey3irlr26on" path="res://assets/hair/materials/shaders/hair_marschner_unity_fast.gdshader" id="9_gstpb"]
+[ext_resource type="Shader" uid="uid://cj7us4xysxwpi" path="res://assets/sky.gdshader" id="9_sky"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_groom_source"]
+render_priority = 0
+shader = ExtResource("5_hair_shader")
+shader_parameter/albedo = Color(0.24774602, 0.12215338, 0.09630052, 1)
+shader_parameter/longitudinal_roughness = 0.2
+shader_parameter/azimuthal_roughness = 0.75
+shader_parameter/specular = 1.0
+shader_parameter/cuticle_tilt_offset = 0.087
+shader_parameter/coords_texture = ExtResource("6_coords")
+shader_parameter/attributes_texture = ExtResource("7_attributes")
+shader_parameter/show_hair_cards = false
+shader_parameter/show_hashed_strands = false
+shader_parameter/lobe_scales = Vector3(1, 1, 1)
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_preview_sky"]
+shader = ExtResource("9_sky")
+shader_parameter/background_color = Color(0, 0, 0, 1)
+shader_parameter/backlight_color = Color(0.225, 0.225, 0.265, 1)
+shader_parameter/backlight_strength = 1.0
+
+[sub_resource type="Sky" id="Sky_preview"]
+sky_material = SubResource("ShaderMaterial_preview_sky")
+radiance_size = 0
+
+[sub_resource type="Environment" id="Environment_preview"]
+background_mode = 2
+background_color = Color(0.016, 0.024, 0.05, 1)
+background_intensity = 14000.0
+sky = SubResource("Sky_preview")
+ambient_light_source = 2
+ambient_light_color = Color(0.23507258, 0.25074816, 0.26642358, 1)
+ambient_light_energy = 0.65
+reflected_light_source = 2
+tonemap_mode = 4
+glow_levels/2 = 0.5
+glow_levels/5 = 0.75
+glow_blend_mode = 4
+adjustment_enabled = true
+adjustment_brightness = 1.75
+adjustment_contrast = 0.95
+adjustment_saturation = 1.05
+
+[sub_resource type="CameraAttributesPractical" id="CameraAttributesPractical_preview"]
+exposure_multiplier = 0.9
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_plinth"]
+albedo_color = Color(0.025, 0.034, 0.06, 1)
+metallic = 0.3
+roughness = 0.32
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_plinth"]
+top_radius = 0.62
+bottom_radius = 0.72
+height = 0.08
+radial_segments = 48
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_head"]
+albedo_color = Color(0.48235294, 0.48235294, 0.48235294, 1)
+roughness = 0.5
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_o7s2q"]
+render_priority = 0
+shader = ExtResource("9_gstpb")
+shader_parameter/albedo = Color(0.24774602, 0.12215338, 0.09630052, 1)
+shader_parameter/longitudinal_roughness = 0.2
+shader_parameter/azimuthal_roughness = 0.75
+shader_parameter/specular = 1.0
+shader_parameter/cuticle_tilt_offset = 0.087
+shader_parameter/coords_texture = ExtResource("6_coords")
+shader_parameter/attributes_texture = ExtResource("7_attributes")
+shader_parameter/ior = 1.55
+shader_parameter/unity_azimuthal_lut_eta = 1.55
+shader_parameter/absorption_mode = 0
+shader_parameter/absorption = Color(0.1, 0.1, 0.1, 1)
+shader_parameter/eumelanin = 0.2
+shader_parameter/pheomelanin = 0.8
+shader_parameter/melanin_absorption_scale = 0.001
+shader_parameter/show_hair_cards = false
+shader_parameter/show_hashed_strands = false
+shader_parameter/lobe_scales = Vector3(1, 1, 1)
+shader_parameter/freeze_bayer_phase = true
+shader_parameter/comparison_exposure_gain = 1.1
+shader_parameter/use_area_light_multipliers = true
+
+[node name="HairMaterialProfileEditor" type="Node3D" unique_id=896641586]
+script = ExtResource("1_preview")
+material_profile = ExtResource("2_profile")
+groom_source_material = SubResource("ShaderMaterial_groom_source")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=2122324503]
+environment = SubResource("Environment_preview")
+camera_attributes = SubResource("CameraAttributesPractical_preview")
+
+[node name="KeyLight" type="DirectionalLight3D" parent="." unique_id=1772770228]
+transform = Transform3D(0.92718387, 0.07788509, -0.36642054, 0, 0.9781476, 0.2079117, 0.37460658, -0.19277237, 0.9069227, 0, 0, 0)
+light_intensity_lux = 85000.0
+light_specular = 0.6
+shadow_enabled = true
+shadow_bias = 0.005
+shadow_opacity = 0.999
+shadow_blur = 2.0
+directional_shadow_mode = 0
+directional_shadow_max_distance = 2.0
+
+[node name="BenchmarkKeyLight" type="DirectionalLight3D" parent="." unique_id=987036849]
+transform = Transform3D(0.9271841, -0.0778851, 0.3664203, 0, 0.97814775, 0.20791157, -0.37460667, -0.1927724, 0.9069221, 0, -0.05, 0)
+light_intensity_lux = 85000.0
+light_specular = 0.6
+shadow_enabled = true
+shadow_bias = 0.005
+shadow_opacity = 0.999
+shadow_blur = 2.0
+directional_shadow_mode = 0
+directional_shadow_fade_start = 1.0
+directional_shadow_max_distance = 1.0
+
+[node name="Camera3D" type="Camera3D" parent="." unique_id=1181662793]
+transform = Transform3D(0.9640954, -0.048849408, 0.26102448, 0, 0.98293537, 0.18395133, -0.26555613, -0.17734665, 0.9476434, 0.117, 0.032, 0.427)
+current = true
+fov = 60.0
+near = 0.06
+far = 10.0
+
+[node name="PresentationPlinth" type="MeshInstance3D" parent="." unique_id=2093071705]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.48, 0)
+material_override = SubResource("StandardMaterial3D_plinth")
+mesh = SubResource("CylinderMesh_plinth")
+
+[node name="Head" type="MeshInstance3D" parent="." unique_id=522369599]
+material_override = SubResource("StandardMaterial3D_head")
+mesh = ExtResource("4_head")
+
+[node name="HairPreview" parent="." unique_id=1945216060 instance=ExtResource("3_groom")]
+material_override = SubResource("ShaderMaterial_o7s2q")

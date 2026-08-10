@@ -75,6 +75,33 @@ This keeps groom textures and benchmark/debug state attached to the material whi
 
 `bind_quality_resources()` is likewise retained as a compatibility alias for the new `bind_mode_resources()` name.
 
+## Editor preview demo
+
+Open `demos/HairMaterialProfileEditor.tscn` in the Godot editor. Select the
+`HairMaterialProfileEditor` root node and expand its `Material Profile`
+property. The scene assigns the editable resource
+`demos/resources/hair_material_profile_demo.tres`, so you can open that
+resource in the Inspector and change its `quality_tier` dropdown:
+
+```text
+Approx / Kajiya-Kay
+Fast Marschner
+Cinematic Marschner
+Reference Marschner
+```
+
+The `@tool` preview updates the visible Blowout groom in the 3D viewport as
+soon as the resource changes; play mode is not required. The scene starts from
+a copy of the groom's source `ShaderMaterial` and applies the profile to that
+copy as a `material_override`, so imported materials and other scenes are not
+mutated. Its camera, environment, key, fill, and rim lights are also useful
+when running the scene directly.
+
+Fast and Cinematic need the generated LUT resources described below. If those
+resources are absent, the profile still selects the shader variant but the
+preview script reports a warning and the selected tier cannot render its full
+lighting path until the LUTs are generated.
+
 ## Why the shaders stay split
 
 The dropdown is an authoring/runtime material decision, not a uniform branch inside one shader program. Keeping separate compiled variants means Fast does not carry the Cinematic longitudinal LUT or analytic Reference machinery, Cinematic does not carry the Unity azimuthal LUT, and Approx does not carry Marschner code at all.
