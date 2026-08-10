@@ -41,32 +41,14 @@ uniform bool show_hair_cards = false;
 uniform bool show_hashed_strands = false;
 group_uniforms;
 
+#include "./hair_marschner_common.gdshaderinc"
+#include "./hair_card_common.gdshaderinc"
 #include "./hair.gdshaderinc"
 
 varying vec3 vertex_world;
 varying vec3 absorbtion_coefficient;
 varying vec2 beta;
 varying mat3 inv_tangent_matrix; // inverse TBN Matrix
-
-/** Returns a random vec3 in [0, 1) using PCG hash. */
-// Source: https://www.shadertoy.com/view/XlGcRh
-vec3 hash13(float p) {
-	uvec3 v = uvec3(floatBitsToUint(p), 0u, 0u);
-
-	v = v * 1664525u + 1013904223u; // pcg3d
-	v.x += v.y*v.z; v.y += v.z*v.x; v.z += v.x*v.y;
-	v ^= v >> 16u;
-	v.x += v.y*v.z; v.y += v.z*v.x; v.z += v.x*v.y;
-
-	return uintBitsToFloat((v & uvec3(0x007FFFFFu)) | uvec3(0x3F800000u)) - 1.0;
-}
-
-
-/** Schlick's Bias Approximation */
-// Source: https://blog.demofox.org/2012/09/24/bias-and-gain-are-your-friend/
-float power(float x, float t) {
-	return x / ((1.0/t - 2.0)*(1.0 - x) + 1.0);
-}
 
 
 void vertex() {
@@ -75,48 +57,46 @@ void vertex() {
 
 
 void fragment() {
-	// Called for every pixel the material is visible on.
-	vec3 tangent = texture(coords_texture, UV).rgb*2.0 - 1.0;
-	float u = texture(coords_texture, UV).a;            // 0->1 from base of strand to tip.
-	float coverage = texture(attributes_texture, UV).r; // Alpha
-	float depth = texture(attributes_texture, UV).g;    // 0->1 from deep hair to shallow hair
-	float seed = texture(attributes_texture, UV).b;
+	vec4 coords_sample = texture(coords_texture, UV);
+	vec3 attributes_sample = texture(attributes_texture, UV).rgb;
+	vec3 tangent_texture_value = coords_sample.rgb * 2.0 - 1.0;
+	float u = coords_sample.a;
+	float coverage = attributes_sample.r;
+	float depth = attributes_sample.g;
+	float seed = attributes_sample.b;
 	beta = vec2(longitudinal_roughness, azimuthal_roughness);
 
-	// --- Alpha Hashing ---
-	// We'll use a simpler alpha hash implementation which uses a Bayer matrix for dithering.
-	const mat4 bayer4x4 = mat4(
-		vec4(0.01,  8.0,  2.0, 10.0),
-		vec4(12.0,  4.0, 14.0,  6.0),
-		vec4( 3.0, 11.0,  1.0,  9.0),
-		vec4(15.0,  7.0, 13.0,  5.0)) / 16.0;
+	// Reference keeps its original TIME-driven Bayer phase; production preview
+	// variants may freeze the phase with their explicit preview uniform.
+	if (!hair_card_should_keep(
+		coverage,
+		depth,
+		vertex_world,
+		UV,
+		FRAGCOORD.xy,
+		textureSize(attributes_texture, 0),
+		TIME,
+		show_hair_cards,
+		CAMERA_POSITION_WORLD,
+		MODEL_MATRIX[0].xyz,
+		PROJECTION_MATRIX[1][1])) discard;
 
-	ivec2 id = ivec2(FRAGCOORD.xy + UV.xy*vec2(textureSize(attributes_texture, 0)*2) + TIME*500.0); // FIXME: uh oh! this code is ass!
-	float dist = length((CAMERA_POSITION_WORLD - vertex_world) / MODEL_MATRIX[0].xyz) / tan(PI/6.0) / PROJECTION_MATRIX[1][1];
-	float bias = max((1.0 - clamp((dist - 1.0)*0.5, 0.0, 1.0))*(1.0 - depth*depth), 0.1);
-	// Note: if standard alpha blending is used (as opposed to alpha hashing), the output of the BSDF
-	//       would need to be multiplied by the coverage value.
-	if (!show_hair_cards && pow(coverage, bias) < bayer4x4[id.x % 4][id.y % 4]) discard;
-
-	// --- Built-ins ---
-	vec3 hash = hash13(seed);
-	// Darken strands towards the roots to simulate self shadowing.
-	ALBEDO = show_hashed_strands ? hash : albedo * smoothstep(-0.2, 0.2, u*(1.0 - coverage));
+	vec3 hash = hair_hash13(seed);
+	ALBEDO = hair_card_base_albedo(albedo, u, coverage, hash, show_hashed_strands);
 	SPECULAR = specular;
 	ROUGHNESS = beta[M];
 
-	// --- Tangent (TBN) Matrix Calculation ---
-	// We define a 'frizziness' factor that depends on roughness as well as how far along
-	// the strand we are (assuming hair further along the strand is more 'damaged').
-	// FIXME: Probably better to expose this as a uniform...
-	float frizz = 0.5 * beta[M] * power(u, 1.0 - beta[M]);
-
-	// Purturb the tangent in a per-strand random direction to simulate hair frizz.
-	TANGENT = normalize(mat3(TANGENT, BINORMAL, NORMAL)*tangent + (hash*2.0 - 1.0)*frizz);
-	NORMAL = normalize(NORMAL - TANGENT*dot(NORMAL, TANGENT));
-	BINORMAL = cross(TANGENT, NORMAL);
-
-	inv_tangent_matrix = transpose(mat3(TANGENT, BINORMAL, NORMAL));
+	TANGENT = hair_card_frizzed_tangent(
+		mat3(TANGENT, BINORMAL, NORMAL),
+		tangent_texture_value,
+		hash,
+		u,
+		beta[M]);
+	mat3 strand_frame = hair_card_orthonormal_frame(TANGENT, NORMAL);
+	TANGENT = strand_frame[0];
+	BINORMAL = strand_frame[1];
+	NORMAL = strand_frame[2];
+	inv_tangent_matrix = transpose(strand_frame);
 
 	// --- Reparameterization ---
 	// Source: "A Practical and Controllable Hair and Fur Model for Production Path Tracing" (Chiang et al., 2016)
