@@ -48,6 +48,17 @@ var _last_warning_signature: String = ""
 var _refresh_queued: bool = false
 
 
+## Keeps groom_data parser-safe (untyped Resource) while still restricting the
+## Inspector field to HairGroomData-compatible resources. The resource-type
+## hint resolves the global class at edit time, so this script never depends on
+## the class name being registered during headless parsing.
+func _validate_property(property: Dictionary) -> void:
+	var property_name: StringName = StringName(property.get("name", ""))
+	if property_name == &"groom_data":
+		property["hint"] = PROPERTY_HINT_RESOURCE_TYPE
+		property["hint_string"] = "HairGroomData"
+
+
 func _ready() -> void:
 	set_process(true)
 	_queue_preview_refresh()
