@@ -4,25 +4,8 @@
 [ext_resource type="Resource" path="res://demos/resources/hair_material_profile_demo.tres" id="2_profile"]
 [ext_resource type="PackedScene" uid="uid://0kfhl4adgyut" path="res://assets/hair/models/blowout/blowout.glb" id="3_groom"]
 [ext_resource type="ArrayMesh" uid="uid://cwuw3j5gfe4nc" path="res://assets/hair/head.obj" id="4_head"]
-[ext_resource type="Shader" uid="uid://bn82eehj8tcof" path="res://assets/hair/materials/shaders/hair.gdshader" id="5_hair_shader"]
-[ext_resource type="Texture2D" uid="uid://dej1f2lud0wqc" path="res://assets/hair/models/blowout/blowout_coords.png" id="6_coords"]
-[ext_resource type="Texture2D" uid="uid://b63emy2bx1uwh" path="res://assets/hair/models/blowout/blowout_attrib.png" id="7_attributes"]
-[ext_resource type="Shader" uid="uid://jey3irlr26on" path="res://assets/hair/materials/shaders/hair_marschner_unity_fast.gdshader" id="9_gstpb"]
+[ext_resource type="Resource" path="res://demos/resources/blowout_groom_data.tres" id="5_groom_data"]
 [ext_resource type="Shader" uid="uid://cj7us4xysxwpi" path="res://assets/sky.gdshader" id="9_sky"]
-
-[sub_resource type="ShaderMaterial" id="ShaderMaterial_groom_source"]
-render_priority = 0
-shader = ExtResource("5_hair_shader")
-shader_parameter/albedo = Color(0.24774602, 0.12215338, 0.09630052, 1)
-shader_parameter/longitudinal_roughness = 0.2
-shader_parameter/azimuthal_roughness = 0.75
-shader_parameter/specular = 1.0
-shader_parameter/cuticle_tilt_offset = 0.087
-shader_parameter/coords_texture = ExtResource("6_coords")
-shader_parameter/attributes_texture = ExtResource("7_attributes")
-shader_parameter/show_hair_cards = false
-shader_parameter/show_hashed_strands = false
-shader_parameter/lobe_scales = Vector3(1, 1, 1)
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_preview_sky"]
 shader = ExtResource("9_sky")
@@ -70,34 +53,10 @@ radial_segments = 48
 albedo_color = Color(0.48235294, 0.48235294, 0.48235294, 1)
 roughness = 0.5
 
-[sub_resource type="ShaderMaterial" id="ShaderMaterial_o7s2q"]
-render_priority = 0
-shader = ExtResource("9_gstpb")
-shader_parameter/albedo = Color(0.24774602, 0.12215338, 0.09630052, 1)
-shader_parameter/longitudinal_roughness = 0.2
-shader_parameter/azimuthal_roughness = 0.75
-shader_parameter/specular = 1.0
-shader_parameter/cuticle_tilt_offset = 0.087
-shader_parameter/coords_texture = ExtResource("6_coords")
-shader_parameter/attributes_texture = ExtResource("7_attributes")
-shader_parameter/ior = 1.55
-shader_parameter/unity_azimuthal_lut_eta = 1.55
-shader_parameter/absorption_mode = 0
-shader_parameter/absorption = Color(0.1, 0.1, 0.1, 1)
-shader_parameter/eumelanin = 0.2
-shader_parameter/pheomelanin = 0.8
-shader_parameter/melanin_absorption_scale = 0.001
-shader_parameter/show_hair_cards = false
-shader_parameter/show_hashed_strands = false
-shader_parameter/lobe_scales = Vector3(1, 1, 1)
-shader_parameter/freeze_bayer_phase = true
-shader_parameter/comparison_exposure_gain = 1.1
-shader_parameter/use_area_light_multipliers = true
-
 [node name="HairMaterialProfileEditor" type="Node3D" unique_id=896641586]
 script = ExtResource("1_preview")
 material_profile = ExtResource("2_profile")
-groom_source_material = SubResource("ShaderMaterial_groom_source")
+groom_data = ExtResource("5_groom_data")
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=2122324503]
 environment = SubResource("Environment_preview")
@@ -143,4 +102,3 @@ material_override = SubResource("StandardMaterial3D_head")
 mesh = ExtResource("4_head")
 
 [node name="HairPreview" parent="." unique_id=1945216060 instance=ExtResource("3_groom")]
-material_override = SubResource("ShaderMaterial_o7s2q")
