@@ -22,7 +22,7 @@ const PREVIEW_EXPOSURE_GAIN: float = 1.1
 
 ## Groom-specific generated card textures. This is the preferred way to supply
 ## coords_texture and attributes_texture for a new groom.
-@export var groom_data: HairGroomData:
+@export var groom_data: Resource:
 	set(value):
 		if groom_data == value:
 			return
@@ -164,8 +164,8 @@ func _make_preview_signature() -> String:
 		values.append("groom=null")
 	else:
 		values.append("groom=%d" % groom_data.get_instance_id())
-		values.append("coords=%s" % _value_signature(groom_data.coords_texture))
-		values.append("attributes=%s" % _value_signature(groom_data.attributes_texture))
+		values.append("coords=%s" % _value_signature(groom_data.get(&"coords_texture")))
+		values.append("attributes=%s" % _value_signature(groom_data.get(&"attributes_texture")))
 	values.append("source=%s" % _value_signature(groom_source_material))
 	return "|".join(values)
 

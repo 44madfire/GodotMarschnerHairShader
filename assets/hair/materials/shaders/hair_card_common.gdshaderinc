@@ -57,17 +57,17 @@ vec3 hair_card_base_albedo(
 	float root_to_tip,
 	float coverage,
 	vec3 strand_hash,
-	bool show_hashed_strands
+	bool show_hashed
 ) {
-	return show_hashed_strands
+	return show_hashed
 		? strand_hash
 		: base_color * smoothstep(-0.2, 0.2, root_to_tip * (1.0 - coverage));
 }
 
 
-float hair_card_frizz_amount(float longitudinal_roughness, float root_to_tip) {
-	return 0.5 * longitudinal_roughness
-		* hair_bias_power(root_to_tip, 1.0 - longitudinal_roughness);
+float hair_card_frizz_amount(float frizz_roughness, float root_to_tip) {
+	return 0.5 * frizz_roughness
+		* hair_bias_power(root_to_tip, 1.0 - frizz_roughness);
 }
 
 
@@ -76,9 +76,9 @@ vec3 hair_card_frizzed_tangent(
 	vec3 tangent_texture_value,
 	vec3 strand_hash,
 	float root_to_tip,
-	float longitudinal_roughness
+	float frizz_roughness
 ) {
-	float frizz = hair_card_frizz_amount(longitudinal_roughness, root_to_tip);
+	float frizz = hair_card_frizz_amount(frizz_roughness, root_to_tip);
 	return normalize(
 		surface_tbn * tangent_texture_value
 		+ (strand_hash * 2.0 - 1.0) * frizz);

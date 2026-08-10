@@ -69,10 +69,12 @@ func apply_to_shader_material(material: ShaderMaterial, warn_on_failure: bool = 
 
 ## Convenience constructor for migrating an existing generated source material.
 ## It reads the two shared groom texture uniforms without modifying the source.
-static func from_shader_material(material: ShaderMaterial) -> HairGroomData:
-	var groom: HairGroomData = HairGroomData.new()
+## Returned as Resource so this script never depends on its own global class
+## name being registered during headless parsing.
+static func from_shader_material(material: ShaderMaterial) -> Resource:
+	var groom: Resource = (load("res://assets/hair/materials/HairGroomData.gd") as GDScript).new()
 	if material == null or material.shader == null:
 		return groom
-	groom.coords_texture = material.get_shader_parameter(&"coords_texture") as Texture2D
-	groom.attributes_texture = material.get_shader_parameter(&"attributes_texture") as Texture2D
+	groom.set(&"coords_texture", material.get_shader_parameter(&"coords_texture") as Texture2D)
+	groom.set(&"attributes_texture", material.get_shader_parameter(&"attributes_texture") as Texture2D)
 	return groom

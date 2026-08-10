@@ -170,7 +170,7 @@ func get_shader_resource() -> Shader:
 ## applies all parameters declared by the target shader, binds its LUT, and then
 ## applies groom_data when supplied. This makes a new groom independent of any
 ## pre-authored source ShaderMaterial.
-func apply_to(material: ShaderMaterial, groom_data: HairGroomData = null) -> bool:
+func apply_to(material: ShaderMaterial, groom_data: Resource = null) -> bool:
 	if material == null:
 		return false
 	var target_shader: Shader = get_shader_resource()
@@ -187,15 +187,15 @@ func apply_to(material: ShaderMaterial, groom_data: HairGroomData = null) -> boo
 
 	var profile_bound: bool = _apply_profile_to_current_shader(material, true)
 	var groom_bound: bool = true
-	if groom_data != null:
-		groom_bound = groom_data.apply_to_shader_material(material, true)
+	if groom_data != null and groom_data.has_method(&"apply_to_shader_material"):
+		groom_bound = bool(groom_data.call(&"apply_to_shader_material", material, true))
 	return profile_bound and groom_bound
 
 
 ## Convenience path for callers creating a material from scratch for a groom.
 ## The material is returned even when a generated LUT is not available so the
 ## caller can inspect/fix the resource assignment in the editor.
-func create_material(groom_data: HairGroomData = null) -> ShaderMaterial:
+func create_material(groom_data: Resource = null) -> ShaderMaterial:
 	var material: ShaderMaterial = ShaderMaterial.new()
 	apply_to(material, groom_data)
 	return material
