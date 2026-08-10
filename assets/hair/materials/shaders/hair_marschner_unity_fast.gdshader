@@ -59,4 +59,5 @@ varying float unity_radial_roughness;
 varying float strand_depth;
 
 #include "./hair_marschner_common.gdshaderinc"
+#include "./hair_card_common.gdshaderinc"
 #include "./hair_marschner_unity_fast_body.gdshaderinc"

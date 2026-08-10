@@ -144,30 +144,43 @@ void vertex() {
 }
 
 void fragment() {
-	vec3 tangent = texture(coords_texture, UV).rgb * 2.0 - 1.0;
-	float u = texture(coords_texture, UV).a;
-	float coverage = texture(attributes_texture, UV).r;
-	float depth = texture(attributes_texture, UV).g;
-	float seed = texture(attributes_texture, UV).b;
+	vec4 coords_sample = texture(coords_texture, UV);
+	vec3 attributes_sample = texture(attributes_texture, UV).rgb;
+	vec3 tangent_texture_value = coords_sample.rgb * 2.0 - 1.0;
+	float u = coords_sample.a;
+	float coverage = attributes_sample.r;
+	float depth = attributes_sample.g;
+	float seed = attributes_sample.b;
 	vec2 beta_raw = vec2(longitudinal_roughness, azimuthal_roughness);
-	const mat4 bayer4x4 = mat4(
-		vec4(0.01, 8.0, 2.0, 10.0), vec4(12.0, 4.0, 14.0, 6.0),
-		vec4(3.0, 11.0, 1.0, 9.0), vec4(15.0, 7.0, 13.0, 5.0)) / 16.0;
 	float bayer_time = freeze_bayer_phase ? 0.0 : TIME;
-	ivec2 id = ivec2(FRAGCOORD.xy + UV.xy * vec2(textureSize(attributes_texture, 0) * 2) + bayer_time * 500.0);
-	float dist = length((CAMERA_POSITION_WORLD - vertex_world) / MODEL_MATRIX[0].xyz) / tan(PI / 6.0) / PROJECTION_MATRIX[1][1];
-	float bias = max((1.0 - clamp((dist - 1.0) * 0.5, 0.0, 1.0)) * (1.0 - depth * depth), 0.1);
-	if (!show_hair_cards && pow(coverage, bias) < bayer4x4[id.x % 4][id.y % 4]) discard;
+	if (!hair_card_should_keep(
+		coverage,
+		depth,
+		vertex_world,
+		UV,
+		FRAGCOORD.xy,
+		textureSize(attributes_texture, 0),
+		bayer_time,
+		show_hair_cards,
+		CAMERA_POSITION_WORLD,
+		MODEL_MATRIX[0].xyz,
+		PROJECTION_MATRIX[1][1])) discard;
 
 	vec3 hash = hair_hash13(seed);
-	ALBEDO = show_hashed_strands ? hash : albedo * smoothstep(-0.2, 0.2, u * (1.0 - coverage));
+	ALBEDO = hair_card_base_albedo(albedo, u, coverage, hash, show_hashed_strands);
 	SPECULAR = specular;
 	ROUGHNESS = beta_raw.x;
-	float frizz = 0.5 * beta_raw.x * hair_bias_power(u, 1.0 - beta_raw.x);
-	TANGENT = normalize(mat3(TANGENT, BINORMAL, NORMAL) * tangent + (hash * 2.0 - 1.0) * frizz);
-	NORMAL = normalize(NORMAL - TANGENT * dot(NORMAL, TANGENT));
-	BINORMAL = cross(TANGENT, NORMAL);
-	inv_tangent_matrix = transpose(mat3(TANGENT, BINORMAL, NORMAL));
+	TANGENT = hair_card_frizzed_tangent(
+		mat3(TANGENT, BINORMAL, NORMAL),
+		tangent_texture_value,
+		hash,
+		u,
+		beta_raw.x);
+	mat3 strand_frame = hair_card_orthonormal_frame(TANGENT, NORMAL);
+	TANGENT = strand_frame[0];
+	BINORMAL = strand_frame[1];
+	NORMAL = strand_frame[2];
+	inv_tangent_matrix = transpose(strand_frame);
 	omega_o = inv_tangent_matrix * VIEW;
 
 	vec3 safe_albedo = max(albedo, vec3(1e-4));

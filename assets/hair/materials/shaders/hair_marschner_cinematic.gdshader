@@ -54,4 +54,5 @@ varying mat3 inv_tangent_matrix;
 varying vec3 omega_o;
 
 #include "./hair_marschner_common.gdshaderinc"
+#include "./hair_card_common.gdshaderinc"
 #include "./hair_marschner_cinematic_body.gdshaderinc"
