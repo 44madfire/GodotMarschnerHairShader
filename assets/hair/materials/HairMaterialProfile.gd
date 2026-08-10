@@ -8,7 +8,8 @@ class_name HairMaterialProfile
 ## as an explicit compiled shader variant. Switching quality_tier changes which
 ## mode-specific controls are visible in the Inspector; apply_to() selects the
 ## corresponding shader, preserves groom-owned textures/debug state, applies
-## the relevant profile values, and binds the LUT required by that mode.
+## the relevant profile values, binds the LUT required by that mode, and can
+## optionally bind an explicit HairGroomData resource for a new groom.
 ##
 ## Serialized tier values remain unchanged for compatibility:
 ## 0 = Approx/Kajiya-Kay, 1 = Unity Fast, 2 = Cinematic, 3 = Reference.
@@ -27,7 +28,8 @@ const LUTAdapter := preload("res://assets/hair/materials/HairMarschnerLUTAdapter
 
 ## Shader parameters intentionally owned by the groom/material rather than this
 ## profile. apply_to() carries them across shader-variant changes when both the
-## previous and target shaders expose the parameter.
+## previous and target shaders expose the parameter. Supplying HairGroomData to
+## apply_to() replaces the two groom textures after the shader swap.
 const PRESERVED_SHADER_PARAMETERS: Array[StringName] = [
 	&"coords_texture",
 	&"attributes_texture",
@@ -165,10 +167,10 @@ func get_shader_resource() -> Shader:
 
 ## Preferred consolidated authoring API. Selects this profile's compiled shader
 ## variant, preserves caller-owned groom/debug parameters across the swap,
-## applies all parameters declared by the target shader, and binds its LUT.
-## Returns false only when the material/shader is invalid or a required LUT
-## cannot be bound.
-func apply_to(material: ShaderMaterial) -> bool:
+## applies all parameters declared by the target shader, binds its LUT, and then
+## applies groom_data when supplied. This makes a new groom independent of any
+## pre-authored source ShaderMaterial.
+func apply_to(material: ShaderMaterial, groom_data: HairGroomData = null) -> bool:
 	if material == null:
 		return false
 	var target_shader: Shader = get_shader_resource()
@@ -183,7 +185,20 @@ func apply_to(material: ShaderMaterial) -> bool:
 	if not preserved_values.is_empty():
 		_restore_shader_parameters(material, preserved_values)
 
-	return _apply_profile_to_current_shader(material, true)
+	var profile_bound: bool = _apply_profile_to_current_shader(material, true)
+	var groom_bound: bool = true
+	if groom_data != null:
+		groom_bound = groom_data.apply_to_shader_material(material, true)
+	return profile_bound and groom_bound
+
+
+## Convenience path for callers creating a material from scratch for a groom.
+## The material is returned even when a generated LUT is not available so the
+## caller can inspect/fix the resource assignment in the editor.
+func create_material(groom_data: HairGroomData = null) -> ShaderMaterial:
+	var material: ShaderMaterial = ShaderMaterial.new()
+	apply_to(material, groom_data)
+	return material
 
 
 ## Compatibility API for callers that deliberately own shader selection (for
