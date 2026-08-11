@@ -113,7 +113,7 @@ Assign a `HairMaterialProfile` and `HairGroomData`, then switch `quality_tier` t
 
 ## New groom setup — visual walkthrough
 
-The quick-start path above is the complete workflow. The three editor-style SVG illustrations below make the hand-off between resources and the final mesh easier to scan. They are **illustrations, not literal screenshots**; the labels and paths mirror this project’s actual Inspector fields and assets.
+The quick-start path above is the complete workflow. The three editor screenshots below show the hand-off between resources and the final mesh using this project’s actual Inspector fields and assets.
 
 ### 1. Bind the groom maps
 
@@ -123,9 +123,9 @@ The quick-start path above is the complete workflow. The three editor-style SVG 
    - `coords_texture` → `res://assets/hair/models/blowout/blowout_coords.png`
    - `attributes_texture` → `res://assets/hair/models/blowout/blowout_attrib.png`
 
-[![Editor-style illustration of the HairGroomData Inspector and texture channel contracts](docs/images/new-groom-01-hair-groom-data.svg)](docs/images/new-groom-01-hair-groom-data.svg)
+[![Godot Inspector showing HairGroomData and its assigned groom textures](docs/images/new-groom-01-hair-groom-data.png)](docs/images/new-groom-01-hair-groom-data.png)
 
-*Illustration 1 — `HairGroomData` owns the card-atlas maps; the channel contracts are not appearance-texture slots.*
+*Screenshot 1 — `HairGroomData` owns the card-atlas maps; the channel contracts are not appearance-texture slots.*
 
 ### 2. Choose the material mode
 
@@ -134,9 +134,9 @@ The quick-start path above is the complete workflow. The three editor-style SVG 
 3. Choose one of `Approx / Kajiya-Kay`, `Fast Marschner`, `Cinematic Marschner`, or `Reference Marschner`.
 4. Edit the visible common fields under **Base Hair**. The selected mode reveals its own controls—for example, Fast Marschner exposes `absorption_mode` and its mode-specific absorption fields.
 
-[![Editor-style illustration of the HairMaterialProfile Inspector with quality_tier and mode-specific controls](docs/images/new-groom-02-hair-material-profile.svg)](docs/images/new-groom-02-hair-material-profile.svg)
+[![Godot Inspector showing HairMaterialProfile quality tiers](docs/images/new-groom-02-hair-material-profile.png)](docs/images/new-groom-02-hair-material-profile.png)
 
-*Illustration 2 — `quality_tier` selects the compiled shader and the Inspector hides controls that do not affect that mode.*
+*Screenshot 2 — `quality_tier` selects the compiled shader and the Inspector hides controls that do not affect that mode.*
 
 ### 3. Put the material on the hair mesh
 
@@ -153,9 +153,9 @@ var material: ShaderMaterial = profile.create_material(groom_data)
 hair_mesh.material_override = material
 ```
 
-[![Editor-style illustration of the final MeshInstance3D material assignment flow](docs/images/new-groom-03-material-assignment.svg)](docs/images/new-groom-03-material-assignment.svg)
+[![Godot Inspector showing the preview material and groom assignments](docs/images/new-groom-03-material-assignment.png)](docs/images/new-groom-03-material-assignment.png)
 
-*Illustration 3 — profile + groom data become a `ShaderMaterial`, then land on `MeshInstance3D.material_override`.*
+*Screenshot 3 — profile + groom data become a `ShaderMaterial`, then land on `MeshInstance3D.material_override`.*
 
 ### Caveats
 
