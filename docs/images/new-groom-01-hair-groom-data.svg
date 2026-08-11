@@ -1,0 +1,145 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="900" viewBox="0 0 1400 900" role="img" aria-labelledby="title desc">
+  <title id="title">HairGroomData Inspector illustration</title>
+  <desc id="desc">An honest editor-style illustration showing the HairGroomData resource, its two assigned Blowout textures, and the channel contracts for coords_texture and attributes_texture.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0a1020"/>
+      <stop offset="0.55" stop-color="#111a2c"/>
+      <stop offset="1" stop-color="#171125"/>
+    </linearGradient>
+    <linearGradient id="hero" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#182742"/>
+      <stop offset="1" stop-color="#172033"/>
+    </linearGradient>
+    <linearGradient id="coords" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#39c6c7"/>
+      <stop offset="0.5" stop-color="#7668e8"/>
+      <stop offset="1" stop-color="#e67cbd"/>
+    </linearGradient>
+    <linearGradient id="attrib" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f4a24e"/>
+      <stop offset="0.5" stop-color="#df617c"/>
+      <stop offset="1" stop-color="#6545bb"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="16" stdDeviation="18" flood-color="#000000" flood-opacity="0.36"/>
+    </filter>
+    <filter id="soft" x="-20%" y="-20%" width="140%" height="150%">
+      <feGaussianBlur stdDeviation="34"/>
+    </filter>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M32 0H0V32" fill="none" stroke="#89a1ca" stroke-opacity="0.055"/>
+    </pattern>
+    <style>
+      .ui { font-family: 'IBM Plex Sans', 'Segoe UI', sans-serif; fill: #dce7f7; }
+      .mono { font-family: 'IBM Plex Mono', 'SFMono-Regular', monospace; fill: #b6c9e5; }
+      .muted { fill: #7486a5; }
+      .small { font-size: 14px; letter-spacing: .02em; }
+      .label { font-size: 16px; font-weight: 600; }
+      .value { font-size: 15px; }
+      .title { font-size: 22px; font-weight: 600; letter-spacing: -.02em; }
+    </style>
+  </defs>
+
+  <rect width="1400" height="900" fill="url(#bg)"/>
+  <circle cx="1160" cy="120" r="260" fill="#6147c5" opacity=".16" filter="url(#soft)"/>
+  <circle cx="300" cy="800" r="220" fill="#2fb6bc" opacity=".08" filter="url(#soft)"/>
+  <rect x="24" y="22" width="1352" height="856" rx="18" fill="#0c1423" stroke="#31415d" stroke-width="1.5" filter="url(#shadow)"/>
+
+  <rect x="24" y="22" width="1352" height="58" rx="18" fill="#111d31"/>
+  <path d="M24 62H1376" stroke="#2a3a56"/>
+  <circle cx="52" cy="51" r="7" fill="#ef6b76"/>
+  <circle cx="76" cy="51" r="7" fill="#e7ad59"/>
+  <circle cx="100" cy="51" r="7" fill="#58c7a4"/>
+  <g class="ui">
+    <text x="132" y="57" class="title">Godot</text>
+    <text x="211" y="56" class="small muted">HairGroomData.tres</text>
+    <text x="1208" y="56" class="small" fill="#d99b5e">EDITOR-STYLE ILLUSTRATION</text>
+  </g>
+  <text x="1208" y="73" class="ui small muted">not a literal screenshot</text>
+
+  <rect x="42" y="98" width="258" height="756" rx="12" fill="#101a2b" stroke="#293b58"/>
+  <g class="ui">
+    <text x="64" y="130" class="small muted">FILE SYSTEM</text>
+    <path d="M62 151H280" stroke="#293b58"/>
+    <text x="64" y="183" class="mono small">res://</text>
+    <text x="79" y="216" class="mono small">▾ assets</text>
+    <text x="94" y="247" class="mono small">▾ hair</text>
+    <text x="109" y="278" class="mono small">▾ models</text>
+    <rect x="102" y="291" width="178" height="30" rx="6" fill="#233a54"/>
+    <text x="116" y="312" class="mono small" fill="#f0c47b">▾ blowout</text>
+    <text x="126" y="350" class="mono small">blowout.glb</text>
+    <rect x="118" y="363" width="154" height="29" rx="6" fill="#234849" opacity=".86"/>
+    <text x="126" y="383" class="mono small" fill="#71d9ce">blowout_coords.png</text>
+    <rect x="118" y="399" width="154" height="29" rx="6" fill="#493343" opacity=".9"/>
+    <text x="126" y="419" class="mono small" fill="#f1a076">blowout_attrib.png</text>
+    <text x="79" y="470" class="mono small">▾ demos</text>
+    <text x="94" y="501" class="mono small">▾ resources</text>
+    <rect x="102" y="519" width="178" height="30" rx="6" fill="#473752"/>
+    <text x="116" y="540" class="mono small" fill="#e1b8ed">HairGroomData.tres</text>
+    <text x="64" y="799" class="small muted">Drag generated maps into the resource.</text>
+  </g>
+
+  <rect x="318" y="98" width="700" height="756" rx="12" fill="url(#hero)" stroke="#293b58"/>
+  <rect x="318" y="98" width="700" height="68" rx="12" fill="#1b2c47"/>
+  <text x="346" y="127" class="ui small" fill="#e7b36b">01 / GROOM DATA</text>
+  <text x="346" y="151" class="ui title">HairGroomData</text>
+  <rect x="824" y="118" width="164" height="28" rx="14" fill="#243d54" stroke="#3d6972"/>
+  <text x="906" y="137" text-anchor="middle" class="ui small" fill="#74d7ca">paired card atlas</text>
+
+  <text x="350" y="205" class="ui small muted">THE TWO MAPS TRAVEL WITH THE GROOM, NOT THE LOOK</text>
+  <rect x="350" y="226" width="304" height="196" rx="12" fill="#0f1b2c" stroke="#38506d"/>
+  <rect x="368" y="244" width="104" height="104" rx="8" fill="url(#coords)"/>
+  <path d="M376 326C402 280 429 310 462 258M378 266C407 289 429 254 464 316M384 338C415 318 431 340 456 275" fill="none" stroke="#e9f2ff" stroke-opacity=".72" stroke-width="2"/>
+  <text x="490" y="269" class="ui label">coords_texture</text>
+  <text x="490" y="296" class="mono small">blowout_coords.png</text>
+  <text x="490" y="330" class="ui small muted">tangent + root-to-tip</text>
+  <rect x="490" y="349" width="138" height="24" rx="12" fill="#1c4447"/>
+  <text x="559" y="366" text-anchor="middle" class="ui small" fill="#75ddd2">Texture2D ✓</text>
+  <rect x="676" y="226" width="304" height="196" rx="12" fill="#0f1b2c" stroke="#38506d"/>
+  <rect x="694" y="244" width="104" height="104" rx="8" fill="url(#attrib)"/>
+  <path d="M700 338L792 254M704 302L753 254M746 348L796 297M703 270L726 246" stroke="#fff1dc" stroke-opacity=".65" stroke-width="3"/>
+  <circle cx="717" cy="320" r="5" fill="#ffd077"/><circle cx="757" cy="280" r="4" fill="#77e1d3"/><circle cx="779" cy="326" r="4" fill="#cbb5ff"/>
+  <text x="816" y="269" class="ui label">attributes_texture</text>
+  <text x="816" y="296" class="mono small">blowout_attrib.png</text>
+  <text x="816" y="330" class="ui small muted">coverage + depth + seed</text>
+  <rect x="816" y="349" width="138" height="24" rx="12" fill="#483344"/>
+  <text x="885" y="366" text-anchor="middle" class="ui small" fill="#f1a076">Texture2D ✓</text>
+
+  <rect x="350" y="452" width="630" height="348" rx="12" fill="#0d1727" stroke="#38506d"/>
+  <text x="378" y="486" class="ui title">Texture channel contracts</text>
+  <text x="378" y="512" class="ui small muted">Generated values are sampled by every production hair shader.</text>
+  <path d="M378 535H952" stroke="#263b57"/>
+  <text x="378" y="562" class="mono label" fill="#6ed8d0">coords_texture</text>
+  <rect x="378" y="580" width="24" height="24" rx="5" fill="#e667b7"/><text x="416" y="598" class="ui value">RGB  tangent direction encoded [-1, 1] → [0, 1]</text>
+  <rect x="378" y="616" width="24" height="24" rx="5" fill="#f3e4ff"/><text x="416" y="634" class="ui value">A    root-to-tip coordinate</text>
+  <path d="M378 662H952" stroke="#263b57"/>
+  <text x="378" y="689" class="mono label" fill="#f0a16f">attributes_texture</text>
+  <rect x="378" y="707" width="24" height="24" rx="5" fill="#efaa53"/><text x="416" y="725" class="ui value">R    coverage / occupancy</text>
+  <rect x="378" y="743" width="24" height="24" rx="5" fill="#dd6c82"/><text x="416" y="761" class="ui value">G    strand depth</text>
+  <rect x="694" y="707" width="24" height="24" rx="5" fill="#7055cd"/><text x="732" y="725" class="ui value">B    deterministic per-strand seed</text>
+
+  <rect x="1036" y="98" width="322" height="756" rx="12" fill="#101a2b" stroke="#293b58"/>
+  <text x="1060" y="130" class="ui small muted">INSPECTOR</text>
+  <path d="M1058 151H1336" stroke="#293b58"/>
+  <text x="1060" y="184" class="ui title">HairGroomData</text>
+  <text x="1060" y="208" class="mono small muted">Resource</text>
+  <rect x="1058" y="230" width="278" height="34" rx="7" fill="#182941"/>
+  <text x="1072" y="252" class="mono small">res://demos/resources/</text>
+  <text x="1072" y="274" class="mono small">blowout_groom_data.tres</text>
+  <text x="1060" y="322" class="ui small" fill="#e5b26b">HAIR CARD TEXTURES</text>
+  <rect x="1058" y="340" width="278" height="68" rx="8" fill="#17263c" stroke="#344e6e"/>
+  <text x="1072" y="365" class="ui label">coords_texture</text>
+  <text x="1072" y="391" class="mono small" fill="#70d9cf">blowout_coords.png</text>
+  <rect x="1058" y="422" width="278" height="68" rx="8" fill="#17263c" stroke="#344e6e"/>
+  <text x="1072" y="447" class="ui label">attributes_texture</text>
+  <text x="1072" y="473" class="mono small" fill="#f0a16f">blowout_attrib.png</text>
+  <rect x="1058" y="534" width="278" height="42" rx="8" fill="#173c3b"/>
+  <circle cx="1080" cy="555" r="7" fill="#65d1b2"/><text x="1096" y="561" class="ui small" fill="#9ae8d1">Complete groom data</text>
+  <text x="1060" y="628" class="ui small muted">Hover an exported field for its</text>
+  <text x="1060" y="650" class="ui small muted">channel contract tooltip.</text>
+  <path d="M1060 700H1334" stroke="#293b58"/>
+  <text x="1060" y="730" class="ui small muted">NEXT</text>
+  <text x="1060" y="756" class="ui value">Create a HairMaterialProfile.</text>
+  <path d="M1297 750l13 7-13 7" fill="none" stroke="#e1a467" stroke-width="2"/>
+</svg>

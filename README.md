@@ -34,8 +34,6 @@ attributes_texture
 
 These maps describe the groom/card atlas and are intentionally separate from the hair appearance. A single `HairMaterialProfile` can therefore be reused with multiple `HairGroomData` resources.
 
-For these data maps, preserve channel accuracy. In Godot's texture import settings, prefer **Lossless** compression when compression artifacts noticeably alter coverage, tangent, depth, or seed values. The production shaders declare both maps with nearest filtering.
-
 ### 2. Create a material profile
 
 Create a `HairMaterialProfile` resource and choose `quality_tier` in the Inspector.
@@ -112,6 +110,59 @@ res://demos/HairMaterialProfileEditor.tscn
 ```
 
 Assign a `HairMaterialProfile` and `HairGroomData`, then switch `quality_tier` to compare the compiled variants in the editor viewport.
+
+## New groom setup — visual walkthrough
+
+The quick-start path above is the complete workflow. The three editor-style SVG illustrations below make the hand-off between resources and the final mesh easier to scan. They are **illustrations, not literal screenshots**; the labels and paths mirror this project’s actual Inspector fields and assets.
+
+### 1. Bind the groom maps
+
+1. In the FileSystem dock, open `res://demos/resources/`.
+2. Right-click the folder, choose **New > Resource...**, select `HairGroomData`, and save the resource as `new_groom_data.tres`.
+3. Select the new resource and assign these generated maps in the Inspector:
+   - `coords_texture` → `res://assets/hair/models/blowout/blowout_coords.png`
+   - `attributes_texture` → `res://assets/hair/models/blowout/blowout_attrib.png`
+
+[![Editor-style illustration of the HairGroomData Inspector and texture channel contracts](docs/images/new-groom-01-hair-groom-data.svg)](docs/images/new-groom-01-hair-groom-data.svg)
+
+*Illustration 1 — `HairGroomData` owns the card-atlas maps; the channel contracts are not appearance-texture slots.*
+
+### 2. Choose the material mode
+
+1. In the same folder, choose **New > Resource... > HairMaterialProfile**, then save it as `new_hair_material_profile.tres`.
+2. Select the profile and open **Quality > `quality_tier`** in the Inspector.
+3. Choose one of `Approx / Kajiya-Kay`, `Fast Marschner`, `Cinematic Marschner`, or `Reference Marschner`.
+4. Edit the visible common fields under **Base Hair**. The selected mode reveals its own controls—for example, Fast Marschner exposes `absorption_mode` and its mode-specific absorption fields.
+
+[![Editor-style illustration of the HairMaterialProfile Inspector with quality_tier and mode-specific controls](docs/images/new-groom-02-hair-material-profile.svg)](docs/images/new-groom-02-hair-material-profile.svg)
+
+*Illustration 2 — `quality_tier` selects the compiled shader and the Inspector hides controls that do not affect that mode.*
+
+### 3. Put the material on the hair mesh
+
+For the included editor preview:
+
+1. Open `res://demos/HairMaterialProfileEditor.tscn`.
+2. Select the root `HairMaterialProfileEditor` node. In **Hair Setup**, assign `material_profile` to `res://demos/resources/hair_material_profile_demo.tres` and `groom_data` to `res://demos/resources/blowout_groom_data.tres`.
+3. The `@tool` preview resolves the `HairPreview` MeshInstance3D and writes the generated `ShaderMaterial` to its `material_override`. Change `quality_tier` and watch the editor viewport refresh.
+
+For your own scene, the final assignment is the same API shown in Quick start:
+
+```gdscript
+var material: ShaderMaterial = profile.create_material(groom_data)
+hair_mesh.material_override = material
+```
+
+[![Editor-style illustration of the final MeshInstance3D material assignment flow](docs/images/new-groom-03-material-assignment.svg)](docs/images/new-groom-03-material-assignment.svg)
+
+*Illustration 3 — profile + groom data become a `ShaderMaterial`, then land on `MeshInstance3D.material_override`.*
+
+### Caveats
+
+- Keep `coords_texture` and `attributes_texture` paired with the card atlas and UVs that generated them. They are groom-specific shader data, not standard glTF metallic-roughness textures.
+- Preserve channel accuracy. In Godot’s texture import settings, prefer **Lossless** compression when artifacts alter coverage, tangent, depth, or seed values. The production shaders declare both maps with nearest filtering.
+- Fast Marschner needs `res://benchmark/resources/luts/unity_azimuthal_64.res`; Cinematic Marschner needs `res://benchmark/resources/luts/cinematic_longitudinal_kernel_128x128x64.res`. Generate missing LUTs before relying on those modes.
+- A MeshInstance3D has no direct `HairMaterialProfile` property. Use the included preview script or call `create_material()` / `apply_to()` from your scene script; do not expect dragging a profile onto `Material Override` to perform the composition.
 
 ## Choosing a shader tier
 
