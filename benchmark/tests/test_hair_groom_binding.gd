@@ -59,10 +59,19 @@ func _run() -> void:
 	_check(material.get_shader_parameter(&"attributes_texture") == attributes_texture, "Reference swap lost attributes_texture")
 
 	# Hardening: a non-null Resource that is not HairGroomData-compatible must be
-	# rejected by apply_to() with a warning instead of being silently ignored.
+	# rejected before apply_to() mutates the material. Select a different target
+	# tier first so this catches accidental shader/profile/LUT application before
+	# groom validation.
+	var shader_before_rejection: Shader = material.shader
+	var coords_before_rejection: Variant = material.get_shader_parameter(&"coords_texture")
+	var attributes_before_rejection: Variant = material.get_shader_parameter(&"attributes_texture")
+	profile.set(&"quality_tier", TIER_APPROX)
 	var unrelated: Resource = Resource.new()
 	var rejected: bool = bool(profile.call(&"apply_to", material, unrelated))
 	_check(not rejected, "apply_to() accepted an unrelated Resource as groom_data")
+	_check(material.shader == shader_before_rejection, "rejected groom_data changed the material shader")
+	_check(material.get_shader_parameter(&"coords_texture") == coords_before_rejection, "rejected groom_data changed coords_texture")
+	_check(material.get_shader_parameter(&"attributes_texture") == attributes_before_rejection, "rejected groom_data changed attributes_texture")
 
 	# Hardening: the preview's groom_data Inspector field must restrict
 	# assignment to HairGroomData through the resource-type hint while the
