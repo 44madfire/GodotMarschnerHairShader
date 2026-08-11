@@ -173,6 +173,19 @@ func get_shader_resource() -> Shader:
 func apply_to(material: ShaderMaterial, groom_data: Resource = null) -> bool:
 	if material == null:
 		return false
+
+	# Validate the optional groom before changing the material. This keeps a
+	# rejected groom_data call transactional: shader selection, profile values,
+	# preserved parameters, and LUT bindings all remain untouched on failure.
+	# The parameter stays parser-safe (Resource) so this script never depends on
+	# the HairGroomData global class during headless parsing.
+	if groom_data != null and not groom_data.has_method(&"apply_to_shader_material"):
+		var groom_description: String = groom_data.resource_path
+		if groom_description.is_empty():
+			groom_description = groom_data.get_class()
+		push_warning("HairMaterialProfile.apply_to() rejected %s: groom_data must be a HairGroomData-compatible resource that exposes apply_to_shader_material()." % groom_description)
+		return false
+
 	var target_shader: Shader = get_shader_resource()
 	if target_shader == null:
 		return false
@@ -187,7 +200,7 @@ func apply_to(material: ShaderMaterial, groom_data: Resource = null) -> bool:
 
 	var profile_bound: bool = _apply_profile_to_current_shader(material, true)
 	var groom_bound: bool = true
-	if groom_data != null and groom_data.has_method(&"apply_to_shader_material"):
+	if groom_data != null:
 		groom_bound = bool(groom_data.call(&"apply_to_shader_material", material, true))
 	return profile_bound and groom_bound
 

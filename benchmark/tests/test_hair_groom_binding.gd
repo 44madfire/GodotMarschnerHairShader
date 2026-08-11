@@ -7,6 +7,7 @@ extends SceneTree
 
 const ProfileScript := preload("res://assets/hair/materials/HairMaterialProfile.gd")
 const GroomDataScript := preload("res://assets/hair/materials/HairGroomData.gd")
+const PreviewScript := preload("res://demos/hair_material_profile_preview.gd")
 
 const TIER_APPROX: int = 0
 const TIER_FAST: int = 1
@@ -56,6 +57,36 @@ func _run() -> void:
 	_check(reference_applied, "Reference apply_to(material, groom) failed")
 	_check(material.get_shader_parameter(&"coords_texture") == coords_texture, "Reference swap lost coords_texture")
 	_check(material.get_shader_parameter(&"attributes_texture") == attributes_texture, "Reference swap lost attributes_texture")
+
+	# Hardening: a non-null Resource that is not HairGroomData-compatible must be
+	# rejected before apply_to() mutates the material. Select a different target
+	# tier first so this catches accidental shader/profile/LUT application before
+	# groom validation.
+	var shader_before_rejection: Shader = material.shader
+	var coords_before_rejection: Variant = material.get_shader_parameter(&"coords_texture")
+	var attributes_before_rejection: Variant = material.get_shader_parameter(&"attributes_texture")
+	profile.set(&"quality_tier", TIER_APPROX)
+	var unrelated: Resource = Resource.new()
+	var rejected: bool = bool(profile.call(&"apply_to", material, unrelated))
+	_check(not rejected, "apply_to() accepted an unrelated Resource as groom_data")
+	_check(material.shader == shader_before_rejection, "rejected groom_data changed the material shader")
+	_check(material.get_shader_parameter(&"coords_texture") == coords_before_rejection, "rejected groom_data changed coords_texture")
+	_check(material.get_shader_parameter(&"attributes_texture") == attributes_before_rejection, "rejected groom_data changed attributes_texture")
+
+	# Hardening: the preview's groom_data Inspector field must restrict
+	# assignment to HairGroomData through the resource-type hint while the
+	# exported member itself stays a parser-safe untyped Resource.
+	var preview: Node3D = PreviewScript.new()
+	var preview_properties: Array[Dictionary] = preview.get_property_list()
+	var groom_hint_ok: bool = false
+	for property_info in preview_properties:
+		var property_name: StringName = StringName(property_info.get("name", ""))
+		if property_name == &"groom_data":
+			groom_hint_ok = int(property_info.get("hint", 0)) == PROPERTY_HINT_RESOURCE_TYPE
+			groom_hint_ok = groom_hint_ok and String(property_info.get("hint_string", "")) == "HairGroomData"
+			break
+	_check(groom_hint_ok, "preview groom_data does not expose the HairGroomData resource-type hint")
+	preview.free()
 
 	if not _failures.is_empty():
 		for failure_value in _failures:
