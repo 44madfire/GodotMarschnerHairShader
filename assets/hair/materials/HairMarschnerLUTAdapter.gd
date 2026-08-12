@@ -2,9 +2,9 @@ extends RefCounted
 class_name HairMarschnerLUTAdapter
 
 ## Runtime binder for the explicit production Marschner tiers.
-## The LUT resources are generated offline and stored as raw data resources;
-## Godot 4.7 cannot reliably self-contain ImageTexture3D data in .res files, so
-## this adapter reconstructs and caches Texture3D instances at runtime.
+## The LUT resources are generated offline and stored as validated raw-data
+## resources with explicit metadata/contracts. This adapter reconstructs and
+## caches ImageTexture3D instances at runtime from that deterministic payload.
 
 const DEFAULT_UNITY_LUT_PATH: String = "res://benchmark/resources/luts/unity_azimuthal_64.res"
 const DEFAULT_CINEMATIC_LUT_PATH: String = "res://benchmark/resources/luts/cinematic_longitudinal_kernel_128x128x64.res"
