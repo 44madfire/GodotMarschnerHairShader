@@ -10,7 +10,7 @@ extends SceneTree
 const SIZE_X: int = 8
 const SIZE_Y: int = 6
 const SIZE_Z: int = 4
-const FORMAT: Image.Format = Image.FORMAT_RGBA8
+const FORMAT: int = Image.FORMAT_RGBA8
 const TEST_PATHS: PackedStringArray = PackedStringArray([
 	"user://marschner_imagetexture3d_roundtrip.res",
 	"user://marschner_imagetexture3d_roundtrip.tres",
