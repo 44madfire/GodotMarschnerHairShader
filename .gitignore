@@ -15,3 +15,4 @@ addons/imgui-godot/bin/~*
 # Generated Marschner tier-split benchmark artifacts
 benchmark/resources/luts/*.res
 benchmark/results/*.json
+benchmark/results/production_tiers_*/
