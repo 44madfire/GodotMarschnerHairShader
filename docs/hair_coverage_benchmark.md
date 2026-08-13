@@ -45,14 +45,14 @@ The integrated-GPU result confirms that coverage is a major bottleneck, but chan
 `HairCoveragePolicy.AUTO` resolves in this order:
 
 ```text
-3D MSAA enabled  -> Alpha-to-Coverage
-else TAA enabled -> 16-phase rendered-frame Bayer
-else             -> Static Bayer (phase 0)
+Forward+ or Mobile with 3D MSAA  -> Alpha-to-Coverage
+else Forward+ with TAA           -> 16-phase rendered-frame Bayer
+else                             -> Static Bayer (phase 0)
 ```
 
-This makes static Bayer the editor/no-AA default and removes the historical wall-clock animation from production. Temporal dithering is only introduced when TAA is actually available to accumulate it. If both MSAA and TAA are enabled, A2C wins and no additional Bayer phase animation is injected.
+Gating is by the viewport's actual rendering method (`forward_plus` / `mobile` / `gl_compatibility`), not merely by the `use_taa` / `msaa_3d` properties. A Mobile or Compatibility viewport therefore always stays on Static Bayer even if TAA is enabled as a property, because those renderers cannot actually run the temporal path; only Forward+ and Mobile renderers may select Alpha-to-Coverage, and only Forward+ may select the temporal Bayer. Explicit Static, TAA Bayer, and Alpha-to-Coverage overrides remain available for debugging and custom pipelines.
 
-Explicit Static, TAA Bayer, and Alpha-to-Coverage modes remain available for debugging and custom pipelines.
+This makes static Bayer the editor/no-AA default and removes the historical wall-clock animation from production. Temporal dithering is only introduced when TAA is actually available to accumulate it. If both MSAA and TAA are enabled, A2C wins and no additional Bayer phase animation is injected.
 
 ## TAA cadence
 
