@@ -1,12 +1,11 @@
 shader_type spatial;
 render_mode unshaded, cull_disabled, world_vertex_coords;
 
-// Shared-card cost control for the production-tier benchmark suite.
-// Executes the same groom texture reads, coverage test, root shading, frizz,
-// and TBN reconstruction used by production shaders, then emits trivially.
-
+// Godot-native alpha-hash coverage probe using the same groom coverage bias and
+// shared card preparation as the production cost control.
 uniform vec3 albedo : source_color = vec3(0.1);
 uniform float longitudinal_roughness : hint_range(0.0, 1.0) = 0.3;
+uniform float alpha_hash_scale : hint_range(0.05, 4.0) = 1.0;
 
 group_uniforms textures;
 uniform sampler2D coords_texture : filter_nearest;
@@ -16,10 +15,6 @@ group_uniforms;
 group_uniforms Debug;
 uniform bool show_hair_cards = false;
 uniform bool show_hashed_strands = false;
-group_uniforms;
-
-group_uniforms Preview;
-uniform bool freeze_bayer_phase = false;
 group_uniforms;
 
 #include "../../assets/hair/materials/shaders/hair_marschner_common.gdshaderinc"
@@ -40,19 +35,15 @@ void fragment() {
 	float depth = attributes_sample.g;
 	float seed = attributes_sample.b;
 
-	float bayer_time = freeze_bayer_phase ? 0.0 : TIME;
-	if (!hair_card_should_keep_legacy_time(
+	float adjusted_coverage = show_hair_cards ? 1.0 : hair_card_adjusted_coverage(
 		coverage,
 		depth,
 		vertex_world,
-		UV,
-		FRAGCOORD.xy,
-		textureSize(attributes_texture, 0),
-		bayer_time,
-		show_hair_cards,
 		CAMERA_POSITION_WORLD,
 		MODEL_MATRIX[0].xyz,
-		PROJECTION_MATRIX[1][1])) discard;
+		PROJECTION_MATRIX[1][1]);
+	ALPHA = adjusted_coverage;
+	ALPHA_HASH_SCALE = alpha_hash_scale;
 
 	vec3 strand_hash = hair_hash13(seed);
 	vec3 base = hair_card_base_albedo(albedo, root_to_tip, coverage, strand_hash, show_hashed_strands);
@@ -63,7 +54,5 @@ void fragment() {
 		root_to_tip,
 		longitudinal_roughness);
 	mat3 strand_frame = hair_card_orthonormal_frame(strand_tangent, NORMAL);
-
-	// Keep the reconstructed frame live so the compiler cannot remove it.
 	ALBEDO = base + (abs(strand_frame[0]) + abs(strand_frame[2])) * 0.0001;
 }

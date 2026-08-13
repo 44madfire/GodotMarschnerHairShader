@@ -1,9 +1,5 @@
 shader_type spatial;
-render_mode unshaded, cull_disabled, world_vertex_coords;
-
-// Shared-card cost control for the production-tier benchmark suite.
-// Executes the same groom texture reads, coverage test, root shading, frizz,
-// and TBN reconstruction used by production shaders, then emits trivially.
+render_mode unshaded, cull_disabled, world_vertex_coords, alpha_to_coverage;
 
 uniform vec3 albedo : source_color = vec3(0.1);
 uniform float longitudinal_roughness : hint_range(0.0, 1.0) = 0.3;
@@ -16,10 +12,6 @@ group_uniforms;
 group_uniforms Debug;
 uniform bool show_hair_cards = false;
 uniform bool show_hashed_strands = false;
-group_uniforms;
-
-group_uniforms Preview;
-uniform bool freeze_bayer_phase = false;
 group_uniforms;
 
 #include "../../assets/hair/materials/shaders/hair_marschner_common.gdshaderinc"
@@ -36,26 +28,20 @@ void fragment() {
 	vec3 attributes_sample = texture(attributes_texture, UV).rgb;
 	vec3 tangent_texture_value = coords_sample.rgb * 2.0 - 1.0;
 	float root_to_tip = coords_sample.a;
-	float coverage = attributes_sample.r;
+	float coverage_value = attributes_sample.r;
 	float depth = attributes_sample.g;
 	float seed = attributes_sample.b;
 
-	float bayer_time = freeze_bayer_phase ? 0.0 : TIME;
-	if (!hair_card_should_keep_legacy_time(
-		coverage,
+	ALPHA = show_hair_cards ? 1.0 : hair_card_adjusted_coverage(
+		coverage_value,
 		depth,
 		vertex_world,
-		UV,
-		FRAGCOORD.xy,
-		textureSize(attributes_texture, 0),
-		bayer_time,
-		show_hair_cards,
 		CAMERA_POSITION_WORLD,
 		MODEL_MATRIX[0].xyz,
-		PROJECTION_MATRIX[1][1])) discard;
+		PROJECTION_MATRIX[1][1]);
 
 	vec3 strand_hash = hair_hash13(seed);
-	vec3 base = hair_card_base_albedo(albedo, root_to_tip, coverage, strand_hash, show_hashed_strands);
+	vec3 base = hair_card_base_albedo(albedo, root_to_tip, coverage_value, strand_hash, show_hashed_strands);
 	vec3 strand_tangent = hair_card_frizzed_tangent(
 		mat3(TANGENT, BINORMAL, NORMAL),
 		tangent_texture_value,
@@ -63,7 +49,5 @@ void fragment() {
 		root_to_tip,
 		longitudinal_roughness);
 	mat3 strand_frame = hair_card_orthonormal_frame(strand_tangent, NORMAL);
-
-	// Keep the reconstructed frame live so the compiler cannot remove it.
 	ALBEDO = base + (abs(strand_frame[0]) + abs(strand_frame[2])) * 0.0001;
 }

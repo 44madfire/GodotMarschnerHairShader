@@ -1,14 +1,5 @@
 shader_type spatial;
-render_mode cull_disabled, world_vertex_coords;
-
-// Production Cinematic Marschner tier.
-// The high-tier baseline's non-separable azimuth-dependent cone/width and
-// analytic N/A behavior are preserved. Only the expensive d'Eon longitudinal
-// kernel is replaced by a generic angle-domain log-Q 3D LUT sampled once for
-// each of R/TT/TRT, with a narrow-beta analytic fallback/transition.
-//
-// Uniforms remain in this top-level wrapper because Godot 4.7 runtime uniform
-// reflection is unreliable for interfaces declared solely through includes.
+render_mode cull_disabled, world_vertex_coords, alpha_to_coverage;
 
 uniform vec3 albedo : source_color = vec3(0.1);
 uniform float longitudinal_roughness : hint_range(0.0, 1.0) = 0.3;
@@ -34,10 +25,6 @@ uniform bool show_hashed_strands = false;
 uniform vec3 lobe_scales = vec3(1.0);
 group_uniforms;
 
-group_uniforms Coverage;
-uniform int bayer_phase_index : hint_range(0, 15) = 0;
-group_uniforms;
-
 group_uniforms Preview;
 uniform float comparison_exposure_gain : hint_range(0.25, 8.0) = 1.0;
 group_uniforms;
@@ -56,6 +43,7 @@ varying vec2 beta_reparam;
 varying mat3 inv_tangent_matrix;
 varying vec3 omega_o;
 
+#define HAIR_COVERAGE_ALPHA_TO_COVERAGE
 #include "./hair_marschner_common.gdshaderinc"
 #include "./hair_card_common.gdshaderinc"
 #include "./hair_marschner_cinematic_body.gdshaderinc"
