@@ -3,19 +3,28 @@ render_mode cull_disabled, world_vertex_coords, alpha_to_coverage;
 
 #define USE_ROUGHNESS_REPARAMETERIZTION
 
+/** Base hair color. Used for visible strand color, absorption reparameterization, and the multiple-scattering approximation. */
 uniform vec3 albedo : source_color = vec3(0.1);
+/** Perceptual roughness [i]along[/i] the fiber. Lower values produce tighter longitudinal highlights; higher values broaden and soften them. */
 uniform float longitudinal_roughness : hint_range(0.0, 1.0) = 0.3;
+/** Perceptual roughness [i]around[/i] the fiber. Lower values produce tighter azimuthal scattering; higher values broaden and soften it. */
 uniform float azimuthal_roughness : hint_range(0.0, 1.0) = 0.8;
+/** Master scale for the single-scattering/specular contribution. */
 uniform float specular : hint_range(0.0, 1.0) = 1.0;
+/** Cuticle scale tilt in radians. Increasing this separates the R, TT, and TRT longitudinal highlight lobes. */
 uniform float cuticle_tilt_offset : hint_range(0.0, 0.5) = 0.1;
 
 group_uniforms textures;
+/** Groom geometry texture. RGB stores the strand tangent encoded from [-1, 1] into [0, 1]; A stores normalized root-to-tip position. */
 uniform sampler2D coords_texture : filter_nearest;
+/** Groom attribute texture. R stores coverage/occupancy, G stores strand depth, and B stores a deterministic per-strand seed used for variation/debugging. */
 uniform sampler2D attributes_texture : filter_nearest;
 group_uniforms;
 
 group_uniforms Debug;
+/** Renders the full card geometry at full alpha. Use this to inspect card placement and UVs; disable it for final hair rendering. */
 uniform bool show_hair_cards = false;
+/** Replaces the authored hair color with deterministic per-strand hash colors so seed distribution and strand grouping are easy to inspect. */
 uniform bool show_hashed_strands = false;
 group_uniforms;
 
