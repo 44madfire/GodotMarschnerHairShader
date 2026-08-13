@@ -8,8 +8,9 @@ class_name HairMaterialProfile
 ## Cinematic Marschner, and Reference Marschner as separate compiled shaders.
 ## Pair this resource with HairGroomData for new hair-card grooms.
 ##
-## Changing [member quality_tier] updates the Inspector so only controls that
-## affect the selected shader remain visible. Hidden values stay serialized.
+## Coverage AUTO is editor-safe: without a runtime viewport it resolves to a
+## stable Bayer phase. With HairCoverageController, AUTO follows viewport AA:
+## MSAA -> alpha-to-coverage, otherwise TAA -> temporal Bayer, otherwise static.
 ##
 ## Serialized tier values remain unchanged for compatibility:
 ## 0 = Approx/Kajiya-Kay, 1 = Unity Fast, 2 = Cinematic, 3 = Reference.
@@ -24,17 +25,22 @@ const APPROX_SHADER: Shader = preload("res://assets/hair/materials/shaders/hair_
 const FAST_MARSCHNER_SHADER: Shader = preload("res://assets/hair/materials/shaders/hair_marschner_unity_fast.gdshader")
 const CINEMATIC_MARSCHNER_SHADER: Shader = preload("res://assets/hair/materials/shaders/hair_marschner_cinematic.gdshader")
 const REFERENCE_MARSCHNER_SHADER: Shader = preload("res://assets/hair/materials/shaders/hair.gdshader")
+const APPROX_A2C_SHADER: Shader = preload("res://assets/hair/materials/shaders/hair_approx_a2c.gdshader")
+const FAST_MARSCHNER_A2C_SHADER: Shader = preload("res://assets/hair/materials/shaders/hair_marschner_unity_fast_a2c.gdshader")
+const CINEMATIC_MARSCHNER_A2C_SHADER: Shader = preload("res://assets/hair/materials/shaders/hair_marschner_cinematic_a2c.gdshader")
+const REFERENCE_MARSCHNER_A2C_SHADER: Shader = preload("res://assets/hair/materials/shaders/hair_a2c.gdshader")
 const LUTAdapter := preload("res://assets/hair/materials/HairMarschnerLUTAdapter.gd")
+const CoveragePolicy := preload("res://assets/hair/materials/HairCoveragePolicy.gd")
 
 ## Shader parameters intentionally owned by the groom/material rather than this
-## profile. apply_to() carries them across shader-variant changes when both the
-## previous and target shaders expose the parameter. Supplying HairGroomData to
-## apply_to() replaces the two groom textures after the shader swap.
+## profile. apply_to() carries them across compiled shader changes when both the
+## previous and target shaders expose the parameter.
 const PRESERVED_SHADER_PARAMETERS: Array[StringName] = [
 	&"coords_texture",
 	&"attributes_texture",
 	&"show_hair_cards",
 	&"show_hashed_strands",
+	&"bayer_phase_index",
 	&"freeze_bayer_phase",
 	&"comparison_exposure_gain",
 	&"lobe_scales",
@@ -52,6 +58,13 @@ var quality_tier: int = QualityTier.APPROX:
 			return
 		quality_tier = clamped_value
 		notify_property_list_changed()
+
+@export_category("Coverage")
+## AUTO chooses alpha-to-coverage when 3D MSAA is active, otherwise a 16-phase
+## rendered-frame Bayer sequence when TAA is active, otherwise stable Bayer.
+## Explicit modes are primarily for debugging or custom render pipelines.
+@export_enum("Auto", "Static Bayer", "TAA Temporal Bayer", "Alpha-to-Coverage")
+var coverage_mode: int = CoveragePolicy.Mode.AUTO
 
 @export_category("Base Hair")
 ## Average hair color used by the selected lighting model.
@@ -135,7 +148,6 @@ func _validate_property(property: Dictionary) -> void:
 	var property_name: StringName = StringName(property.get("name", ""))
 	var usage: int = int(property.get("usage", PROPERTY_USAGE_DEFAULT))
 
-	# Category markers are editor-only, so remove irrelevant ones completely.
 	if (usage & PROPERTY_USAGE_CATEGORY) != 0:
 		var category_visible: bool = true
 		match property_name:
@@ -155,61 +167,55 @@ func _validate_property(property: Dictionary) -> void:
 
 func _is_property_relevant(property_name: StringName) -> bool:
 	match property_name:
-		# Approx's azimuthal roughness and cuticle offset are retained for
-		# serialization/variant switching but do not affect the Kajiya-Kay path.
 		&"azimuthal_roughness", &"cuticle_tilt_offset":
 			return quality_tier != QualityTier.APPROX
-
-		# Fast-only absorption model and LUT.
 		&"absorption_mode", &"unity_azimuthal_lut_data":
 			return quality_tier == QualityTier.FAST_MARSCHNER
 		&"absorption":
 			return quality_tier == QualityTier.FAST_MARSCHNER and absorption_mode == 1
 		&"eumelanin", &"pheomelanin", &"melanin_absorption_scale":
 			return quality_tier == QualityTier.FAST_MARSCHNER and absorption_mode == 2
-
-		# Cinematic-only controls. Fast is pinned to eta=1.55 by its LUT
-		# contract; Reference keeps its existing analytic baseline interface.
 		&"ior", &"cinematic_longitudinal_lut_data":
 			return quality_tier == QualityTier.CINEMATIC_MARSCHNER
-
-		# Approx-only lobe controls.
 		&"primary_color", &"secondary_color", &"primary_shift", &"secondary_shift", &"primary_roughness", &"secondary_roughness", &"primary_strength", &"secondary_strength", &"scatter":
 			return quality_tier == QualityTier.APPROX
-
 	return true
 
 
-## Returns the explicit compiled shader selected by [member quality_tier].
-func get_shader_resource() -> Shader:
+## Returns the compiled shader for the selected lighting tier and coverage policy.
+## AUTO without a viewport resolves to stable Bayer, which keeps editor previews
+## deterministic. Runtime callers should pass the owning viewport or register the
+## material with HairCoverageController.
+func get_shader_resource(viewport: Viewport = null) -> Shader:
+	return _shader_for_effective_coverage(get_effective_coverage_mode(viewport))
+
+
+func get_effective_coverage_mode(viewport: Viewport = null) -> int:
+	return CoveragePolicy.resolve(viewport, coverage_mode)
+
+
+func _shader_for_effective_coverage(effective_mode: int) -> Shader:
+	var use_a2c: bool = CoveragePolicy.uses_alpha_to_coverage(effective_mode)
 	match quality_tier:
 		QualityTier.APPROX:
-			return APPROX_SHADER
+			return APPROX_A2C_SHADER if use_a2c else APPROX_SHADER
 		QualityTier.FAST_MARSCHNER:
-			return FAST_MARSCHNER_SHADER
+			return FAST_MARSCHNER_A2C_SHADER if use_a2c else FAST_MARSCHNER_SHADER
 		QualityTier.CINEMATIC_MARSCHNER:
-			return CINEMATIC_MARSCHNER_SHADER
+			return CINEMATIC_MARSCHNER_A2C_SHADER if use_a2c else CINEMATIC_MARSCHNER_SHADER
 		QualityTier.REFERENCE_MARSCHNER:
-			return REFERENCE_MARSCHNER_SHADER
-	return REFERENCE_MARSCHNER_SHADER
+			return REFERENCE_MARSCHNER_A2C_SHADER if use_a2c else REFERENCE_MARSCHNER_SHADER
+	return REFERENCE_MARSCHNER_A2C_SHADER if use_a2c else REFERENCE_MARSCHNER_SHADER
 
 
 ## Primary material authoring/runtime API.
 ##
-## Validates a supplied groom resource before mutating the material, selects the
-## compiled shader for [member quality_tier], preserves compatible caller-owned
-## parameters, applies profile values, binds tier LUT resources, and finally
-## applies explicit groom textures when provided.
-##
-## Returns false when the material is invalid, the supplied groom resource is
-## incompatible/incomplete, or a required Fast/Cinematic LUT cannot be bound.
-func apply_to(material: ShaderMaterial, groom_data: Resource = null) -> bool:
+## Passing the owning viewport lets AUTO select the correct compiled coverage
+## path immediately. Without a viewport AUTO deliberately selects stable Bayer.
+func apply_to(material: ShaderMaterial, groom_data: Resource = null, viewport: Viewport = null) -> bool:
 	if material == null:
 		return false
 
-	# Validate an explicit groom before changing any material state. This keeps
-	# rejection transactional: callers that receive false for an incompatible
-	# resource keep their original shader/profile/LUT state intact.
 	if groom_data != null and not groom_data.has_method(&"apply_to_shader_material"):
 		var groom_description: String = groom_data.resource_path
 		if groom_description.is_empty():
@@ -217,7 +223,7 @@ func apply_to(material: ShaderMaterial, groom_data: Resource = null) -> bool:
 		push_warning("HairMaterialProfile.apply_to() rejected %s: groom_data must be a HairGroomData-compatible resource that exposes apply_to_shader_material()." % groom_description)
 		return false
 
-	var target_shader: Shader = get_shader_resource()
+	var target_shader: Shader = get_shader_resource(viewport)
 	if target_shader == null:
 		return false
 
@@ -233,17 +239,42 @@ func apply_to(material: ShaderMaterial, groom_data: Resource = null) -> bool:
 	var groom_bound: bool = true
 	if groom_data != null:
 		groom_bound = bool(groom_data.call(&"apply_to_shader_material", material, true))
-	return profile_bound and groom_bound
+	var coverage_bound: bool = _set_coverage_phase(material, get_effective_coverage_mode(viewport), Engine.get_frames_drawn())
+	return profile_bound and groom_bound and coverage_bound
 
 
-## Creates a new ShaderMaterial, applies this profile, and optionally binds groom
-## data. The material is returned even if a LUT prerequisite is missing so it can
-## be inspected/fixed in the editor. Use [method apply_to] when the boolean
-## success result is required by application logic.
-func create_material(groom_data: Resource = null) -> ShaderMaterial:
+## Creates a new ShaderMaterial and applies the selected profile/coverage path.
+func create_material(groom_data: Resource = null, viewport: Viewport = null) -> ShaderMaterial:
 	var material: ShaderMaterial = ShaderMaterial.new()
-	apply_to(material, groom_data)
+	apply_to(material, groom_data, viewport)
 	return material
+
+
+## Runtime coverage update used by HairCoverageController. It swaps between the
+## normal and A2C compiled variants only when viewport policy changes, then sets
+## the rendered-frame Bayer phase for the temporal TAA path.
+func update_coverage_for_viewport(material: ShaderMaterial, viewport: Viewport, rendered_frame_index: int = -1) -> bool:
+	if material == null:
+		return false
+	var effective_mode: int = get_effective_coverage_mode(viewport)
+	var target_shader: Shader = _shader_for_effective_coverage(effective_mode)
+	if material.shader != target_shader:
+		if not apply_to(material, null, viewport):
+			return false
+	var frame_index: int = rendered_frame_index if rendered_frame_index >= 0 else Engine.get_frames_drawn()
+	return _set_coverage_phase(material, effective_mode, frame_index)
+
+
+func _set_coverage_phase(material: ShaderMaterial, effective_mode: int, rendered_frame_index: int) -> bool:
+	if material == null or material.shader == null:
+		return false
+	if CoveragePolicy.uses_alpha_to_coverage(effective_mode):
+		return true
+	var known_parameters: Dictionary = _shader_uniform_names(material.shader)
+	if not known_parameters.has(&"bayer_phase_index"):
+		return false
+	material.set_shader_parameter(&"bayer_phase_index", CoveragePolicy.bayer_phase(effective_mode, rendered_frame_index))
+	return true
 
 
 ## Compatibility API for benchmark/experimental callers that deliberately own
@@ -334,9 +365,9 @@ func bind_mode_resources(material: ShaderMaterial) -> bool:
 	if _lut_adapter == null:
 		_lut_adapter = LUTAdapter.new()
 	var shader_path: String = material.shader.resource_path
-	if shader_path == FAST_MARSCHNER_SHADER.resource_path:
+	if shader_path == FAST_MARSCHNER_SHADER.resource_path or shader_path == FAST_MARSCHNER_A2C_SHADER.resource_path:
 		return _lut_adapter.bind_unity_fast(material, unity_azimuthal_lut_data)
-	if shader_path == CINEMATIC_MARSCHNER_SHADER.resource_path:
+	if shader_path == CINEMATIC_MARSCHNER_SHADER.resource_path or shader_path == CINEMATIC_MARSCHNER_A2C_SHADER.resource_path:
 		return _lut_adapter.bind_cinematic(material, cinematic_longitudinal_lut_data)
 	return true
 

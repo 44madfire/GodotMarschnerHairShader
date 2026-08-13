@@ -152,19 +152,28 @@ void fragment() {
 	float depth = attributes_sample.g;
 	float seed = attributes_sample.b;
 	vec2 beta_raw = vec2(longitudinal_roughness, azimuthal_roughness);
-	float bayer_time = freeze_bayer_phase ? 0.0 : TIME;
-	if (!hair_card_should_keep(
+#ifdef HAIR_COVERAGE_ALPHA_TO_COVERAGE
+	ALPHA = show_hair_cards ? 1.0 : hair_card_adjusted_coverage(
+		coverage,
+		depth,
+		vertex_world,
+		CAMERA_POSITION_WORLD,
+		MODEL_MATRIX[0].xyz,
+		PROJECTION_MATRIX[1][1]);
+#else
+	if (!hair_card_should_keep_phase(
 		coverage,
 		depth,
 		vertex_world,
 		UV,
 		FRAGCOORD.xy,
 		textureSize(attributes_texture, 0),
-		bayer_time,
+		bayer_phase_index,
 		show_hair_cards,
 		CAMERA_POSITION_WORLD,
 		MODEL_MATRIX[0].xyz,
 		PROJECTION_MATRIX[1][1])) discard;
+#endif
 
 	vec3 hash = hair_hash13(seed);
 	ALBEDO = hair_card_base_albedo(albedo, u, coverage, hash, show_hashed_strands);

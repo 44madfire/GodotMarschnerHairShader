@@ -1,12 +1,10 @@
 shader_type spatial;
 render_mode unshaded, cull_disabled, world_vertex_coords;
 
-// Shared-card cost control for the production-tier benchmark suite.
-// Executes the same groom texture reads, coverage test, root shading, frizz,
-// and TBN reconstruction used by production shaders, then emits trivially.
-
+// Coverage probe for static or frame-phased ordered Bayer coverage.
 uniform vec3 albedo : source_color = vec3(0.1);
 uniform float longitudinal_roughness : hint_range(0.0, 1.0) = 0.3;
+uniform int bayer_phase_index : hint_range(0, 15) = 0;
 
 group_uniforms textures;
 uniform sampler2D coords_texture : filter_nearest;
@@ -16,10 +14,6 @@ group_uniforms;
 group_uniforms Debug;
 uniform bool show_hair_cards = false;
 uniform bool show_hashed_strands = false;
-group_uniforms;
-
-group_uniforms Preview;
-uniform bool freeze_bayer_phase = false;
 group_uniforms;
 
 #include "../../assets/hair/materials/shaders/hair_marschner_common.gdshaderinc"
@@ -40,15 +34,14 @@ void fragment() {
 	float depth = attributes_sample.g;
 	float seed = attributes_sample.b;
 
-	float bayer_time = freeze_bayer_phase ? 0.0 : TIME;
-	if (!hair_card_should_keep_legacy_time(
+	if (!hair_card_should_keep_phase(
 		coverage,
 		depth,
 		vertex_world,
 		UV,
 		FRAGCOORD.xy,
 		textureSize(attributes_texture, 0),
-		bayer_time,
+		bayer_phase_index,
 		show_hair_cards,
 		CAMERA_POSITION_WORLD,
 		MODEL_MATRIX[0].xyz,
@@ -63,7 +56,5 @@ void fragment() {
 		root_to_tip,
 		longitudinal_roughness);
 	mat3 strand_frame = hair_card_orthonormal_frame(strand_tangent, NORMAL);
-
-	// Keep the reconstructed frame live so the compiler cannot remove it.
 	ALBEDO = base + (abs(strand_frame[0]) + abs(strand_frame[2])) * 0.0001;
 }
