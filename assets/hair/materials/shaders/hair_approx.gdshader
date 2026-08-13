@@ -22,10 +22,13 @@ uniform bool show_hair_cards = false;
 uniform bool show_hashed_strands = false;
 group_uniforms;
 
+group_uniforms Coverage;
+/** Static phase 0 is the default. The runtime coverage controller advances this
+ *  only for the TAA-temporal policy. */
+uniform int bayer_phase_index : hint_range(0, 15) = 0;
+group_uniforms;
+
 group_uniforms Preview;
-/** Freezes the Bayer phase for deterministic interactive previews. Default false
- *  preserves the production TIME-driven behavior for benchmark runs. */
-uniform bool freeze_bayer_phase = false;
 /** Presentation-only gain used by the standalone visual comparison. */
 uniform float comparison_exposure_gain : hint_range(0.25, 8.0) = 1.0;
 group_uniforms;
@@ -54,15 +57,14 @@ void fragment() {
 	float seed = attributes_sample.b;
 	beta = vec2(longitudinal_roughness, azimuthal_roughness);
 
-	float bayer_time = freeze_bayer_phase ? 0.0 : TIME;
-	if (!hair_card_should_keep(
+	if (!hair_card_should_keep_phase(
 		coverage,
 		depth,
 		vertex_world,
 		UV,
 		FRAGCOORD.xy,
 		textureSize(attributes_texture, 0),
-		bayer_time,
+		bayer_phase_index,
 		show_hair_cards,
 		CAMERA_POSITION_WORLD,
 		MODEL_MATRIX[0].xyz,
