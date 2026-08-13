@@ -92,9 +92,9 @@ func bind_cinematic(material: ShaderMaterial, data: Resource = null) -> bool:
 func missing_default_resources() -> PackedStringArray:
 	var result := PackedStringArray()
 	if not ResourceLoader.exists(DEFAULT_UNITY_LUT_PATH):
-		result.append("Missing direct Fast LUT %s. Run: godot --headless --path <project> --script res://benchmark/tools/materialize_direct_production_luts.gd" % DEFAULT_UNITY_LUT_PATH)
+		result.append("Missing direct Fast LUT %s. Run with a rendering context: godot --path <project> --script res://benchmark/tools/materialize_direct_production_luts.gd" % DEFAULT_UNITY_LUT_PATH)
 	if not ResourceLoader.exists(DEFAULT_CINEMATIC_LUT_PATH):
-		result.append("Missing direct Cinematic LUT %s. Run: godot --headless --path <project> --script res://benchmark/tools/materialize_direct_production_luts.gd" % DEFAULT_CINEMATIC_LUT_PATH)
+		result.append("Missing direct Cinematic LUT %s. Run with a rendering context: godot --path <project> --script res://benchmark/tools/materialize_direct_production_luts.gd" % DEFAULT_CINEMATIC_LUT_PATH)
 	return result
 
 
