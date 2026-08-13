@@ -11,10 +11,10 @@ const SIZE_X: int = 8
 const SIZE_Y: int = 6
 const SIZE_Z: int = 4
 const FORMAT: int = Image.FORMAT_RGBA8
-const TEST_PATHS: PackedStringArray = PackedStringArray([
+const TEST_PATHS: Array[String] = [
 	"user://marschner_imagetexture3d_roundtrip.res",
 	"user://marschner_imagetexture3d_roundtrip.tres",
-])
+]
 
 
 func _initialize() -> void:
