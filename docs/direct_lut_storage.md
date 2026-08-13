@@ -61,7 +61,8 @@ The materializer refuses success unless the saved/reloaded `ImageTexture3D` has 
 
 ## Regression checks
 
-Fresh-process storage/integrity check, safe in headless mode:
+Fresh-process storage/integrity check (requires a real rendering context — `ImageTexture3D`
+save/load in headless mode serializes as an empty 1x1x1 texture on Godot 4.7, so do not use `--headless`):
 
 ```bash
 godot --headless --path . \

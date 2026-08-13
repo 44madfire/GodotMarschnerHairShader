@@ -26,8 +26,12 @@ def main():
  if not (project/CIN_RAW).exists(): missing.append((CIN_RAW,CIN_GEN,"MARSCHNER_CINEMATIC_LONGITUDINAL_LUT_GENERATION_OK"))
  if missing and not a.generate_raw: raise RuntimeError("missing raw LUT source(s); rerun with --generate-raw")
  for _,script,marker in missing: run(a,script,True,marker)
- run(a,MATERIALIZE,True,"DIRECT_LUT_MATERIALIZATION_OK")
- run(a,INTEGRITY,True,"DIRECT_LUT_RESOURCE_INTEGRITY_OK")
+ # ImageTexture3D serialization requires a RenderingDevice: in headless mode
+ # both saving and loading produce an empty 1x1x1 texture (verified by the
+ # persistence probe and the direct-lut materialization failure), so these
+ # stages run as real windowed processes. --disable-vsync keeps them quiet.
+ run(a,MATERIALIZE,False,"DIRECT_LUT_MATERIALIZATION_OK")
+ run(a,INTEGRITY,False,"DIRECT_LUT_RESOURCE_INTEGRITY_OK")
  if not a.skip_binding: run(a,BINDING,False,"DIRECT_LUT_BINDING_OK")
  print("DIRECT_LUT_MIGRATION_SMOKE_OK"); return 0
 if __name__=="__main__": raise SystemExit(main())
