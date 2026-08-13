@@ -2,31 +2,32 @@
 // inexpensive two-lobe approximation used by hair_approx.gdshader.
 
 group_uniforms KajiyaKay;
-/** Independent tint for the primary Kajiya–Kay specular lobe. */
+/** Tint applied to the primary Kajiya–Kay specular lobe. */
 uniform vec3 primary_color : source_color = vec3(1.0);
-/** Independent tint for the secondary Kajiya–Kay specular lobe. */
+/** Tint applied to the secondary Kajiya–Kay specular lobe. */
 uniform vec3 secondary_color : source_color = vec3(0.45);
-/** Tangent shift for the primary lobe. */
+/** Signed tangent shift of the primary highlight. Positive values shift the effective tangent toward the surface normal. */
 uniform float primary_shift : hint_range(-1.0, 1.0) = 0.0;
-/** Tangent shift for the secondary lobe. */
+/** Signed tangent shift of the secondary highlight. Positive values shift the effective tangent toward the surface normal. */
 uniform float secondary_shift : hint_range(-1.0, 1.0) = 0.12;
-/** Roughness converted to a bounded Kajiya–Kay exponent. */
+/** Width of the primary Kajiya–Kay highlight. Lower values are narrower/sharper; higher values are broader/softer. */
 uniform float primary_roughness : hint_range(0.0, 1.0) = 0.3;
-/** Roughness converted to a bounded Kajiya–Kay exponent. */
+/** Width of the secondary Kajiya–Kay highlight. Lower values are narrower/sharper; higher values are broader/softer. */
 uniform float secondary_roughness : hint_range(0.0, 1.0) = 0.55;
-/** Strength of the primary lobe. */
+/** Intensity multiplier for the primary specular lobe before the common Specular control is applied. */
 uniform float primary_strength : hint_range(0.0, 4.0) = 1.0;
-/** Strength of the secondary lobe. */
+/** Intensity multiplier for the secondary specular lobe before the common Specular control is applied. */
 uniform float secondary_strength : hint_range(0.0, 4.0) = 0.35;
-/** Wrapped diffuse/scatter amount. */
+/** Amount of wrapped diffuse/scatter used by the inexpensive cylindrical lighting approximation. */
 uniform float scatter : hint_range(0.0, 1.0) = 0.35;
 group_uniforms;
 
 group_uniforms Debug;
-// Keep the current high shader's debug parameter name and shape intact. The
-// first two components isolate the primary and secondary Tier 1 lobes.
+/** Per-lobe debug multiplier. X scales the primary lobe, Y scales the secondary lobe, and Z is retained for cross-tier parameter compatibility. */
 uniform vec3 lobe_scales = vec3(1.0);
+/** Enables the primary Kajiya–Kay lobe. Disable it to inspect the secondary lobe in isolation. */
 uniform bool show_primary_lobe = true;
+/** Enables the secondary Kajiya–Kay lobe. Disable it to inspect the primary lobe in isolation. */
 uniform bool show_secondary_lobe = true;
 group_uniforms;
 
