@@ -34,8 +34,11 @@ uniform bool show_hashed_strands = false;
 uniform vec3 lobe_scales = vec3(1.0);
 group_uniforms;
 
+group_uniforms Coverage;
+uniform int bayer_phase_index : hint_range(0, 15) = 0;
+group_uniforms;
+
 group_uniforms Preview;
-uniform bool freeze_bayer_phase = false;
 uniform float comparison_exposure_gain : hint_range(0.25, 8.0) = 1.0;
 group_uniforms;
 
