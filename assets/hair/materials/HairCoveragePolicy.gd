@@ -2,10 +2,8 @@ extends RefCounted
 class_name HairCoveragePolicy
 
 ## Coverage strategy shared by HairMaterialProfile and HairCoverageController.
-##
-## AUTO prefers alpha-to-coverage when 3D MSAA is enabled, otherwise temporal
-## Bayer when TAA is enabled, otherwise stable Bayer. Explicit modes are useful
-## for debugging or projects that intentionally override viewport AA policy.
+## AUTO follows both viewport AA properties and the active rendering method so
+## an ignored TAA/MSAA property never enables temporal/multisample hair coverage.
 enum Mode {
 	AUTO = 0,
 	STATIC_BAYER = 1,
@@ -16,13 +14,19 @@ enum Mode {
 const TAA_PHASE_COUNT: int = 16
 
 
-static func resolve(viewport: Viewport, requested_mode: int = Mode.AUTO) -> int:
+static func resolve(viewport: Viewport, requested_mode: int = Mode.AUTO, rendering_method: String = "") -> int:
 	var mode: int = clampi(requested_mode, Mode.AUTO, Mode.ALPHA_TO_COVERAGE)
 	if mode != Mode.AUTO:
 		return mode
-	if viewport != null and viewport.msaa_3d != Viewport.MSAA_DISABLED:
+	if viewport == null:
+		return Mode.STATIC_BAYER
+	var method: String = rendering_method
+	if method.is_empty():
+		method = RenderingServer.get_current_rendering_method()
+	var msaa_supported: bool = method == "forward_plus" or method == "mobile"
+	if msaa_supported and viewport.msaa_3d != Viewport.MSAA_DISABLED:
 		return Mode.ALPHA_TO_COVERAGE
-	if viewport != null and viewport.use_taa:
+	if method == "forward_plus" and viewport.use_taa:
 		return Mode.TAA_BAYER
 	return Mode.STATIC_BAYER
 
