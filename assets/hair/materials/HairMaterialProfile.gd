@@ -103,17 +103,19 @@ var absorption_mode: int = 0:
 ## Multiplier applied to the melanin absorption coefficients. Keep this small;
 ## the default is calibrated to the current Fast Marschner implementation.
 @export_range(0.0, 0.01, 0.0001) var melanin_absorption_scale: float = 0.001
-## Optional Unity Fast azimuthal LUT-data override. Leave null to load
-## res://benchmark/resources/luts/unity_azimuthal_64.res. The LUT metadata pins
-## Fast Marschner's IOR/eta contract.
+## Optional Unity Fast azimuthal LUT override. Leave null to load the packaged
+## direct ImageTexture3D at res://assets/hair/luts/unity_azimuthal_64.res.
+## Legacy raw-data Resources remain accepted for benchmark/compatibility use.
 @export var unity_azimuthal_lut_data: Resource
 
 @export_category("Cinematic Marschner")
 ## Fiber index of refraction used by Cinematic Marschner. Unlike Fast Marschner,
 ## Cinematic evaluates its geometry/Fresnel terms against this authorable value.
 @export_range(1.0, 2.0, 0.001) var ior: float = 1.55
-## Optional conditioned longitudinal LUT-data override. Leave null to load
-## res://benchmark/resources/luts/cinematic_longitudinal_kernel_128x128x64.res.
+## Optional conditioned longitudinal LUT override. Leave null to load the
+## packaged direct ImageTexture3D at
+## res://assets/hair/luts/cinematic_longitudinal_kernel_128x128x64.res.
+## Legacy raw-data Resources remain accepted for benchmark/compatibility use.
 @export var cinematic_longitudinal_lut_data: Resource
 
 @export_category("Approx / Kajiya-Kay")
@@ -317,7 +319,7 @@ func _apply_profile_to_current_shader(material: ShaderMaterial, warn_on_bind_fai
 
 	var bound: bool = bind_mode_resources(material)
 	if not bound and warn_on_bind_failure:
-		push_warning("HairMaterialProfile could not bind the LUT required by %s. Generate the benchmark LUT resources before using this shader mode." % material.shader.resource_path)
+		push_warning("HairMaterialProfile could not bind the packaged direct LUT required by %s. Verify the production LUT assets are present and structurally valid; legacy raw-data overrides remain supported for development/compatibility." % material.shader.resource_path)
 	return bound
 
 
