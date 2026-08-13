@@ -46,14 +46,27 @@ res://assets/hair/luts/unity_azimuthal_64.res
 res://assets/hair/luts/cinematic_longitudinal_kernel_128x128x64.res
 ```
 
+## Godot 4.7 rendering-context constraint
+
+The project persistence probe and the production-size migration smoke test establish an important distinction on the validated Godot 4.7 build:
+
+- normal/windowed rendering context: `ImageTexture3D` save and cross-process reload preserve the complete payload;
+- `--headless` display path: save/load yields an empty 1x1x1 texture resource instead of the stored 3D image payload.
+
+This is independent of the LUT format or size: the project's small RGBA8 persistence probe also fails in headless mode. Consequently, direct production LUT materialization and integrity verification must run with a real rendering context. The numerical raw-LUT generators themselves remain headless-safe.
+
+Runtime hair rendering already requires a real renderer/RID, so this constraint does not change the production shader path. It does mean build/asset-generation tooling must not regenerate or validate these direct `ImageTexture3D` resources under Godot's headless display driver.
+
 ## Materialize the direct resources
 
-The existing raw generators remain the numerical source of truth. Once their validated resources exist, materialize byte-identical direct textures with:
+The existing raw generators remain the numerical source of truth. Once their validated resources exist, materialize byte-identical direct textures with a normal Godot rendering context:
 
 ```bash
-godot --headless --path . \
+godot --path . \
   --script res://benchmark/tools/materialize_direct_production_luts.gd
 ```
+
+Do not add `--headless` to this command.
 
 If the raw resources are missing, generate them first with the existing generator scripts, or use the smoke runner with `--generate-raw`.
 
@@ -61,15 +74,14 @@ The materializer refuses success unless the saved/reloaded `ImageTexture3D` has 
 
 ## Regression checks
 
-Fresh-process storage/integrity check (requires a real rendering context — `ImageTexture3D`
-save/load in headless mode serializes as an empty 1x1x1 texture on Godot 4.7, so do not use `--headless`):
+Fresh-process storage/integrity check, also requiring a real rendering context:
 
 ```bash
-godot --headless --path . \
+godot --path . \
   --script res://benchmark/tests/test_direct_lut_resource_integrity.gd
 ```
 
-Real-renderer material/profile binding check (one normal Godot window; do not use `--headless`):
+Real-renderer material/profile binding check:
 
 ```bash
 godot --path . \
@@ -84,7 +96,7 @@ python benchmark/tools/run_direct_lut_migration_smoke.py \
   --project .
 ```
 
-Add `--generate-raw` if needed. Add `--gpu-index N` to choose the renderer for the binding test. `--skip-binding` performs only the headless serialization/integrity stages.
+Add `--generate-raw` only if the benchmark raw LUTs are absent. Add `--gpu-index N` to choose the renderer for all windowed migration stages. `--skip-binding` skips the final profile-binding check, but materialization and integrity verification still require two normal Godot processes.
 
 Expected final marker:
 
@@ -92,6 +104,13 @@ Expected final marker:
 DIRECT_LUT_MIGRATION_SMOKE_OK
 ```
 
+The validated migration run produced two byte-identical direct resources with 2,097,152-byte texel payloads:
+
+- Fast: 64^3 RGBA16F;
+- Cinematic: 128x128x64 R16F.
+
+Both generated `.res` files are committed to the migration branch and handled as binary resources by `.gitattributes`.
+
 ## Release migration
 
-The direct binary `.res` files should be generated and committed after local validation. Once those artifacts are available, the release branch can ship them directly and remove the consumer-side LUT generation requirement. The benchmark-only raw resource classes/reconstruction compatibility path can remain on `development` to preserve historical storage comparisons; they do not need to ship in the addon.
+The direct binary `.res` files are now generated, validated, and committed on the migration branch. Once this change reaches `development`, the release branch can ship them directly and remove the consumer-side LUT generation requirement. The benchmark-only raw resource classes/reconstruction compatibility path can remain on `development` to preserve historical storage comparisons; they do not need to ship in the addon.
