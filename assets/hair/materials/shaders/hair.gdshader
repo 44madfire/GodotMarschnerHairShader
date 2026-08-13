@@ -41,6 +41,10 @@ uniform bool show_hair_cards = false;
 uniform bool show_hashed_strands = false;
 group_uniforms;
 
+group_uniforms Coverage;
+uniform int bayer_phase_index : hint_range(0, 15) = 0;
+group_uniforms;
+
 #include "./hair_marschner_common.gdshaderinc"
 #include "./hair_card_common.gdshaderinc"
 #include "./hair.gdshaderinc"
@@ -66,16 +70,14 @@ void fragment() {
 	float seed = attributes_sample.b;
 	beta = vec2(longitudinal_roughness, azimuthal_roughness);
 
-	// Reference keeps its original TIME-driven Bayer phase; production preview
-	// variants may freeze the phase with their explicit preview uniform.
-	if (!hair_card_should_keep(
+	if (!hair_card_should_keep_phase(
 		coverage,
 		depth,
 		vertex_world,
 		UV,
 		FRAGCOORD.xy,
 		textureSize(attributes_texture, 0),
-		TIME,
+		bayer_phase_index,
 		show_hair_cards,
 		CAMERA_POSITION_WORLD,
 		MODEL_MATRIX[0].xyz,
@@ -115,12 +117,9 @@ void fragment() {
 
 
 void light() {
-	// Called for every pixel for every light affecting the material.
-	// Uncomment to replace the default light processing function with this one.
-
 	// Project light and view in (hair) tangent space
-	vec3 omega_i = inv_tangent_matrix * LIGHT; // [sin(θ_i),  cos(θ_i)*cos(φ_i), cos(θ_i)*sin(φ_i)]
-	vec3 omega_o = inv_tangent_matrix * VIEW;  // [sin(θ_o),  cos(θ_o)*cos(φ_o), cos(θ_o)*sin(φ_o)]
+	vec3 omega_i = inv_tangent_matrix * LIGHT;
+	vec3 omega_o = inv_tangent_matrix * VIEW;
 
 	vec3 single_scattering = hair_BSDF(omega_i, omega_o, -cuticle_tilt_offset, beta, absorbtion_coefficient);
 	SPECULAR_LIGHT += single_scattering * LIGHT_COLOR * ATTENUATION * specular;
