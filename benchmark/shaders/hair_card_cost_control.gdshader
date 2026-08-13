@@ -41,7 +41,7 @@ void fragment() {
 	float seed = attributes_sample.b;
 
 	float bayer_time = freeze_bayer_phase ? 0.0 : TIME;
-	if (!hair_card_should_keep(
+	if (!hair_card_should_keep_legacy_time(
 		coverage,
 		depth,
 		vertex_world,
