@@ -22,8 +22,9 @@ float hair_card_adjusted_coverage(float coverage, float depth, vec3 vertex_world
 }
 
 ivec2 hair_card_bayer_phase_offset(int phase_index) {
-	// A 0..15 phase traverses all 16 offsets once. This matches Godot 4.7
-	// TAA's default 16-frame jitter period without depending on wall-clock time.
+	// A 0..15 phase traverses all 16 offsets once. Godot 4.7 Forward+ TAA uses
+	// a 16-frame default jitter period, so advancing this once per rendered frame
+	// gives a cadence-matched temporal coverage sequence without wall-clock time.
 	int phase = phase_index & 15;
 	return ivec2(phase & 3, (phase >> 2) & 3);
 }
@@ -37,12 +38,17 @@ bool hair_card_should_keep_phase(float coverage, float depth, vec3 vertex_world_
 	return adjusted_coverage >= HAIR_CARD_BAYER_4X4[id.x % 4][id.y % 4];
 }
 
-bool hair_card_should_keep(float coverage, float depth, vec3 vertex_world_position, vec2 uv, vec2 fragcoord, ivec2 attributes_size, float bayer_time, bool show_cards, vec3 camera_position_world, vec3 model_x_axis, float projection_y_scale) {
+// Stable compatibility path. Production callers that have not yet adopted an
+// explicit phase now receive phase 0 instead of the old TIME-driven animation.
+bool hair_card_should_keep(float coverage, float depth, vec3 vertex_world_position, vec2 uv, vec2 fragcoord, ivec2 attributes_size, float unused_bayer_time, bool show_cards, vec3 camera_position_world, vec3 model_x_axis, float projection_y_scale) {
+	return hair_card_should_keep_phase(coverage, depth, vertex_world_position, uv, fragcoord, attributes_size, 0, show_cards, camera_position_world, model_x_axis, projection_y_scale);
+}
+
+// Benchmark/reference helper preserving the historical TIME*500 behavior.
+bool hair_card_should_keep_legacy_time(float coverage, float depth, vec3 vertex_world_position, vec2 uv, vec2 fragcoord, ivec2 attributes_size, float bayer_time, bool show_cards, vec3 camera_position_world, vec3 model_x_axis, float projection_y_scale) {
 	if (show_cards) {
 		return true;
 	}
-	// Compatibility path for existing production shaders. The coverage PR
-	// benchmarks an explicit frame phase before changing production behavior.
 	ivec2 id = ivec2(fragcoord + uv * vec2(attributes_size * 2) + bayer_time * 500.0);
 	float adjusted_coverage = hair_card_adjusted_coverage(coverage, depth, vertex_world_position, camera_position_world, model_x_axis, projection_y_scale);
 	return adjusted_coverage >= HAIR_CARD_BAYER_4X4[id.x % 4][id.y % 4];
