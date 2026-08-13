@@ -1,35 +1,39 @@
 shader_type spatial;
 render_mode cull_disabled, world_vertex_coords;
 
-/** The averaged hair color used by the diffuse/scatter approximation. */
+/** Base hair color used by the Approx tier for strand color, wrapped diffuse, and tinting the Kajiya–Kay highlights. */
 uniform vec3 albedo : source_color = vec3(0.1);
 
-/** Existing base controls retained so groom material assignments remain compatible. */
+/** Shared longitudinal roughness used for card frizz and the material roughness value. Kajiya–Kay highlight widths are controlled separately below. */
 uniform float longitudinal_roughness : hint_range(0.0, 1.0) = 0.3;
+/** Compatibility parameter retained across tiers. Approx / Kajiya–Kay lighting does not use azimuthal roughness directly. */
 uniform float azimuthal_roughness : hint_range(0.0, 1.0) = 0.8;
+/** Master scale for the Approx tier's Kajiya–Kay specular highlights. */
 uniform float specular : hint_range(0.0, 1.0) = 1.0;
+/** Compatibility parameter retained across tiers. Approx / Kajiya–Kay lighting does not use cuticle tilt directly. */
 uniform float cuticle_tilt_offset : hint_range(0.0, 0.5) = 0.1;
 
 group_uniforms textures;
-/** Texture containing tangent direction in RGB and root-to-tip U in A. */
+/** Groom geometry texture. RGB stores the strand tangent encoded from [-1, 1] into [0, 1]; A stores normalized root-to-tip position. */
 uniform sampler2D coords_texture : filter_nearest;
-/** Texture containing coverage in R, depth in G, and per-strand seed in B. */
+/** Groom attribute texture. R stores coverage/occupancy, G stores strand depth, and B stores a deterministic per-strand seed used for variation/debugging. */
 uniform sampler2D attributes_texture : filter_nearest;
 group_uniforms;
 
 group_uniforms Debug;
+/** Renders the full card geometry without coverage thinning. Use this to inspect card placement and UVs; disable it for final hair rendering. */
 uniform bool show_hair_cards = false;
+/** Replaces the authored hair color with deterministic per-strand hash colors so seed distribution and strand grouping are easy to inspect. */
 uniform bool show_hashed_strands = false;
 group_uniforms;
 
 group_uniforms Coverage;
-/** Static phase 0 is the default. The runtime coverage controller advances this
- *  only for the TAA-temporal policy. */
+/** Selects one of the 16 ordered-dither phases. Phase 0 is stable; HairCoverageController advances this once per rendered frame only for TAA temporal coverage. */
 uniform int bayer_phase_index : hint_range(0, 15) = 0;
 group_uniforms;
 
 group_uniforms Preview;
-/** Presentation-only gain used by the standalone visual comparison. */
+/** Presentation-only exposure multiplier used by visual comparison/validation scenes. Leave at 1.0 for normal rendering. */
 uniform float comparison_exposure_gain : hint_range(0.25, 8.0) = 1.0;
 group_uniforms;
 
