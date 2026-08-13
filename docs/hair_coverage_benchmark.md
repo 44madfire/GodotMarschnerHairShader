@@ -1,47 +1,126 @@
 # Hair-card coverage quality/performance benchmark
 
-This follow-up is intentionally separate from the Marschner BSDF benchmark. The existing dual-GPU results showed that shared card/coverage preparation is a major cost on constrained GPUs, while the current animated Bayer coverage can visibly flicker in normal editor use.
+This experiment isolates hair-card coverage from the Marschner BSDF. It was motivated by two observations: shared card/coverage work was a major cost on the constrained GPU, and the historical `TIME * 500.0` Bayer animation visibly flickered in ordinary editor use.
 
-The benchmark compares the same Blowout groom and shared card preparation with:
+The benchmark compares:
 
-- `legacy_time_bayer`: current `TIME * 500.0` phase animation.
-- `static_bayer`: fixed ordered-Bayer phase.
-- `taa_bayer`: ordered Bayer with one explicit phase per rendered frame.
-- `alpha_hash`: Godot's native alpha-hash output path.
-- `a2c`: Godot's alpha-to-coverage render mode at 2x/4x MSAA.
+- `legacy_time_bayer`: historical wall-clock-driven Bayer animation;
+- `static_bayer`: fixed ordered-Bayer phase;
+- `taa_bayer`: one explicit Bayer phase per rendered frame;
+- `alpha_hash`: Godot native alpha-hash coverage;
+- `a2c`: alpha-to-coverage with 2x/4x 3D MSAA.
 
-## TAA-aligned Bayer candidate
+All probes keep the same groom texture reads, distance/depth coverage bias, root shading, frizz perturbation, and orthonormal strand-frame reconstruction. The coverage equation remains `pow(coverage, bias)`.
 
-Godot 4.7 sets ordinary TAA's default `jitter_phase_count` to 16 in `RendererViewport::_configure_3d_render_buffers()`. Spatial shaders expose `TIME`, but they do not expose a public TAA jitter-index or rendered-frame built-in.
+## Dual-GPU result
 
-The `taa_bayer` benchmark therefore replaces elapsed time with an integer `bayer_phase_index` advanced once per actual rendered frame. It cycles over 0..15. The phase maps to all sixteen `(x,y)` offsets of the 4x4 Bayer matrix, so a fixed fragment sees every Bayer threshold once during the same 16-frame period used by Godot 4.7 TAA.
+Godot 4.7-stable, 1920x1080, five fresh-process repeats per case.
 
-This is cadence/period alignment. It does not claim that phase 0 is Godot's private internal TAA sample 0. If the engine later exposes that index, the coverage phase can be driven directly from it.
+RTX 5090 incremental coverage cost versus the pipeline-matched cards control:
 
-The legacy `TIME * 500.0` path is not frame-aligned: it can skip/repeat phases as frame rate changes and is affected by time scaling. Because it adds the same scalar to X and Y, it also only walks four diagonal offsets of the 4x4 Bayer tile before repeating.
+| case | incremental GPU ms |
+|---|---:|
+| legacy Bayer | about 0.010 |
+| static Bayer | about 0.011-0.012 |
+| TAA Bayer | about 0.011 |
+| alpha hash | about 0.085 |
 
-## Native candidates
+The Bayer candidates are effectively tied on the discrete GPU.
 
-The alpha-hash probe writes bias-adjusted groom coverage to `ALPHA` and enables `ALPHA_HASH_SCALE`. Godot 4.7's Forward+ renderer computes an object-space derivative-scaled hash threshold and discards fragments below it.
+AMD Radeon integrated GPU:
 
-The alpha-to-coverage probe uses `render_mode alpha_to_coverage` and writes the same adjusted coverage directly to `ALPHA`. It is tested with 2x and 4x 3D MSAA because multisample count materially affects both cost and coverage fidelity.
+| case | incremental GPU ms |
+|---|---:|
+| legacy Bayer | about 8.07 |
+| static Bayer | about 8.06-8.08 |
+| TAA Bayer | about 8.04 |
+| alpha hash | about 23.0 |
+| A2C 2x | about 4.5 |
+| A2C 4x | about 5.0 |
 
-All probes keep the same groom texture reads, distance/depth coverage bias, root shading, frizz perturbation, and orthonormal strand-frame reconstruction. They are unshaded so BSDF/light cost does not obscure coverage cost.
+The integrated-GPU result confirms that coverage is a major bottleneck, but changing Bayer cadence has no measurable cost. Alpha Hash is substantially more expensive there. A2C has the lowest incremental coverage cost once MSAA is already active, but enabling MSAA raises the whole-frame cards baseline dramatically, so hair should not turn MSAA on by itself.
 
-## Run
+## Production decision
 
-Smoke test:
+`HairCoveragePolicy.AUTO` resolves in this order:
 
-```bash
-python benchmark/tools/run_hair_coverage_benchmark.py \
-  --godot /mnt/c/Tools/Godot/godot.exe \
-  --project . \
-  --repeats 1 \
-  --sample 60 \
-  --cases legacy_bayer_no_taa,static_bayer_no_taa,taa_bayer,alpha_hash_taa
+```text
+3D MSAA enabled  -> Alpha-to-Coverage
+else TAA enabled -> 16-phase rendered-frame Bayer
+else             -> Static Bayer (phase 0)
 ```
 
-Full matrix:
+This makes static Bayer the editor/no-AA default and removes the historical wall-clock animation from production. Temporal dithering is only introduced when TAA is actually available to accumulate it. If both MSAA and TAA are enabled, A2C wins and no additional Bayer phase animation is injected.
+
+Explicit Static, TAA Bayer, and Alpha-to-Coverage modes remain available for debugging and custom pipelines.
+
+## TAA cadence
+
+Godot 4.7 ordinary TAA uses a 16-frame default jitter period. The temporal Bayer path likewise cycles over 0..15 and maps those phases to all sixteen offsets of the 4x4 Bayer matrix.
+
+The production controller uses `Engine.get_frames_drawn()` rather than `TIME`, so phase advances with rendered frames and is unaffected by time scaling. This is cadence/period alignment, not access to Godot's private TAA jitter sample index. If that index becomes public later, it can replace the rendered-frame counter.
+
+For a root or continuously updating viewport this gives one Bayer phase per rendered frame. A project that renders a SubViewport at a different cadence can call `HairMaterialProfile.update_coverage_for_viewport()` with its own rendered-frame index instead of relying on the convenience controller.
+
+## Compiled coverage variants
+
+Bayer and A2C require different shader pipelines because `alpha_to_coverage` is a shader `render_mode`, not a runtime uniform. Each lighting tier therefore keeps two compiled coverage variants:
+
+```text
+Approx        Bayer / A2C
+Fast          Bayer / A2C
+Cinematic     Bayer / A2C
+Reference     Bayer / A2C
+```
+
+The lighting math and groom preparation remain shared. Fast/Cinematic use a preprocessor coverage branch in their existing body includes; only the top-level render-mode wrapper differs.
+
+## Runtime use
+
+`HairMaterialProfile.coverage_mode` defaults to `Auto`. When no viewport is supplied, Auto resolves to static Bayer so editor-created materials are stable.
+
+For automatic runtime tracking, create one `HairCoverageController` and register each profile/material pair:
+
+```gdscript
+var controller := HairCoverageController.new()
+add_child(controller)
+controller.register_material(profile, hair_material)
+```
+
+The controller inspects the owning viewport every process frame. It swaps the compiled shader only when the effective MSAA/TAA policy requires a different variant, and updates `bayer_phase_index` only for temporal Bayer.
+
+A single `ShaderMaterial` cannot simultaneously use different coverage variants in two viewports with different AA settings. Use separate material instances in that case.
+
+## Tests
+
+Deterministic Bayer sequence:
+
+```bash
+godot --headless --path . \
+  --script res://benchmark/tests/test_hair_coverage_phase_sequence.gd
+```
+
+Expected: `HAIR_COVERAGE_PHASE_SEQUENCE_OK`.
+
+Policy/shader-selection test:
+
+```bash
+godot --headless --path . \
+  --script res://benchmark/tests/test_hair_coverage_policy.gd
+```
+
+Expected: `HAIR_COVERAGE_POLICY_OK`.
+
+Full runtime shader/binding smoke test requires a real Forward+/Mobile rendering context:
+
+```bash
+godot --path . \
+  --script res://benchmark/tests/test_hair_coverage_runtime_policy.gd
+```
+
+Expected: `HAIR_COVERAGE_RUNTIME_POLICY_OK`.
+
+The original performance matrix remains available through:
 
 ```bash
 python benchmark/tools/run_hair_coverage_benchmark.py \
@@ -49,55 +128,6 @@ python benchmark/tools/run_hair_coverage_benchmark.py \
   --project .
 ```
 
-Use `--gpu-index N` to select the same devices used by the production-tier benchmark.
+## Visual considerations
 
-Default cases:
-
-```text
-legacy_bayer_no_taa
-legacy_bayer_taa
-static_bayer_no_taa
-static_bayer_taa
-taa_bayer
-alpha_hash_no_taa
-alpha_hash_taa
-a2c_2x
-a2c_4x
-a2c_2x_taa
-```
-
-Each fresh process measures `NO_HAIR`, a pipeline-matched `CARDS_PIPELINE_CONTROL`, and `COVERAGE`. The primary performance metric is `incremental_vs_cards_ms`.
-
-Outputs:
-
-```text
-benchmark/results/hair_coverage_benchmark/latest/
-  summary.json
-  runs.json
-  aggregate_rows.csv
-```
-
-Expected marker:
-
-```text
-HAIR_COVERAGE_PROCESS_MATRIX_OK
-```
-
-Run the deterministic phase test separately:
-
-```bash
-godot --headless --path . \
-  --script res://benchmark/tests/test_hair_coverage_phase_sequence.gd
-```
-
-Expected marker:
-
-```text
-HAIR_COVERAGE_PHASE_SEQUENCE_OK
-```
-
-## Visual review remains required
-
-GPU timing does not rank visual fidelity. Review the same candidates interactively for static-camera flicker, motion shimmer, visible 4x4 structure, distance stability, shadow stability, and TAA ghosting. Godot documents that TAA can ghost on moving objects and skinned meshes, so temporal coverage should not become the default solely because TAA is available.
-
-The benchmark PR deliberately keeps the existing production `TIME` path available while gathering evidence. A production follow-up can then make stable coverage the editor/default behavior and select the best temporal/native alternative for projects that opt into it.
+GPU timing does not rank visual fidelity. Static Bayer can expose a spatial ordered pattern, temporal Bayer can still interact with TAA ghosting, and A2C quality depends on sample count. The selected AUTO policy is therefore conservative: stable without temporal reconstruction, temporally distributed only with TAA, and multisample coverage only when the viewport has already paid the MSAA cost.
