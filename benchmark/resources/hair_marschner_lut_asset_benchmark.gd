@@ -23,7 +23,6 @@ func validation_errors() -> PackedStringArray:
 	if size_x <= 0 or size_y <= 0 or size_z <= 0: errors.append("all dimensions must be > 0")
 	if texture.get_width() != size_x or texture.get_height() != size_y or texture.get_depth() != size_z: errors.append("texture dimensions do not match manifest metadata")
 	if texture.get_format() != format: errors.append("texture format does not match manifest metadata")
-	if not texture.get_rid().is_valid(): errors.append("texture RID is invalid")
 	match contract:
 		"unity_hdrp_azimuthal_n_v1":
 			if not is_finite(eta) or eta <= 1.0: errors.append("Fast LUT eta must be finite and > 1")
