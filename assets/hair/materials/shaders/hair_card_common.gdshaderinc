@@ -18,7 +18,7 @@ float hair_card_coverage_bias(vec3 camera_position_world, vec3 vertex_world_posi
 
 float hair_card_adjusted_coverage(float coverage, float depth, vec3 vertex_world_position, vec3 camera_position_world, vec3 model_x_axis, float projection_y_scale) {
 	float bias = hair_card_coverage_bias(camera_position_world, vertex_world_position, model_x_axis, projection_y_scale, depth);
-	return pow(clamp(coverage, 0.0, 1.0), bias);
+	return pow(coverage, bias);
 }
 
 ivec2 hair_card_bayer_phase_offset(int phase_index) {
