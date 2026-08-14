@@ -28,7 +28,10 @@ float hair_fresnel_ior(float cos_theta, float eta) {
 // strand clumping/shape changes belong to the groom/deformation pipeline.
 float hair_wet_effective_roughness(float dry_roughness, float saturated_scale, float wetness_amount) {
 	float wet = clamp(wetness_amount, 0.0, 1.0);
-	return max(1e-3, dry_roughness * mix(1.0, max(saturated_scale, 1e-3), wet));
+	float saturated_roughness = max(dry_roughness * max(saturated_scale, 1e-3), 1e-3);
+	// Interpolating from the unmodified dry value keeps wetness=0 a strict
+	// compatibility endpoint, including materials authored with zero roughness.
+	return mix(dry_roughness, saturated_roughness, wet);
 }
 
 float hair_wet_effective_cuticle_tilt(float dry_tilt, float saturated_scale, float wetness_amount) {
