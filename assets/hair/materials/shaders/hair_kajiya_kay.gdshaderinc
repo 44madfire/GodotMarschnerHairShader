@@ -1,34 +1,8 @@
 // Tier 1 Kajiya–Kay helpers. This include intentionally contains only the
-// inexpensive two-lobe approximation used by hair_approx.gdshader.
-
-group_uniforms KajiyaKay;
-/** Independent tint for the primary Kajiya–Kay specular lobe. */
-uniform vec3 primary_color : source_color = vec3(1.0);
-/** Independent tint for the secondary Kajiya–Kay specular lobe. */
-uniform vec3 secondary_color : source_color = vec3(0.45);
-/** Tangent shift for the primary lobe. */
-uniform float primary_shift : hint_range(-1.0, 1.0) = 0.0;
-/** Tangent shift for the secondary lobe. */
-uniform float secondary_shift : hint_range(-1.0, 1.0) = 0.12;
-/** Roughness converted to a bounded Kajiya–Kay exponent. */
-uniform float primary_roughness : hint_range(0.0, 1.0) = 0.3;
-/** Roughness converted to a bounded Kajiya–Kay exponent. */
-uniform float secondary_roughness : hint_range(0.0, 1.0) = 0.55;
-/** Strength of the primary lobe. */
-uniform float primary_strength : hint_range(0.0, 4.0) = 1.0;
-/** Strength of the secondary lobe. */
-uniform float secondary_strength : hint_range(0.0, 4.0) = 0.35;
-/** Wrapped diffuse/scatter amount. */
-uniform float scatter : hint_range(0.0, 1.0) = 0.35;
-group_uniforms;
-
-group_uniforms Debug;
-// Keep the current high shader's debug parameter name and shape intact. The
-// first two components isolate the primary and secondary Tier 1 lobes.
-uniform vec3 lobe_scales = vec3(1.0);
-uniform bool show_primary_lobe = true;
-uniform bool show_secondary_lobe = true;
-group_uniforms;
+// inexpensive two-lobe approximation used by hair_approx.gdshader. The
+// KajiyaKay/Debug uniforms are declared in the consuming shaders so the
+// editor's hover tooltips, which only scan the main shader file, can display
+// their descriptions.
 
 
 /** A normalize operation with a deterministic fallback for degenerate vectors. */

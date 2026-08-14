@@ -5,43 +5,40 @@ render_mode cull_disabled, world_vertex_coords;
 // "A Practical and Controllable Hair and Fur Model for Production Path Tracing" (Chiang et al., 2016)
 #define USE_ROUGHNESS_REPARAMETERIZTION
 
-/** The averaged multiple-scattering color of the hair. */
+/** Base hair color. Used for visible strand color, absorption reparameterization, and the multiple-scattering approximation. */
 uniform vec3 albedo : source_color = vec3(0.1);
 
-/** Controls the highlight width (in radians) [i]along[/i] hair strands. Effectively controls the overall [i]shininess[/i] of the hair. */
+/** Perceptual roughness [i]along[/i] the fiber. Lower values produce tighter longitudinal highlights; higher values broaden and soften them. */
 uniform float longitudinal_roughness : hint_range(0.0, 1.0) = 0.3;
 
-/** Controls the highlight width (in radians) [i]around[/i] hair strands. Effectively controls the overall [i]softness[/i] of the hair. */
+/** Perceptual roughness [i]around[/i] the fiber. Lower values produce tighter azimuthal scattering; higher values broaden and soften it. */
 uniform float azimuthal_roughness : hint_range(0.0, 1.0) = 0.8;
 
-/** Adjusts the single-scattering (highlight) strength of the hair. */
+/** Master scale for the single-scattering/specular contribution. */
 uniform float specular : hint_range(0.0, 1.0) = 1.0;
 
-/** Adjusts the angled offset (in radians) of cuticle scales—a positive value denotes an outward tilt. Increasing causes the highlights of lobes to separate. */
+/** Cuticle scale tilt in radians. Increasing this separates the R, TT, and TRT longitudinal highlight lobes. */
 uniform float cuticle_tilt_offset : hint_range(0.0, 0.5) = 0.1;
 
 group_uniforms textures;
-/** Texture containing geometric data for hair orientation and parameterization. Channels are packed as follows:
- * [code]RGB[/code]  ([b]Tangent[/b]): The local [b]tangent[/b] direction in tangent space. Note that data is packed in [0..1], but represents [-1..1] vector values.
- * [code]A[/code]  ([b]U Coordinate[/b]): A normalized parameter (in [0..1]) varying along root to tip of the hair strands. Can be used for color gradients that vary along strand.
- */
+/** Groom geometry texture. RGB stores the strand tangent encoded from [-1, 1] into [0, 1]; A stores normalized root-to-tip position. */
 uniform sampler2D coords_texture : filter_nearest;
 
-/** Texture containing physical attributes for lighting. Channels are packed as follows:
- * [code]R[/code]  ([b]Coverage[/b]): The pixel occupancy (i.e., alpha) of the strand.
- * [code]G[/code]  ([b]Depth[/b]): A per-strand factor (in [0..1]) denoting occluded/deep strands to shallow strands. Can be used to vary the transmittance of light hitting a strand through the hair volume to simulate global scattering.
- * For more information, see "Dual Scattering Approximation for Fast Multiple Scattering in Hair" (Zinke et al., 2008).
- * [code]B[/code]  ([b]Seed[/b]): A per-strand random value (in [0..1]). Can be used to vary roughness and tangent direction, preventing the hair from looking uniformly plastic.
- */
+/** Groom attribute texture. R stores coverage/occupancy, G stores strand depth, and B stores a deterministic per-strand seed used for variation/debugging. */
 uniform sampler2D attributes_texture : filter_nearest;
 group_uniforms;
 
 group_uniforms Debug;
+/** Renders the full card geometry without coverage thinning. Use this to inspect card placement and UVs; disable it for final hair rendering. */
 uniform bool show_hair_cards = false;
+/** Replaces the authored hair color with deterministic per-strand hash colors so seed distribution and strand grouping are easy to inspect. */
 uniform bool show_hashed_strands = false;
+/** Per-lobe debug multiplier: X = R reflection, Y = TT transmission, Z = TRT internal-reflection/transmission. Keep at (1,1,1) for normal rendering. */
+uniform vec3 lobe_scales = vec3(1.0);
 group_uniforms;
 
 group_uniforms Coverage;
+/** Selects one of the 16 ordered-dither phases. Phase 0 is stable; HairCoverageController advances this once per rendered frame only for TAA temporal coverage. */
 uniform int bayer_phase_index : hint_range(0, 15) = 0;
 group_uniforms;
 
