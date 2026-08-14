@@ -3,7 +3,6 @@ render_mode cull_disabled, world_vertex_coords;
 
 /** Base hair color used by the Approx tier for strand color, wrapped diffuse, and tinting the Kajiya–Kay highlights. */
 uniform vec3 albedo : source_color = vec3(0.1);
-
 /** Shared longitudinal roughness used for card frizz and the material roughness value. Kajiya–Kay highlight widths are controlled separately below. */
 uniform float longitudinal_roughness : hint_range(0.0, 1.0) = 0.3;
 /** Compatibility parameter retained across tiers. Approx / Kajiya–Kay lighting does not use azimuthal roughness directly. */
@@ -18,6 +17,25 @@ group_uniforms textures;
 uniform sampler2D coords_texture : filter_nearest;
 /** Groom attribute texture. R stores coverage/occupancy, G stores strand depth, and B stores a deterministic per-strand seed used for variation/debugging. */
 uniform sampler2D attributes_texture : filter_nearest;
+group_uniforms;
+
+group_uniforms Wetness;
+/** Optical wetness from 0 (dry) to 1 (saturated). This changes shading only; groom clumping/shape changes are intentionally handled outside the shader. */
+uniform float wetness : hint_range(0.0, 1.0) = 0.0;
+/** Roughness of the added water-film highlight. Lower values produce a tighter, brighter wet streak. */
+uniform float wet_film_roughness : hint_range(0.015, 1.0) = 0.12;
+/** Intensity of the untinted dielectric water-film reflection at full wetness. */
+uniform float wet_film_specular_strength : hint_range(0.0, 4.0) = 1.25;
+/** Multiplier applied to the Approx primary/secondary highlight roughness and material roughness at full wetness. */
+uniform float wet_longitudinal_roughness_scale : hint_range(0.05, 1.0) = 0.45;
+/** Marschner azimuthal endpoint retained for a consistent cross-tier wetness interface; Approx lighting does not use it directly. */
+uniform float wet_azimuthal_roughness_scale : hint_range(0.05, 1.0) = 0.55;
+/** Remaining wrapped diffuse/scatter intensity at full wetness. Lower values darken the body of the Approx hair response. */
+uniform float wet_internal_scatter_scale : hint_range(0.0, 1.0) = 0.35;
+/** Marschner TT/TRT endpoint retained for a consistent cross-tier wetness interface; Approx lighting has no physical transmission lobes. */
+uniform float wet_transmission_scale : hint_range(0.0, 1.0) = 0.65;
+/** Remaining Kajiya–Kay tangent-shift magnitude at full wetness. Lower values reduce separation between the two dry highlight lobes. */
+uniform float wet_cuticle_shift_scale : hint_range(0.0, 1.0) = 0.5;
 group_uniforms;
 
 group_uniforms Debug;
@@ -72,11 +90,9 @@ varying vec3 vertex_world;
 varying vec2 beta;
 varying vec3 strand_tangent;
 
-
 void vertex() {
 	vertex_world = VERTEX;
 }
-
 
 void fragment() {
 	vec4 coords_sample = texture(coords_texture, UV);
@@ -104,8 +120,10 @@ void fragment() {
 	vec3 hash = hair_hash13(seed);
 	ALBEDO = hair_card_base_albedo(albedo, u, coverage, hash, show_hashed_strands);
 	SPECULAR = specular;
-	ROUGHNESS = beta[0];
+	ROUGHNESS = hair_wet_effective_roughness(beta[0], wet_longitudinal_roughness_scale, wetness);
 
+	// Wetness is optical only: preserve the dry roughness for tangent/frizz so
+	// this shader never substitutes for groom clumping/deformation.
 	TANGENT = hair_card_frizzed_tangent(
 		mat3(TANGENT, BINORMAL, NORMAL),
 		tangent_texture_value,
@@ -119,26 +137,22 @@ void fragment() {
 	strand_tangent = TANGENT;
 }
 
-
 void light() {
 	vec3 light_direction = kk_safe_normalize(LIGHT, NORMAL);
 	vec3 view_direction = kk_safe_normalize(VIEW, NORMAL);
-	vec3 primary_tangent = kk_shifted_tangent(strand_tangent, NORMAL, primary_shift);
-	vec3 secondary_tangent = kk_shifted_tangent(strand_tangent, NORMAL, secondary_shift);
+	float shift_scale = hair_wet_transport_multiplier(wet_cuticle_shift_scale, wetness);
+	vec3 primary_tangent = kk_shifted_tangent(strand_tangent, NORMAL, primary_shift * shift_scale);
+	vec3 secondary_tangent = kk_shifted_tangent(strand_tangent, NORMAL, secondary_shift * shift_scale);
 
 	float primary_debug_scale = show_primary_lobe ? max(lobe_scales.x, 0.0) : 0.0;
 	float secondary_debug_scale = show_secondary_lobe ? max(lobe_scales.y, 0.0) : 0.0;
-	float primary_lobe = kk_specular_lobe(primary_tangent, light_direction, view_direction, primary_roughness);
-	float secondary_lobe = kk_specular_lobe(secondary_tangent, light_direction, view_direction, secondary_roughness);
+	float wet_primary_roughness = hair_wet_effective_roughness(primary_roughness, wet_longitudinal_roughness_scale, wetness);
+	float wet_secondary_roughness = hair_wet_effective_roughness(secondary_roughness, wet_longitudinal_roughness_scale, wetness);
+	float primary_lobe = kk_specular_lobe(primary_tangent, light_direction, view_direction, wet_primary_roughness);
+	float secondary_lobe = kk_specular_lobe(secondary_tangent, light_direction, view_direction, wet_secondary_roughness);
 
-	// Cheap wrapped diffuse/scatter and both independently tinted lobes are
-	// accumulated per light, preserving Forward+ light and shadow influence.
-	float diffuse = kk_wrapped_diffuse(strand_tangent, light_direction, scatter);
-	// Area lights contribute a diffuse multiplier. The LIGHT_AREA_* built-ins
-	// are used directly (never assigned to typed locals): Godot 4.7 declares
-	// them vec3 in the shader language but generates them as scalar floats in
-	// the light stage, so only a construction in place keeps both the source
-	// and the generated code compilable on the NVIDIA driver.
+	float diffuse = kk_wrapped_diffuse(strand_tangent, light_direction, scatter)
+		* hair_wet_transport_multiplier(wet_internal_scatter_scale, wetness);
 	DIFFUSE_LIGHT += comparison_exposure_gain * ALBEDO * diffuse * LIGHT_COLOR * ATTENUATION
 		* (LIGHT_IS_AREA ? vec3(LIGHT_AREA_DIFFUSE_MULTIPLIER) : vec3(1.0)) / PI;
 
@@ -146,6 +160,8 @@ void light() {
 		primary_color * primary_lobe * primary_strength * primary_debug_scale
 		+ secondary_color * secondary_lobe * secondary_strength * secondary_debug_scale
 	);
+	float wet_film = hair_wet_film_specular(strand_tangent, light_direction, view_direction, wetness, wet_film_roughness, wet_film_specular_strength);
+	specular_light += vec3(wet_film);
 	SPECULAR_LIGHT += comparison_exposure_gain * specular_light * LIGHT_COLOR * ATTENUATION
 		* (LIGHT_IS_AREA ? vec3(LIGHT_AREA_SPECULAR_MULTIPLIER) : vec3(1.0)) * specular;
 }
