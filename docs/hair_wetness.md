@@ -77,9 +77,27 @@ Keeping those systems separate makes the shader deterministic and lets geometry 
 
 ## Validation plan
 
-Before merging, verify in Godot 4.7:
+Run the interface/default test first; it is safe in headless mode because it does not load the production ImageTexture3D LUTs:
 
-1. all eight production shader variants compile;
+```bash
+godot --headless --path . \
+  --script res://benchmark/tests/test_hair_wetness_interface.gd
+```
+
+Expected marker: `HAIR_WETNESS_INTERFACE_OK`.
+
+Then run the runtime binding smoke with a real Forward+/Mobile RenderingDevice. Do **not** add `--headless`: Godot 4.7's headless path cannot reliably load these ImageTexture3D resources on the currently tested setup.
+
+```bash
+godot --path . \
+  --script res://benchmark/tests/test_hair_wetness_runtime.gd
+```
+
+Expected marker: `HAIR_WETNESS_RUNTIME_OK`. This checks all four tiers, both static-Bayer and A2C compiled families, wetness values 0 / 0.25 / 0.5 / 0.75 / 1, direct LUT binding, and Fast's fixed eta=1.55 contract.
+
+Before merging, also verify visually in Godot 4.7:
+
+1. all eight production shader variants compile/render;
 2. `wetness = 0` visually matches the dry baseline;
 3. wetness 0.25 / 0.5 / 0.75 / 1.0 produces progressively narrower/brighter film highlights and darker body scattering;
 4. Fast still binds the eta=1.55 direct LUT without contract changes;
