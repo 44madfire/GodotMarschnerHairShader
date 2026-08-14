@@ -115,9 +115,7 @@ void fragment() {
 	inv_tangent_matrix = transpose(strand_frame);
 
 	// Preserve the original dry albedo/roughness absorption reparameterization.
-	vec3 safe_albedo = max(albedo, vec3(1e-4));
-	float c = 5.969 + beta_dry[N] * (-0.215 + beta_dry[N] * (2.532 + beta_dry[N] * (-10.73 + beta_dry[N] * (5.574 + beta_dry[N] * 0.245))));
-	absorbtion_coefficient = log(safe_albedo) / max(c, 1e-4);
+	absorbtion_coefficient = log(albedo) / (5.969 + beta_dry[N]*(-0.215 + beta_dry[N]*(2.532 + beta_dry[N]*(-10.73 + beta_dry[N]*(5.574 + beta_dry[N]*0.245)))));
 	absorbtion_coefficient *= absorbtion_coefficient;
 	// Reference keeps the baseline analytic TT/TRT formulation intact and uses
 	// extra absorption as its wet internal-transport approximation. R is not
@@ -126,9 +124,9 @@ void fragment() {
 	absorbtion_coefficient /= wet_transport;
 
 #ifdef USE_ROUGHNESS_REPARAMETERIZTION
-	beta = max(vec2(1e-3), mix(0.8, 1.2, seed) * vec2(
-		0.726 * beta[M] + 0.812 * beta[M] * beta[M] + 3.700 * pow(beta[M], 20.0),
-		0.265 * beta[N] + 1.194 * beta[N] * beta[N] + 5.372 * pow(beta[N], 22.0)));
+	beta = max(vec2(1e-3), mix(0.8, 1.2, seed)*vec2(
+		0.726*beta[M] + 0.812*beta[M]*beta[M] + 3.700*pow(beta[M], 20),
+		0.265*beta[N] + 1.194*beta[N]*beta[N] + 5.372*pow(beta[N], 22)));
 #endif
 }
 
@@ -142,10 +140,10 @@ void light() {
 	float wet_film = hair_wet_film_specular(vec3(1.0, 0.0, 0.0), omega_i, omega_o, wetness, wet_film_roughness, wet_film_specular_strength);
 	SPECULAR_LIGHT += vec3(wet_film) * LIGHT_COLOR * ATTENUATION * specular;
 
-	float luminance = max(dot(ALBEDO, vec3(0.299, 0.587, 0.114)), 1e-4);
-	float yz_len2 = dot(omega_o.yz, omega_o.yz);
-	vec2 view_yz = yz_len2 > 1e-8 ? omega_o.yz * inversesqrt(yz_len2) : vec2(0.0, 1.0);
-	vec3 multiple_scattering = 0.25 * sqrt(max(ALBEDO, vec3(0.0))) * (dot(omega_i.yz, view_yz) + 1.0) * pow(max(ALBEDO / luminance, vec3(1e-4)), vec3(ATTENUATION));
+	// Preserve the dry multiple-scattering expression; wetness only scales the
+	// result afterward so wetness=0 remains the previous numerical path.
+	float luminance = dot(ALBEDO, vec3(0.299, 0.587, 0.114));
+	vec3 multiple_scattering = 0.25 * sqrt(ALBEDO)*(dot(omega_i.yz, normalize(omega_o.yz)) + 1.0) * pow(ALBEDO / luminance, vec3(ATTENUATION));
 	multiple_scattering *= hair_wet_transport_multiplier(wet_internal_scatter_scale, wetness);
 	DIFFUSE_LIGHT += multiple_scattering * smoothstep(-0.5, 1.0, ATTENUATION) * LIGHT_COLOR / PI;
 }
