@@ -12,6 +12,10 @@ class_name HairMaterialProfile
 ## stable Bayer phase. With HairCoverageController, AUTO follows viewport AA:
 ## MSAA -> alpha-to-coverage, otherwise TAA -> temporal Bayer, otherwise static.
 ##
+## Optical wetness changes only the shading response. Groom clumping, strand
+## adhesion, weight, and other geometry changes belong to the groom/deformation
+## pipeline rather than this material profile.
+##
 ## Serialized tier values remain unchanged for compatibility:
 ## 0 = Approx/Kajiya-Kay, 1 = Unity Fast, 2 = Cinematic, 3 = Reference.
 enum QualityTier {
@@ -80,6 +84,30 @@ var coverage_mode: int = CoveragePolicy.Mode.AUTO
 ## Cuticle scale tilt in radians. Positive values separate the Marschner lobe
 ## shifts. The Approx tier does not consume this property.
 @export_range(0.0, 0.5, 0.001) var cuticle_tilt_offset: float = 0.1
+
+@export_category("Wetness")
+## Optical wetness from 0 (dry) to 1 (saturated). The dry value is a strict
+## compatibility point: at 0 the wetness helpers reduce to the prior dry model.
+@export_range(0.0, 1.0, 0.001) var wetness: float = 0.0
+## Roughness of the added dielectric water-film highlight. Lower values produce
+## a tighter/brighter wet streak without changing the underlying hair IOR.
+@export_range(0.015, 1.0, 0.001) var wet_film_roughness: float = 0.12
+## Intensity of the untinted water-film reflection at full wetness.
+@export_range(0.0, 4.0, 0.001) var wet_film_specular_strength: float = 1.25
+## Multiplier applied to longitudinal highlight roughness at full wetness.
+@export_range(0.05, 1.0, 0.001) var wet_longitudinal_roughness_scale: float = 0.45
+## Multiplier applied to azimuthal roughness at full wetness. Approx retains the
+## value for cross-tier consistency but does not have a physical azimuthal lobe.
+@export_range(0.05, 1.0, 0.001) var wet_azimuthal_roughness_scale: float = 0.55
+## Remaining diffuse/multiple-scattering intensity at full wetness. Lower values
+## darken the hair body while leaving the added water-film reflection bright.
+@export_range(0.0, 1.0, 0.001) var wet_internal_scatter_scale: float = 0.35
+## Remaining Marschner TT/TRT transport at full wetness. Reference maps this to
+## an absorption increase; Approx retains it only for cross-tier consistency.
+@export_range(0.0, 1.0, 0.001) var wet_transmission_scale: float = 0.65
+## Remaining cuticle/tangent-shift separation at full wetness. Lower values make
+## the coated optical boundary behave smoother while leaving groom geometry alone.
+@export_range(0.0, 1.0, 0.001) var wet_cuticle_shift_scale: float = 0.5
 
 @export_category("Fast Marschner")
 ## Selects how Fast Marschner derives the absorption coefficient.
@@ -295,6 +323,14 @@ func _apply_profile_to_current_shader(material: ShaderMaterial, warn_on_bind_fai
 		&"azimuthal_roughness": azimuthal_roughness,
 		&"specular": specular,
 		&"cuticle_tilt_offset": cuticle_tilt_offset,
+		&"wetness": wetness,
+		&"wet_film_roughness": wet_film_roughness,
+		&"wet_film_specular_strength": wet_film_specular_strength,
+		&"wet_longitudinal_roughness_scale": wet_longitudinal_roughness_scale,
+		&"wet_azimuthal_roughness_scale": wet_azimuthal_roughness_scale,
+		&"wet_internal_scatter_scale": wet_internal_scatter_scale,
+		&"wet_transmission_scale": wet_transmission_scale,
+		&"wet_cuticle_shift_scale": wet_cuticle_shift_scale,
 		&"ior": ior,
 		&"absorption_mode": absorption_mode,
 		&"absorption": absorption,
