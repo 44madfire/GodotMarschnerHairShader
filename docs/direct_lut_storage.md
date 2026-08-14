@@ -2,7 +2,7 @@
 
 ## Decision
 
-Production Fast and Cinematic LUTs should be stored and loaded as directly serialized `ImageTexture3D` resources. The shader slot owns the semantic contract; `HairMarschnerLUTAdapter` validates dimensions/format/RID before binding.
+Production Fast and Cinematic LUTs are stored and loaded as directly serialized `ImageTexture3D` resources. The shader slot owns the semantic contract; `HairMarschnerLUTAdapter` validates dimensions/format/RID before binding.
 
 The development raw-data resources remain under `benchmark/resources/luts/` only as numerical source/benchmark fixtures. They are no longer the default production runtime path.
 
@@ -18,7 +18,7 @@ Local Godot 4.7-stable results supplied on 2026-08-13 from an RTX 5090, 12 fresh
 
 The manifest retained the contract and was about 1.75x faster than the raw representation, but remained 13.2-13.7x slower than loading the direct texture. Manifest validation itself was about 13 us; the approximately 30 ms cost was the scripted metadata-resource load, not texture construction. Direct/manifest footprint was only about 0.6% above the old raw resource.
 
-Therefore a runtime GDScript manifest is not used. Semantic metadata that the shader requires is represented by adapter constants associated with each LUT slot. Authoring/provenance notes can remain in development documentation rather than being deserialized on the render path.
+Therefore a runtime GDScript manifest is not used. Semantic metadata that the shader requires is represented by adapter constants associated with each LUT slot. Authoring/provenance notes remain in development documentation rather than being deserialized on the render path.
 
 ## Runtime contracts
 
@@ -39,11 +39,18 @@ Cinematic:
 - low-beta transition: [0.05, 0.10]
 - channel: `R=log2(Q)`
 
-Production paths:
+Development production paths:
 
 ```text
 res://assets/hair/luts/unity_azimuthal_64.res
 res://assets/hair/luts/cinematic_longitudinal_kernel_128x128x64.res
+```
+
+The distributable addon repaths the same validated resources to:
+
+```text
+res://addons/marschner_hair/luts/unity_azimuthal_64.res
+res://addons/marschner_hair/luts/cinematic_longitudinal_kernel_128x128x64.res
 ```
 
 ## Godot 4.7 rendering-context constraint
@@ -96,7 +103,7 @@ python benchmark/tools/run_direct_lut_migration_smoke.py \
   --project .
 ```
 
-Add `--generate-raw` only if the benchmark raw LUTs are absent. Add `--gpu-index N` to choose the renderer for all windowed migration stages. `--skip-binding` skips the final profile-binding check, but materialization and integrity verification still require two normal Godot processes.
+Add `--generate-raw` only if the benchmark raw LUTs are absent. Add `--gpu-index N` to choose the renderer for all windowed migration stages. `--skip-binding` skips the final profile-binding check, but materialization and integrity verification still require normal Godot processes.
 
 Expected final marker:
 
@@ -109,8 +116,10 @@ The validated migration run produced two byte-identical direct resources with 2,
 - Fast: 64^3 RGBA16F;
 - Cinematic: 128x128x64 R16F.
 
-Both generated `.res` files are committed to the migration branch and handled as binary resources by `.gitattributes`.
+Both direct `.res` files are committed on `development` and handled as binary resources by `.gitattributes`.
 
-## Release migration
+## Release status
 
-The direct binary `.res` files are now generated, validated, and committed on the migration branch. Once this change reaches `development`, the release branch can ship them directly and remove the consumer-side LUT generation requirement. The benchmark-only raw resource classes/reconstruction compatibility path can remain on `development` to preserve historical storage comparisons; they do not need to ship in the addon.
+The direct-LUT migration is already part of `development` and the current rc2 release package. Release users should receive the direct resources; they should not be asked to run the numerical generators or raw-data reconstruction path.
+
+When preparing a later release update, copy the validated direct textures unchanged into `addons/marschner_hair/luts/` and run the package-level smoke described in [`release_validation.md`](release_validation.md). That smoke is intended to verify the repathed preload/include/LUT paths in the actual distributable addon, not to regenerate the LUT payloads.
