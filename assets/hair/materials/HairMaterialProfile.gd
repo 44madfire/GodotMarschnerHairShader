@@ -91,9 +91,9 @@ var coverage_mode: int = CoveragePolicy.Mode.AUTO
 @export_range(0.0, 1.0, 0.001) var wetness: float = 0.0
 ## Roughness of the added dielectric water-film highlight. Lower values produce
 ## a tighter/brighter wet streak without changing the underlying hair IOR.
-@export_range(0.015, 1.0, 0.001) var wet_film_roughness: float = 0.12
+@export_range(0.015, 1.0, 0.001) var wet_film_roughness: float = 0.10
 ## Intensity of the untinted water-film reflection at full wetness.
-@export_range(0.0, 4.0, 0.001) var wet_film_specular_strength: float = 1.25
+@export_range(0.0, 4.0, 0.001) var wet_film_specular_strength: float = 2.0
 ## Multiplier applied to longitudinal highlight roughness at full wetness.
 @export_range(0.05, 1.0, 0.001) var wet_longitudinal_roughness_scale: float = 0.45
 ## Multiplier applied to azimuthal roughness at full wetness. Approx retains the

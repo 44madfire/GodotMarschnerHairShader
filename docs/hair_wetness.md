@@ -24,8 +24,8 @@ Current calibration defaults are intentionally conservative starting points rath
 | Control | Default |
 |---|---:|
 | Wetness | 0.0 |
-| Film roughness | 0.12 |
-| Film specular strength | 1.25 |
+| Film roughness | 0.10 |
+| Film specular strength | 2.0 |
 | Longitudinal roughness scale | 0.45 |
 | Azimuthal roughness scale | 0.55 |
 | Internal scatter scale | 0.35 |

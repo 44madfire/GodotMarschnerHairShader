@@ -27,8 +27,8 @@ func _initialize() -> void:
 		return
 
 	var expected_defaults := {
-		&"wet_film_roughness": 0.12,
-		&"wet_film_specular_strength": 1.25,
+		&"wet_film_roughness": 0.10,
+		&"wet_film_specular_strength": 2.0,
 		&"wet_longitudinal_roughness_scale": 0.45,
 		&"wet_azimuthal_roughness_scale": 0.55,
 		&"wet_internal_scatter_scale": 0.35,

@@ -9,8 +9,8 @@ const COVERAGE_ALPHA_TO_COVERAGE := 3
 const WETNESS_VALUES: Array[float] = [0.0, 0.25, 0.5, 0.75, 1.0]
 
 const EXPECTED_ENDPOINTS := {
-	&"wet_film_roughness": 0.12,
-	&"wet_film_specular_strength": 1.25,
+	&"wet_film_roughness": 0.10,
+	&"wet_film_specular_strength": 2.0,
 	&"wet_longitudinal_roughness_scale": 0.45,
 	&"wet_azimuthal_roughness_scale": 0.55,
 	&"wet_internal_scatter_scale": 0.35,

@@ -25,9 +25,9 @@ group_uniforms Wetness;
 /** Optical wetness from 0 (dry) to 1 (saturated). This changes scattering only; groom clumping/shape changes are intentionally handled outside the shader. */
 uniform float wetness : hint_range(0.0, 1.0) = 0.0;
 /** Roughness of the added water-film highlight. Lower values produce a tighter, brighter wet streak. */
-uniform float wet_film_roughness : hint_range(0.015, 1.0) = 0.12;
+uniform float wet_film_roughness : hint_range(0.015, 1.0) = 0.10;
 /** Intensity of the untinted dielectric water-film reflection at full wetness. */
-uniform float wet_film_specular_strength : hint_range(0.0, 4.0) = 1.25;
+uniform float wet_film_specular_strength : hint_range(0.0, 4.0) = 2.0;
 /** Multiplier applied to longitudinal roughness at full wetness. Values below 1 sharpen the underlying fiber highlights. */
 uniform float wet_longitudinal_roughness_scale : hint_range(0.05, 1.0) = 0.45;
 /** Multiplier applied to azimuthal roughness at full wetness. Values below 1 sharpen the underlying fiber response. */
