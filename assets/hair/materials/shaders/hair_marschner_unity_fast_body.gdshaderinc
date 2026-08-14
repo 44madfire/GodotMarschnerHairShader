@@ -47,21 +47,16 @@ vec3 unity_standard_bsdf(vec3 omega_i, vec3 omega_o_local) {
 	float theta_o = asin(clamp(sin_theta_o, -0.999999, 0.999999));
 	float theta_h = 0.5 * (theta_i + theta_o);
 
-	// HDRP GetHairAngleWorld convention: projected unsigned relative azimuth.
 	float cos_phi = clamp(dot(omega_i.yz, omega_o_local.yz) / max(cos_theta_i * cos_theta_o, 1e-5), -1.0, 1.0);
 	float phi = acos(cos_phi);
-
 	float cos_theta = clamp(cos_theta_o * cos_theta_i + sin_theta_o * sin_theta_i, -1.0, 1.0);
 	float cos_theta_d = sqrt(max(0.0, 0.5 + 0.5 * cos_theta));
 	vec3 m = unity_gaussian(vec3(theta_h) - unity_alpha, unity_beta_variance);
 	vec3 n = sample_unity_azimuthal(phi, cos_theta_d, unity_radial_roughness);
 
-	// R: Unity half-angle Schlick Fresnel; no absorption on the surface path.
 	float r_half_cos = sqrt(max(0.0, 0.5 + 0.5 * clamp(dot(omega_i, omega_o_local), -1.0, 1.0)));
 	float a_r = hair_fresnel_ior(r_half_cos, ior);
 
-	// TT/TRT: Unity's fixed-h attenuation approximation. The modified-index fit
-	// is specific to human-hair eta=1.55, which the runtime LUT adapter pins.
 	float eta_prime = 1.19 / max(cos_theta_d, 1e-5) + 0.36 * cos_theta_d;
 	float cos_theta_t = sqrt(max(0.0, 1.0 - sin_theta_o * sin_theta_o / max(ior * ior, 1e-6)));
 
@@ -81,10 +76,11 @@ vec3 unity_standard_bsdf(vec3 omega_i, vec3 omega_o_local) {
 	vec3 tr_trt = exp(-max(sigma_a, vec3(0.0)) * (2.0 * cos_gamma_t_trt / max(cos_theta_t, 1e-4)));
 	vec3 a_trt = (1.0 - f_trt) * (1.0 - f_trt) * f_trt * tr_trt * tr_trt;
 
+	float wet_transport = hair_wet_transport_multiplier(wet_transmission_scale, wetness);
 	vec3 result = vec3(0.0);
 	result += vec3(m.x * n.x * a_r * lobe_scales.x);
-	result += m.y * n.y * a_tt * lobe_scales.y;
-	result += m.z * n.z * a_trt * lobe_scales.z;
+	result += m.y * n.y * a_tt * lobe_scales.y * wet_transport;
+	result += m.z * n.z * a_trt * lobe_scales.z * wet_transport;
 	return max(result, vec3(0.0));
 }
 
@@ -132,10 +128,16 @@ void fragment() {
 #endif
 	strand_depth = depth;
 
+	float effective_longitudinal = hair_wet_effective_roughness(longitudinal_roughness, wet_longitudinal_roughness_scale, wetness);
+	float effective_azimuthal = hair_wet_effective_roughness(azimuthal_roughness, wet_azimuthal_roughness_scale, wetness);
+	float effective_cuticle_tilt = hair_wet_effective_cuticle_tilt(cuticle_tilt_offset, wet_cuticle_shift_scale, wetness);
+
 	vec3 hash = hair_hash13(seed);
 	ALBEDO = hair_card_base_albedo(albedo, u, coverage, hash, show_hashed_strands);
 	SPECULAR = specular;
-	ROUGHNESS = longitudinal_roughness;
+	ROUGHNESS = effective_longitudinal;
+	// Wetness is optical only; keep the authored dry roughness for tangent/frizz
+	// perturbation so the shader does not implicitly reshape the groom.
 	TANGENT = hair_card_frizzed_tangent(
 		mat3(TANGENT, BINORMAL, NORMAL),
 		tangent_texture_value,
@@ -149,14 +151,14 @@ void fragment() {
 	inv_tangent_matrix = transpose(strand_frame);
 	omega_o = inv_tangent_matrix * VIEW;
 
-	// Literal Unity Standard longitudinal parameterization: separable theta_h
-	// Gaussian with R/TT/TRT shifts (-1,+0.5,+1.5) and widths (1,0.5,2).
-	float perceptual_l = max(longitudinal_roughness, 0.01);
-	unity_alpha = vec3(-1.0, 0.5, 1.5) * cuticle_tilt_offset;
+	float perceptual_l = max(effective_longitudinal, 0.01);
+	unity_alpha = vec3(-1.0, 0.5, 1.5) * effective_cuticle_tilt;
 	vec3 roughness = vec3(perceptual_l, 0.5 * perceptual_l, 2.0 * perceptual_l);
 	unity_beta_variance = roughness * roughness;
-	unity_radial_roughness = clamp(azimuthal_roughness, 0.0, 0.99);
-	sigma_a = unity_absorption_coefficient(albedo, unity_radial_roughness);
+	unity_radial_roughness = clamp(effective_azimuthal, 0.0, 0.99);
+	// Preserve the dry absorption reparameterization. Wet darkening is applied
+	// explicitly through transmission/multiple-scattering controls instead.
+	sigma_a = unity_absorption_coefficient(albedo, clamp(azimuthal_roughness, 0.0, 0.99));
 }
 
 void light() {
@@ -164,8 +166,13 @@ void light() {
 	vec3 single_scattering = unity_standard_bsdf(omega_i, omega_o);
 	vec3 area_specular_multiplier = (LIGHT_IS_AREA && use_area_light_multipliers) ? vec3(LIGHT_AREA_SPECULAR_MULTIPLIER) : vec3(1.0);
 	SPECULAR_LIGHT += comparison_exposure_gain * single_scattering * LIGHT_COLOR * ATTENUATION * specular * area_specular_multiplier;
+
+	float wet_film = hair_wet_film_specular(vec3(1.0, 0.0, 0.0), omega_i, omega_o, wetness, wet_film_roughness, wet_film_specular_strength);
+	SPECULAR_LIGHT += comparison_exposure_gain * vec3(wet_film) * LIGHT_COLOR * ATTENUATION * specular * area_specular_multiplier;
+
 	float yz_len2 = dot(omega_o.yz, omega_o.yz);
 	vec2 view_yz = yz_len2 > 1e-8 ? omega_o.yz * inversesqrt(yz_len2) : vec2(0.0, 1.0);
 	vec3 multiple = unity_karis_multiple_scattering(ALBEDO, omega_i, view_yz, ATTENUATION);
+	multiple *= hair_wet_transport_multiplier(wet_internal_scatter_scale, wetness);
 	DIFFUSE_LIGHT += comparison_exposure_gain * multiple * LIGHT_COLOR / PI;
 }
