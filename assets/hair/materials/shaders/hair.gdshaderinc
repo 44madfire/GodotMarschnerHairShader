@@ -38,9 +38,9 @@
 #define TT  1 // (p=1) Denotes paths where light rays transmit (T) into fiber, then transmit again (T) out the back.
 #define TRT 2 // (p=2) Denotes paths where light rays transmit (T) into fiber, reflect (R) off the back, then transmit again (T) out the front.
 
-group_uniforms Debug;
-uniform vec3 lobe_scales = vec3(1);
-group_uniforms;
+// The `lobe_scales` Debug uniform used by hair_BSDF() below is declared in the
+// consuming shaders (hair.gdshader / hair_a2c.gdshader) so the editor's hover
+// tooltips, which only scan the main shader file, can display its description.
 
 /** Approximation of the natural log of the zeroth-ordered modified bessel function of the first kind. */
 // Source: https://iopscience.iop.org/article/10.1088/1742-6596/1043/1/012003/pdf

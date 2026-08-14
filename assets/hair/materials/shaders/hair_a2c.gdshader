@@ -26,6 +26,8 @@ group_uniforms Debug;
 uniform bool show_hair_cards = false;
 /** Replaces the authored hair color with deterministic per-strand hash colors so seed distribution and strand grouping are easy to inspect. */
 uniform bool show_hashed_strands = false;
+/** Per-lobe debug multiplier: X = R reflection, Y = TT transmission, Z = TRT internal-reflection/transmission. Keep at (1,1,1) for normal rendering. */
+uniform vec3 lobe_scales = vec3(1.0);
 group_uniforms;
 
 #include "./hair_marschner_common.gdshaderinc"
