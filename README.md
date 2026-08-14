@@ -1,25 +1,42 @@
 # Godot Marschner Hair Shader
 
-A Godot 4.7 hair-card shading implementation with explicit production quality tiers:
+A Godot 4.7 hair-card shading stack with four explicit production quality tiers, viewport-aware coverage, packaged 3D LUT resources, and a shared optical-wetness model.
 
-- **Approx / Kajiya-Kay** — lightweight non-Marschner fallback.
+- **Approx / Kajiya-Kay** — lightweight fallback for constrained hardware.
 - **Fast Marschner** — Unity HDRP Standard-style Marschner with a preintegrated azimuthal LUT.
 - **Cinematic Marschner** — higher-fidelity Marschner using the conditioned longitudinal LUT while retaining analytic azimuthal/attenuation behavior.
-- **Reference Marschner** — analytic baseline intended primarily for comparison and validation.
+- **Reference Marschner** — full analytic baseline intended primarily for comparison and validation.
 
-The project intentionally keeps these as **separate compiled shaders**. `HairMaterialProfile` provides a single authoring API and switches the material to the appropriate shader instead of compiling one runtime-branching mega-shader.
+The tiers remain **separate compiled shaders**. `HairMaterialProfile` is the common authoring API and selects the appropriate shader instead of compiling one runtime-branching mega-shader.
 
 ## Requirements
 
 - Godot 4.7.
-- Hair-card meshes with the groom data textures described below.
-- Fast and Cinematic modes require their generated LUT resources.
+- Hair-card meshes with the groom data maps described below.
+- Forward+ is required for TAA. MSAA/A2C is supported by Forward+ and Mobile according to Godot's viewport capabilities.
+- Fast and Cinematic use the packaged direct `ImageTexture3D` LUT resources. Normal users do **not** need to generate LUTs.
+
+## Repository layout
+
+The `development` branch contains demos, benchmarks, validation tools, experimental/reference material, and the production sources under:
+
+```text
+res://assets/hair/
+```
+
+The distributable release branch repackages the production runtime under:
+
+```text
+res://addons/marschner_hair/
+```
+
+Release users should copy only the addon package described by the release README. Development-only raw LUT fixtures and benchmark generators are not runtime dependencies.
 
 ## Quick start
 
 ### 1. Create groom data
 
-Create a `HairGroomData` resource and assign the two textures generated for the hair-card atlas:
+Create one `HairGroomData` resource for each card atlas and assign the two generated textures:
 
 ```text
 coords_texture
@@ -32,148 +49,146 @@ attributes_texture
   B = deterministic per-strand seed
 ```
 
-These maps describe the groom/card atlas and are intentionally separate from the hair appearance. A single `HairMaterialProfile` can therefore be reused with multiple `HairGroomData` resources.
+These textures describe the groom/card atlas, not the hair appearance. Keep them paired with the mesh and UVs that generated them. Lossless import is recommended when compression alters tangent, coverage, depth, or seed values.
 
-### 2. Create a material profile
+### 2. Create a `HairMaterialProfile`
 
-Create a `HairMaterialProfile` resource and choose `quality_tier` in the Inspector.
+Choose a `quality_tier` and normally leave `coverage_mode` on **Auto**. The Inspector hides controls that do not affect the selected tier while preserving their serialized values.
 
-The Inspector automatically hides controls that do not affect the selected shader. Values remain serialized when hidden, so switching tiers does not discard tier-specific settings.
+The main authoring groups are:
 
-### 3. Build or update the ShaderMaterial
+- **Quality** — Approx, Fast, Cinematic, or Reference.
+- **Coverage** — Auto, Static Bayer, TAA Temporal Bayer, or Alpha-to-Coverage.
+- **Base Hair** — color, longitudinal/azimuthal roughness, specular scale, and cuticle tilt.
+- **Wetness** — optical wetness and its film/fiber-response endpoints.
+- **Fast Marschner** — absorption model and optional azimuthal LUT override.
+- **Cinematic Marschner** — IOR and optional longitudinal LUT override.
+- **Approx / Kajiya-Kay** — primary/secondary lobe controls and wrapped scatter.
 
-Create a material from scratch:
+Both `HairMaterialProfile` properties and direct ShaderMaterial uniforms carry Inspector hover documentation.
+
+### 3. Create and assign the material
+
+Pass the owning viewport when creating runtime materials so `coverage_mode = Auto` resolves immediately:
 
 ```gdscript
 @export var profile: HairMaterialProfile
-@export var groom_data: Resource
+@export var groom_data: HairGroomData
 @export var hair_mesh: MeshInstance3D
 
 func _ready() -> void:
-    var material: ShaderMaterial = profile.create_material(groom_data)
+    var material: ShaderMaterial = profile.create_material(groom_data, get_viewport())
     hair_mesh.material_override = material
 ```
 
-Or apply a profile and groom to an existing `ShaderMaterial`:
+For callers that need an explicit success result:
 
 ```gdscript
-var ok: bool = profile.apply_to(shader_material, groom_data)
-if not ok:
-    push_error("Hair material setup failed.")
-```
-
-`apply_to()` validates a non-null groom resource before mutating the material. An unrelated `Resource` is rejected instead of silently leaving the material without groom textures.
-
-### 4. Generate LUTs for Fast and Cinematic
-
-Fast Marschner expects:
-
-```text
-res://benchmark/resources/luts/unity_azimuthal_64.res
-```
-
-Generate it with:
-
-```bash
-godot --headless --path . --script res://benchmark/tools/generate_unity_hair_azimuthal_lut.gd
-```
-
-Cinematic Marschner expects:
-
-```text
-res://benchmark/resources/luts/cinematic_longitudinal_kernel_128x128x64.res
-```
-
-Generate it with:
-
-```bash
-godot --headless --path . --script res://benchmark/tools/generate_marschner_cinematic_longitudinal_lut.gd
-```
-
-Custom LUT data resources can be supplied through the corresponding `HairMaterialProfile` override fields.
-
-## Editor support and hints
-
-Godot exposes the authoring API directly in the Inspector:
-
-- `@export_enum` presents shader and absorption modes as dropdowns.
-- `@export_range` constrains numeric controls to their intended authoring ranges.
-- export categories organize the material controls by tier.
-- `HairMaterialProfile` dynamically hides properties that do not affect the selected tier.
-- the preview's `groom_data` field keeps parser-safe `Resource` typing while exposing a `HairGroomData` resource-type hint in the Inspector.
-- GDScript `##` documentation comments on exported properties are displayed by Godot as Inspector tooltips.
-
-The included preview scene is useful for interactive authoring:
-
-```text
-res://demos/HairMaterialProfileEditor.tscn
-```
-
-Assign a `HairMaterialProfile` and `HairGroomData`, then switch `quality_tier` to compare the compiled variants in the editor viewport.
-
-## New groom setup — visual walkthrough
-
-The quick-start path above is the complete workflow. The three editor screenshots below show the hand-off between resources and the final mesh using this project’s actual Inspector fields and assets.
-
-### 1. Bind the groom maps
-
-1. In the FileSystem dock, open `res://demos/resources/`.
-2. Right-click the folder, choose **New > Resource...**, select `HairGroomData`, and save the resource as `new_groom_data.tres`.
-3. Select the new resource and assign these generated maps in the Inspector:
-   - `coords_texture` → `res://assets/hair/models/blowout/blowout_coords.png`
-   - `attributes_texture` → `res://assets/hair/models/blowout/blowout_attrib.png`
-
-[![Godot Inspector showing HairGroomData and its assigned groom textures](docs/images/new-groom-01-hair-groom-data.png)](docs/images/new-groom-01-hair-groom-data.png)
-
-*Screenshot 1 — `HairGroomData` owns the card-atlas maps; the channel contracts are not appearance-texture slots.*
-
-### 2. Choose the material mode
-
-1. In the same folder, choose **New > Resource... > HairMaterialProfile**, then save it as `new_hair_material_profile.tres`.
-2. Select the profile and open **Quality > `quality_tier`** in the Inspector.
-3. Choose one of `Approx / Kajiya-Kay`, `Fast Marschner`, `Cinematic Marschner`, or `Reference Marschner`.
-4. Edit the visible common fields under **Base Hair**. The selected mode reveals its own controls—for example, Fast Marschner exposes `absorption_mode` and its mode-specific absorption fields.
-
-[![Godot Inspector showing HairMaterialProfile quality tiers](docs/images/new-groom-02-hair-material-profile.png)](docs/images/new-groom-02-hair-material-profile.png)
-
-*Screenshot 2 — `quality_tier` selects the compiled shader and the Inspector hides controls that do not affect that mode.*
-
-### 3. Put the material on the hair mesh
-
-For the included editor preview:
-
-1. Open `res://demos/HairMaterialProfileEditor.tscn`.
-2. Select the root `HairMaterialProfileEditor` node. In **Hair Setup**, assign `material_profile` to `res://demos/resources/hair_material_profile_demo.tres` and `groom_data` to `res://demos/resources/blowout_groom_data.tres`.
-3. The `@tool` preview resolves the `HairPreview` MeshInstance3D and writes the generated `ShaderMaterial` to its `material_override`. Change `quality_tier` and watch the editor viewport refresh.
-
-For your own scene, the final assignment is the same API shown in Quick start:
-
-```gdscript
-var material: ShaderMaterial = profile.create_material(groom_data)
+var material := ShaderMaterial.new()
+if not profile.apply_to(material, groom_data, get_viewport()):
+    push_error("Hair material setup failed")
+    return
 hair_mesh.material_override = material
 ```
 
-[![Godot Inspector showing the preview material and groom assignments](docs/images/new-groom-03-material-assignment.png)](docs/images/new-groom-03-material-assignment.png)
+`apply_to()` validates a supplied groom before mutating the material and binds the production LUT required by Fast or Cinematic.
 
-*Screenshot 3 — profile + groom data become a `ShaderMaterial`, then land on `MeshInstance3D.material_override`.*
+## Coverage policy
 
-### Caveats
+`HairCoveragePolicy.Mode.AUTO` follows the actual viewport AA state **and** rendering method:
 
-- Keep `coords_texture` and `attributes_texture` paired with the card atlas and UVs that generated them. They are groom-specific shader data, not standard glTF metallic-roughness textures.
-- Preserve channel accuracy. In Godot’s texture import settings, prefer **Lossless** compression when artifacts alter coverage, tangent, depth, or seed values. The production shaders declare both maps with nearest filtering.
-- Fast Marschner needs `res://benchmark/resources/luts/unity_azimuthal_64.res`; Cinematic Marschner needs `res://benchmark/resources/luts/cinematic_longitudinal_kernel_128x128x64.res`. Generate missing LUTs before relying on those modes.
-- A MeshInstance3D has no direct `HairMaterialProfile` property. Use the included preview script or call `create_material()` / `apply_to()` from your scene script; do not expect dragging a profile onto `Material Override` to perform the composition.
+```text
+Forward+ or Mobile + MSAA  -> Alpha-to-Coverage
+otherwise Forward+ + TAA   -> 16-phase temporal Bayer
+otherwise                  -> Static Bayer, phase 0
+```
 
-## Choosing a shader tier
+Static Bayer is the stable fallback. Temporal Bayer advances once per rendered frame and is only selected automatically when TAA is actually available. A2C uses separate compiled shader variants because `alpha_to_coverage` is a shader render mode, not a runtime uniform switch.
 
-| Tier | Intended use | Important controls/resources |
+If viewport AA settings may change after material creation, register the material with a `HairCoverageController`:
+
+```gdscript
+coverage_controller.register_material(profile, material, get_viewport())
+```
+
+The controller updates the effective coverage variant and the 16-phase Bayer index from rendered-frame indices.
+
+## Optical wetness
+
+`wetness` is a `0..1` shading control. `0` is the strict dry compatibility endpoint; `1` is the calibrated saturated optical response.
+
+Wetness deliberately does **not** modify groom geometry. Clumping, collapse, strand adhesion, weight, and other shape changes should come from shape keys, a separate wet groom, or strand/card deformation. A game or animation system can drive both the material wetness and the geometry transition from the same higher-level wetness signal.
+
+At increasing wetness the shader:
+
+- adds an untinted strand-aligned dielectric water-film highlight using approximate water IOR `1.333`;
+- narrows the effective longitudinal highlight response;
+- narrows Marschner azimuthal scattering where the tier has a physical azimuthal model;
+- reduces cuticle/tangent-shift separation;
+- suppresses diffuse/multiple scattering to darken the hair body;
+- suppresses Marschner TT/TRT internal transport while keeping surface R reflection distinct from the film layer.
+
+Final calibrated defaults:
+
+| Control | Default |
+| --- | ---: |
+| `wetness` | `0.0` |
+| `wet_film_roughness` | `0.10` |
+| `wet_film_specular_strength` | `2.0` |
+| `wet_longitudinal_roughness_scale` | `0.45` |
+| `wet_azimuthal_roughness_scale` | `0.55` |
+| `wet_internal_scatter_scale` | `0.35` |
+| `wet_transmission_scale` | `0.65` |
+| `wet_cuticle_shift_scale` | `0.50` |
+
+Fast wetness never changes its preintegrated eta/IOR contract: the Fast azimuthal LUT remains pinned to `1.55`. See [`docs/hair_wetness.md`](docs/hair_wetness.md) for the model, tier behavior, calibration, and validation details.
+
+## LUT contracts
+
+The production LUTs are directly serialized `ImageTexture3D` resources and are loaded without a runtime `PackedByteArray -> ImageTexture3D` reconstruction step.
+
+**Fast Marschner** uses `unity_hdrp_azimuthal_n_v1`:
+
+```text
+64 x 64 x 64
+RGBA16F
+R = N_R
+G = N_TT
+B = N_TRT
+A = 1
+eta = 1.55
+```
+
+**Cinematic Marschner** uses `deon_physical_longitudinal_log2q_v2`:
+
+```text
+128 x 128 x 64
+R16F
+R = log2(Q)
+beta range = [0.05, 64]
+low-beta transition = [0.05, 0.10]
+```
+
+On `development`, the production resources live under `res://assets/hair/luts/`. The release package carries the same validated payloads under `res://addons/marschner_hair/luts/`.
+
+Custom compatible `Texture3D` resources may be assigned through the Fast/Cinematic override properties. Legacy raw-data resources remain supported only for development benchmark compatibility.
+
+## Choosing a tier
+
+| Tier | Intended use | Main tradeoff |
 | --- | --- | --- |
-| Approx / Kajiya-Kay | Simple fallback and non-Marschner comparison | Primary/secondary Kajiya-Kay lobes and scatter |
-| Fast Marschner | Production Marschner path using the Unity-style approximation | Absorption mode + Unity azimuthal LUT; IOR is pinned to the LUT eta |
-| Cinematic Marschner | Higher-fidelity Marschner path | Arbitrary IOR + Cinematic longitudinal LUT |
-| Reference Marschner | Analytic comparison/validation baseline | Existing analytic shader interface |
+| Approx / Kajiya-Kay | Constrained hardware, fallback, non-Marschner comparison | Lowest cost, least physical fidelity |
+| Fast Marschner | Normal production Marschner path | Good quality/cost balance; fixed eta `1.55` LUT contract |
+| Cinematic Marschner | High-fidelity shots where extra per-light cost is acceptable | Conditioned longitudinal 3D LUT is the most expensive production tier |
+| Reference Marschner | Analytic comparison and validation | Validation baseline rather than the default shipping tier |
 
-Fast's Unity-style LUT contract is built around eta `1.55`; `HairMarschnerLUTAdapter` binds the LUT metadata and pins the shader IOR accordingly. Cinematic keeps its IOR authorable.
+Validated production cost ordering remains:
+
+```text
+Approx < Fast < Reference < Cinematic
+```
+
+Coverage cost can dominate on constrained GPUs; `coverage_mode = Auto` is the normal recommendation.
 
 ## Material versus groom ownership
 
@@ -181,179 +196,100 @@ Fast's Unity-style LUT contract is built around eta `1.55`; `HairMarschnerLUTAda
 HairMaterialProfile                 HairGroomData
 -------------------                 -------------
 quality tier                         coords_texture
-hair color                           attributes_texture
-longitudinal roughness
-azimuthal roughness
-specular strength
-cuticle tilt
+coverage policy                      attributes_texture
+hair color
+roughness / specular / cuticle
+optical wetness
 absorption / melanin
 mode-specific LUT overrides
 Kajiya-Kay controls
 ```
 
-Do not treat `coords_texture` or `attributes_texture` as ordinary appearance textures. They are groom-specific shader data and must correspond to the card atlas/UVs used by the mesh.
+A `HairMaterialProfile` can be reused across multiple grooms. `HairGroomData` belongs to the card atlas that generated its maps.
 
-## API reference
+## Editor workflow
 
-### `HairMaterialProfile`
-
-Path:
+The development preview scene is:
 
 ```text
-res://assets/hair/materials/HairMaterialProfile.gd
+res://demos/HairMaterialProfileEditor.tscn
 ```
 
-#### `quality_tier: int`
+Assign a profile and groom resource, then change `quality_tier`, `coverage_mode`, or `wetness` while inspecting the result in the editor viewport.
 
-Selects the compiled shader variant.
+The three screenshots below show the basic resource hand-off:
+
+1. Create `HairGroomData` and assign the groom maps.
+2. Create `HairMaterialProfile` and choose the quality/appearance settings.
+3. Compose the two resources into a `ShaderMaterial` on the hair MeshInstance3D.
+
+[![HairGroomData resource](docs/images/new-groom-01-hair-groom-data.png)](docs/images/new-groom-01-hair-groom-data.png)
+
+[![HairMaterialProfile resource](docs/images/new-groom-02-hair-material-profile.png)](docs/images/new-groom-02-hair-material-profile.png)
+
+[![Material assignment](docs/images/new-groom-03-material-assignment.png)](docs/images/new-groom-03-material-assignment.png)
+
+## Primary runtime API
 
 ```text
-0 = Approx / Kajiya-Kay
-1 = Fast Marschner
-2 = Cinematic Marschner
-3 = Reference Marschner
+HairMaterialProfile.get_shader_resource(viewport = null) -> Shader
+HairMaterialProfile.get_effective_coverage_mode(viewport = null) -> int
+HairMaterialProfile.apply_to(material, groom_data = null, viewport = null) -> bool
+HairMaterialProfile.create_material(groom_data = null, viewport = null) -> ShaderMaterial
+HairMaterialProfile.update_coverage_for_viewport(material, viewport, rendered_frame_index = -1) -> bool
+HairMaterialProfile.bind_mode_resources(material) -> bool
 ```
 
-Prefer using `HairMaterialProfile.QualityTier` constants in code instead of hard-coded integers.
-
-#### `get_shader_resource() -> Shader`
-
-Returns the compiled shader resource selected by `quality_tier`.
-
-#### `apply_to(material: ShaderMaterial, groom_data: Resource = null) -> bool`
-
-Primary authoring/runtime entry point.
-
-It:
-
-1. validates a supplied groom resource;
-2. selects the compiled shader for `quality_tier`;
-3. preserves shared caller-owned groom/debug parameters across a shader swap;
-4. applies profile properties supported by the target shader;
-5. binds the Fast or Cinematic LUT when required;
-6. explicitly binds `HairGroomData` textures when supplied.
-
-Returns `false` when the material is invalid, the groom resource is incompatible/incomplete, or a required LUT cannot be bound.
-
-#### `create_material(groom_data: Resource = null) -> ShaderMaterial`
-
-Creates a new `ShaderMaterial` and applies this profile plus the optional groom data.
-
-This is a convenience constructor. It returns the material even when a LUT prerequisite is missing so the resource assignment can be inspected and corrected. Use `apply_to()` directly when the boolean success result is required by application logic.
-
-#### `apply_to_shader_material(material: ShaderMaterial) -> void`
-
-Compatibility API for benchmark or experimental callers that deliberately own shader selection. It applies values supported by the material's **current shader** and does not replace `material.shader`.
-
-#### `bind_mode_resources(material: ShaderMaterial) -> bool`
-
-Binds only the LUT required by the material's current production shader. Returns `true` for modes that do not require a production LUT.
-
-#### `bind_quality_resources(material: ShaderMaterial) -> bool`
-
-Compatibility alias for `bind_mode_resources()`.
-
-### `HairGroomData`
-
-Path:
-
-```text
-res://assets/hair/materials/HairGroomData.gd
-```
-
-#### `coords_texture: Texture2D`
-
-Groom coordinate map. RGB stores encoded strand tangent; alpha stores root-to-tip position.
-
-#### `attributes_texture: Texture2D`
-
-Groom attribute map. R stores coverage, G depth, and B deterministic strand seed.
-
-#### `is_complete() -> bool`
-
-Returns `true` when both required groom maps are assigned.
-
-#### `validation_message() -> String`
-
-Returns an empty string when complete, otherwise a human-readable list of missing groom fields.
-
-#### `apply_to_shader_material(material: ShaderMaterial, warn_on_failure: bool = true) -> bool`
-
-Validates that the material exposes the shared groom texture contract and binds both groom textures.
-
-#### `from_shader_material(material: ShaderMaterial) -> Resource`
-
-Migration helper for older generated hair materials. Creates a new groom-data resource by reading `coords_texture` and `attributes_texture` from the source material without modifying it.
-
-Example:
+Coverage modes:
 
 ```gdscript
-var groom_data: Resource = HairGroomData.from_shader_material(old_hair_material)
-ResourceSaver.save(groom_data, "res://hair/my_groom_data.tres")
+HairCoveragePolicy.Mode.AUTO
+HairCoveragePolicy.Mode.STATIC_BAYER
+HairCoveragePolicy.Mode.TAA_BAYER
+HairCoveragePolicy.Mode.ALPHA_TO_COVERAGE
 ```
 
-### `HairMarschnerLUTAdapter`
-
-Path:
-
-```text
-res://assets/hair/materials/HairMarschnerLUTAdapter.gd
-```
-
-Normally used internally by `HairMaterialProfile`. It validates generated LUT metadata, reconstructs/caches `Texture3D` resources, binds Fast/Cinematic shader parameters, and exposes `missing_default_resources()` for diagnosing missing generated LUT files.
-
-## Preserved material parameters
-
-When `HairMaterialProfile.apply_to()` switches compiled shader variants, it preserves compatible caller-owned parameters including:
-
-```text
-coords_texture
-attributes_texture
-show_hair_cards
-show_hashed_strands
-freeze_bayer_phase
-comparison_exposure_gain
-lobe_scales
-use_area_light_multipliers
-```
-
-Explicit `HairGroomData` takes precedence over preserved groom textures when supplied.
-
-## Imported / legacy groom migration
-
-Older generated assets may already contain the two groom textures inside a source `ShaderMaterial`. They can continue to work because shared parameters are preserved across tier switches.
-
-For new authoring, prefer extracting the maps into a `HairGroomData` resource:
+Quality tiers:
 
 ```gdscript
-var groom_data: Resource = HairGroomData.from_shader_material(existing_material)
+HairMaterialProfile.QualityTier.APPROX
+HairMaterialProfile.QualityTier.FAST_MARSCHNER
+HairMaterialProfile.QualityTier.CINEMATIC_MARSCHNER
+HairMaterialProfile.QualityTier.REFERENCE_MARSCHNER
 ```
 
-This makes groom data explicit and lets the hair appearance profile be reused independently.
-
-The groom maps are project-specific data consumed by these shaders; they are not part of the standard glTF metallic-roughness material texture set. If the hair-card mesh is delivered through glTF, keep these groom maps as associated project/import assets and bind them through `HairGroomData` after import.
+For deeper authoring details see [`docs/hair_material_authoring.md`](docs/hair_material_authoring.md).
 
 ## Validation
 
-Groom/card and editor contract:
+The development branch contains focused tests for the production contracts. The current release-relevant minimum is:
 
 ```bash
+# Coverage policy / 16-phase sequence
+godot --headless --path . --script res://benchmark/tests/test_hair_coverage_phase_sequence.gd
+godot --headless --path . --script res://benchmark/tests/test_hair_coverage_policy.gd
+
+# Groom/profile interface
 godot --headless --path . --script res://benchmark/tests/test_hair_groom_binding.gd
-```
-
-Production profile/LUT contract:
-
-```bash
 godot --headless --path . --script res://benchmark/tests/test_marschner_production_profile.gd
+
+# Wetness interface
+godot --headless --path . --script res://benchmark/tests/test_hair_wetness_interface.gd
+
+# Real-renderer resource/variant checks: do not use --headless
+godot --path . --script res://benchmark/tests/test_direct_lut_binding.gd
+godot --path . --script res://benchmark/tests/test_hair_coverage_runtime_policy.gd
+godot --path . --script res://benchmark/tests/test_hair_wetness_runtime.gd
 ```
 
-Expected success markers:
+The direct `ImageTexture3D` checks require a normal rendering context on the validated Godot 4.7 setup; the headless display path can serialize/load those resources as empty 1x1x1 stubs.
 
-```text
-HAIR_GROOM_BINDING_TEST_OK
-MARSCHNER_PRODUCTION_PROFILE_TEST_OK
-```
+Before publishing a release package, also run the package-level checks in [`docs/release_validation.md`](docs/release_validation.md). Those checks exist specifically to catch repathing/import mistakes introduced when the production sources move from `assets/hair/` to `addons/marschner_hair/`.
 
 ## Further documentation
 
-See [`docs/hair_material_authoring.md`](docs/hair_material_authoring.md) for the architecture and detailed authoring behavior behind the profile/groom split, shared card preparation, preview workflow, and shader-tier separation.
+- [`docs/hair_material_authoring.md`](docs/hair_material_authoring.md) — profile/groom ownership, coverage, LUT binding, shader switching, and runtime APIs.
+- [`docs/hair_wetness.md`](docs/hair_wetness.md) — optical wetness model, calibrated controls, tier behavior, and validation.
+- [`docs/direct_lut_storage.md`](docs/direct_lut_storage.md) — direct `ImageTexture3D` storage decision and benchmarks.
+- [`docs/hair_coverage_benchmark.md`](docs/hair_coverage_benchmark.md) — coverage-path benchmark and policy rationale.
+- [`docs/release_validation.md`](docs/release_validation.md) — release packaging and final validation checklist.
