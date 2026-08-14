@@ -64,9 +64,6 @@ float cinematic_sample_m(float sin_cone, float theta_o, float beta_eff) {
 	float log_min = log2(beta_min);
 	float log_span = max(log2(beta_max) - log_min, 1e-6);
 
-	// The LUT is uniform in physical angle rather than sin(theta), preserving
-	// resolution at grazing. R stores log2(Q), so hardware trilinear filtering
-	// interpolates the smooth log-kernel instead of the sharp linear peak.
 	float u = clamp(0.5 + theta_cone / PI, half_texel.x, 1.0 - half_texel.x);
 	float v = clamp(0.5 + theta_o / PI, half_texel.y, 1.0 - half_texel.y);
 	float w = clamp((log2(beta_sample) - log_min) / log_span, half_texel.z, 1.0 - half_texel.z);
@@ -78,8 +75,6 @@ float cinematic_sample_m(float sin_cone, float theta_o, float beta_eff) {
 		q_value = mix(q_asym, q_lut, t);
 	}
 
-	// Reconstruct M using the same regularized angular coordinates used by the
-	// texture sample. Narrower beta values use the analytic asymptotic path.
 	float theta_cone_eval = (u - 0.5) * PI;
 	float theta_o_eval = (v - 0.5) * PI;
 	float cos_cone_eval = max(cos(theta_cone_eval), 1e-5);
@@ -98,8 +93,6 @@ vec3 cinematic_longitudinal(float sin_theta_i, float sin_theta_o, float cos_thet
 	beta_eff[TRT] *= 2.0 * sqrt(max(ior * ior - sin_theta_d * sin_theta_d, 1e-6)) / max(cos_theta_d, 1e-5) - 1.0;
 	beta_eff = max(beta_eff, vec3(1e-8));
 
-	// Preserve the analytic baseline's azimuth-dependent effective cone/width
-	// before sampling one generic scalar longitudinal volume for all three paths.
 	vec3 sin_cone = clamp(-vec3(sin_theta_i) + (2.0 * z_prime - 2.0 * z) * alpha_internal, vec3(-1.0), vec3(1.0));
 	float theta_o = asin(clamp(sin_theta_o, -0.999999, 0.999999));
 	return vec3(
@@ -126,16 +119,18 @@ vec3 cinematic_bsdf(vec3 omega_i, vec3 omega_o_local) {
 	float eta_prime_inv = 1.0 / max(eta_prime, 1e-6);
 	vec3 h = cinematic_cross_section_offset(cos_phi_half, sin_phi_half, eta_prime_inv);
 
-	vec3 m = cinematic_longitudinal(sin_theta_i, sin_theta_o, cos_theta_d, sin_theta_d, cos_phi_half, -cuticle_tilt_offset, beta_reparam.x, h);
+	float effective_cuticle_tilt = hair_wet_effective_cuticle_tilt(cuticle_tilt_offset, wet_cuticle_shift_scale, wetness);
+	vec3 m = cinematic_longitudinal(sin_theta_i, sin_theta_o, cos_theta_d, sin_theta_d, cos_phi_half, -effective_cuticle_tilt, beta_reparam.x, h);
+	float wet_transport = hair_wet_transport_multiplier(wet_transmission_scale, wetness);
 	vec3 result = vec3(0.0);
 	float a_r = hair_fresnel_ior(cos_theta_d * cos_phi_half, ior);
 	result += vec3(0.25 * cos_phi_half * a_r * m[R] * lobe_scales[R]);
 	float n_tt = cinematic_logistic_distribution(cinematic_azimuthal_angular_offset(TT, cos_phi, sin_phi, eta_prime_inv, h[TT]), sqrt(2.0) / max(beta_reparam.y, 1e-6));
 	vec3 a_tt = cinematic_azimuthal_attenuation(TT, cos_theta_t, cos_theta_d, absorption_coefficient, eta_prime_inv, h[TT]);
-	result += n_tt * a_tt * m[TT] * lobe_scales[TT];
+	result += n_tt * a_tt * m[TT] * lobe_scales[TT] * wet_transport;
 	float n_trt = cinematic_logistic_distribution(cinematic_azimuthal_angular_offset(TRT, cos_phi, sin_phi, eta_prime_inv, h[TRT]), 0.5 * sqrt(2.0) / max(beta_reparam.y, 1e-6));
 	vec3 a_trt = cinematic_azimuthal_attenuation(TRT, cos_theta_t, cos_theta_d, absorption_coefficient, eta_prime_inv, h[TRT]);
-	result += n_trt * a_trt * m[TRT] * lobe_scales[TRT];
+	result += n_trt * a_trt * m[TRT] * lobe_scales[TRT] * wet_transport;
 	return max(result, vec3(0.0));
 }
 
@@ -151,7 +146,10 @@ void fragment() {
 	float coverage = attributes_sample.r;
 	float depth = attributes_sample.g;
 	float seed = attributes_sample.b;
-	vec2 beta_raw = vec2(longitudinal_roughness, azimuthal_roughness);
+	vec2 beta_dry = vec2(longitudinal_roughness, azimuthal_roughness);
+	vec2 beta_effective = vec2(
+		hair_wet_effective_roughness(beta_dry.x, wet_longitudinal_roughness_scale, wetness),
+		hair_wet_effective_roughness(beta_dry.y, wet_azimuthal_roughness_scale, wetness));
 #ifdef HAIR_COVERAGE_ALPHA_TO_COVERAGE
 	ALPHA = show_hair_cards ? 1.0 : hair_card_adjusted_coverage(
 		coverage,
@@ -178,13 +176,13 @@ void fragment() {
 	vec3 hash = hair_hash13(seed);
 	ALBEDO = hair_card_base_albedo(albedo, u, coverage, hash, show_hashed_strands);
 	SPECULAR = specular;
-	ROUGHNESS = beta_raw.x;
+	ROUGHNESS = beta_effective.x;
 	TANGENT = hair_card_frizzed_tangent(
 		mat3(TANGENT, BINORMAL, NORMAL),
 		tangent_texture_value,
 		hash,
 		u,
-		beta_raw.x);
+		beta_dry.x);
 	mat3 strand_frame = hair_card_orthonormal_frame(TANGENT, NORMAL);
 	TANGENT = strand_frame[0];
 	BINORMAL = strand_frame[1];
@@ -193,12 +191,12 @@ void fragment() {
 	omega_o = inv_tangent_matrix * VIEW;
 
 	vec3 safe_albedo = max(albedo, vec3(1e-4));
-	float c = 5.969 + beta_raw.y * (-0.215 + beta_raw.y * (2.532 + beta_raw.y * (-10.73 + beta_raw.y * (5.574 + beta_raw.y * 0.245))));
+	float c = 5.969 + beta_dry.y * (-0.215 + beta_dry.y * (2.532 + beta_dry.y * (-10.73 + beta_dry.y * (5.574 + beta_dry.y * 0.245))));
 	absorption_coefficient = log(safe_albedo) / max(c, 1e-4);
 	absorption_coefficient *= absorption_coefficient;
 	beta_reparam = max(vec2(1e-3), mix(0.8, 1.2, seed) * vec2(
-		0.726 * beta_raw.x + 0.812 * beta_raw.x * beta_raw.x + 3.700 * pow(beta_raw.x, 20.0),
-		0.265 * beta_raw.y + 1.194 * beta_raw.y * beta_raw.y + 5.372 * pow(beta_raw.y, 22.0)));
+		0.726 * beta_effective.x + 0.812 * beta_effective.x * beta_effective.x + 3.700 * pow(beta_effective.x, 20.0),
+		0.265 * beta_effective.y + 1.194 * beta_effective.y * beta_effective.y + 5.372 * pow(beta_effective.y, 22.0)));
 }
 
 void light() {
@@ -207,10 +205,14 @@ void light() {
 	vec3 area_specular_multiplier = (LIGHT_IS_AREA && use_area_light_multipliers) ? vec3(LIGHT_AREA_SPECULAR_MULTIPLIER) : vec3(1.0);
 	SPECULAR_LIGHT += comparison_exposure_gain * single_scattering * LIGHT_COLOR * ATTENUATION * specular * area_specular_multiplier;
 
+	float wet_film = hair_wet_film_specular(vec3(1.0, 0.0, 0.0), omega_i, omega_o, wetness, wet_film_roughness, wet_film_specular_strength);
+	SPECULAR_LIGHT += comparison_exposure_gain * vec3(wet_film) * LIGHT_COLOR * ATTENUATION * specular * area_specular_multiplier;
+
 	float yz_len2 = dot(omega_o.yz, omega_o.yz);
 	vec2 view_yz = yz_len2 > 1e-8 ? omega_o.yz * inversesqrt(yz_len2) : vec2(0.0, 1.0);
 	float luminance = max(dot(ALBEDO, vec3(0.299, 0.587, 0.114)), 1e-4);
 	vec3 multiple = 0.25 * sqrt(max(ALBEDO, vec3(0.0))) * (dot(omega_i.yz, view_yz) + 1.0)
 		* pow(max(ALBEDO / luminance, vec3(1e-4)), vec3(ATTENUATION));
+	multiple *= hair_wet_transport_multiplier(wet_internal_scatter_scale, wetness);
 	DIFFUSE_LIGHT += comparison_exposure_gain * multiple * smoothstep(-0.5, 1.0, ATTENUATION) * LIGHT_COLOR / PI;
 }
