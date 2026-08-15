@@ -16,3 +16,6 @@ addons/imgui-godot/bin/~*
 benchmark/resources/luts/*.res
 benchmark/results/*.json
 benchmark/results/production_tiers_*/
+
+# Generated release/demo movie captures and media manifests
+benchmark/results/release_media/
