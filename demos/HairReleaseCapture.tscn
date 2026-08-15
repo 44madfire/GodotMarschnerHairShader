@@ -1,0 +1,38 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="PackedScene" path="res://demos/HairMaterialProfileEditor.tscn" id="1_presentation"]
+[ext_resource type="Script" path="res://demos/release_capture_controller.gd" id="2_capture"]
+
+[node name="HairReleaseCapture" type="Node3D"]
+script = ExtResource("2_capture")
+
+[node name="Presentation" parent="." instance=ExtResource("1_presentation")]
+
+[node name="Overlay" type="CanvasLayer" parent="."]
+layer = 10
+
+[node name="Title" type="Label" parent="Overlay"]
+offset_left = 40.0
+offset_top = 36.0
+offset_right = 700.0
+offset_bottom = 120.0
+mouse_filter = 2
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_colors/font_outline_color = Color(0, 0, 0, 0.95)
+theme_override_constants/outline_size = 8
+theme_override_font_sizes/font_size = 30
+text = "Hair shader release capture"
+
+[node name="Attribution" type="Label" parent="Overlay"]
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 40.0
+offset_top = -62.0
+offset_right = 900.0
+offset_bottom = -26.0
+mouse_filter = 2
+theme_override_colors/font_color = Color(0.92, 0.92, 0.92, 1)
+theme_override_colors/font_outline_color = Color(0, 0, 0, 0.95)
+theme_override_constants/outline_size = 6
+theme_override_font_sizes/font_size = 18
+text = "Demo groom: CT2Hair / GodotHair — CC BY-NC 4.0"
