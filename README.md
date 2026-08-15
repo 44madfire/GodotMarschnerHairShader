@@ -234,7 +234,8 @@ The three screenshots below show the basic resource hand-off:
 The demo groom and these videos are released under **CC BY-NC 4.0**. The MP4s
 are attached to the private [PR13 demo media release](https://github.com/44madfire/GodotMarschnerHairShader/releases/tag/pr13-demo-media)
 instead of being stored in the repository; the looping GIF previews below are
-stored in this repository.
+stored in this repository and reflect the calibrated Approx-vs-Marschner
+comparison.
 
 | Capture | Preview |
 | --- | --- |
