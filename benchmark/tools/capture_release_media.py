@@ -8,6 +8,7 @@ not part of the MIT-only addon package.
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 import json
 import math
 import os
@@ -16,7 +17,7 @@ import shlex
 import shutil
 import subprocess
 import sys
-from typing import Iterable
+from typing import Iterable, Iterator
 
 CAPTURES = (
     {
@@ -83,6 +84,66 @@ def resolve_executable(value: str) -> str:
     if resolved:
         return resolved
     raise FileNotFoundError(f"Executable not found: {value}")
+
+
+def is_windows_executable(executable: str) -> bool:
+    """True when the resolved executable is a Windows .exe launched from WSL/Linux."""
+    return executable.lower().endswith(".exe")
+
+
+def windows_native_path(path: Path) -> str:
+    """Convert a POSIX path to a Windows-native path using wslpath.
+
+    Only used for the --write-movie argument when the Godot executable is a
+    Windows .exe; ffmpeg/ffprobe keep the POSIX path. Relative paths are
+    returned unchanged. Absolute paths are translated (e.g. /mnt/c/... ->
+    C:\\..., /home/... -> \\\\wsl$\\<distro>\\...) so the native Windows
+    process can open the file.
+    """
+    if not path.is_absolute():
+        return str(path)
+    wslpath = shutil.which("wslpath")
+    if wslpath is None:
+        raise RuntimeError(
+            "wslpath not found: cannot convert the --write-movie path "
+            f"{path} to a Windows-native path for the Windows Godot executable"
+        )
+    completed = subprocess.run(
+        [wslpath, "-w", str(path)],
+        check=True,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    return completed.stdout.strip()
+
+
+@contextmanager
+def movie_viewport_override(project: Path, width: int, height: int) -> Iterator[None]:
+    """Temporarily configure a high-resolution Movie Maker viewport.
+
+    Godot derives Movie Maker output dimensions from the viewport. The startup
+    window can be clamped by the host display, so --resolution alone cannot
+    reliably produce release-sized media on a smaller desktop or WSLg display.
+    """
+    override_path = project / "override.cfg"
+    original = override_path.read_bytes() if override_path.is_file() else None
+    override_path.write_text(
+        "[display]\n\n"
+        f"window/size/viewport_width={width}\n"
+        f"window/size/viewport_height={height}\n"
+        "window/size/window_width_override=0\n"
+        "window/size/window_height_override=0\n"
+        'window/stretch/mode="viewport"\n',
+        encoding="utf-8",
+    )
+    try:
+        yield
+    finally:
+        if original is None:
+            override_path.unlink(missing_ok=True)
+        else:
+            override_path.write_bytes(original)
 
 
 def run_streamed(command: list[str], expected_marker: str | None = None) -> None:
@@ -220,58 +281,63 @@ def main() -> int:
         "captures": [],
     }
 
-    for capture in captures:
-        raw_path = output / f"{capture['name']}.{args.movie_format}"
-        mp4_path = output / f"{capture['name']}.mp4"
-        raw_path.unlink(missing_ok=True)
-        mp4_path.unlink(missing_ok=True)
+    with movie_viewport_override(project, args.width, args.height):
+        for capture in captures:
+            raw_path = output / f"{capture['name']}.{args.movie_format}"
+            mp4_path = output / f"{capture['name']}.mp4"
+            raw_path.unlink(missing_ok=True)
+            mp4_path.unlink(missing_ok=True)
 
-        godot_command = [
-            godot,
-            "--path",
-            str(project),
-            "--scene",
-            SCENE,
-            "--write-movie",
-            str(raw_path),
-            "--fixed-fps",
-            str(args.fps),
-            "--resolution",
-            f"{args.width}x{args.height}",
-            "--disable-vsync",
-            "--",
-            *capture["args"],
-        ]
-        run_streamed(godot_command, MOVIE_MARKER)
-        if not raw_path.is_file() or raw_path.stat().st_size == 0:
-            raise RuntimeError(f"MovieWriter did not produce {raw_path}")
+            write_movie_path = str(raw_path)
+            if is_windows_executable(godot):
+                write_movie_path = windows_native_path(raw_path)
 
-        final_path = raw_path
-        media_probe = None
-        if ffmpeg is not None:
-            convert_to_mp4(ffmpeg, raw_path, mp4_path, args.crf)
-            final_path = mp4_path
-            if ffprobe is not None:
-                media_probe = probe_media(
-                    ffprobe,
-                    mp4_path,
-                    args.width,
-                    args.height,
-                    args.fps,
-                    float(capture["expected_duration"]),
-                )
-            if not args.keep_intermediate:
-                raw_path.unlink(missing_ok=True)
+            godot_command = [
+                godot,
+                "--path",
+                str(project),
+                "--scene",
+                SCENE,
+                "--write-movie",
+                write_movie_path,
+                "--fixed-fps",
+                str(args.fps),
+                "--resolution",
+                f"{args.width}x{args.height}",
+                "--disable-vsync",
+                "--",
+                *capture["args"],
+            ]
+            run_streamed(godot_command, MOVIE_MARKER)
+            if not raw_path.is_file() or raw_path.stat().st_size == 0:
+                raise RuntimeError(f"MovieWriter did not produce {raw_path}")
 
-        manifest["captures"].append(
-            {
-                "name": capture["name"],
-                "description": capture["description"],
-                "file": final_path.name,
-                "expected_duration": capture["expected_duration"],
-                "probe": media_probe,
-            }
-        )
+            final_path = raw_path
+            media_probe = None
+            if ffmpeg is not None:
+                convert_to_mp4(ffmpeg, raw_path, mp4_path, args.crf)
+                final_path = mp4_path
+                if ffprobe is not None:
+                    media_probe = probe_media(
+                        ffprobe,
+                        mp4_path,
+                        args.width,
+                        args.height,
+                        args.fps,
+                        float(capture["expected_duration"]),
+                    )
+                if not args.keep_intermediate:
+                    raw_path.unlink(missing_ok=True)
+
+            manifest["captures"].append(
+                {
+                    "name": capture["name"],
+                    "description": capture["description"],
+                    "file": final_path.name,
+                    "expected_duration": capture["expected_duration"],
+                    "probe": media_probe,
+                }
+            )
 
     manifest_path = output / "release_media_manifest.json"
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
