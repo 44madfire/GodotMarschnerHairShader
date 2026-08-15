@@ -58,4 +58,6 @@ Attribution:
 
 > CT2Hair by Yuefan Shen, Shunsuke Saito, Ziyan Wang, Olivier Maury, Chenglei Wu, Jessica Hodgins, Youyi Zheng, and Giljoo Nam / Meta Research. Adapted into the GodotHair hair-card demo dataset by Ethan Truong. Licensed under CC BY-NC 4.0. Further Godot integration/packaging changes are present in this repository.
 
+Project-published screenshots and videos that visibly reproduce these supplied demo grooms are treated as **demo media under CC BY-NC 4.0** and should preserve the attribution above. They are not part of the MIT-only addon distribution.
+
 The distributable `release/0.1.0` addon package does **not** include `assets/hair/models/**`; therefore these CC BY-NC demo assets are not part of the standalone `addons/marschner_hair/` runtime distribution.
