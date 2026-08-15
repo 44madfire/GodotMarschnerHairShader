@@ -10,6 +10,7 @@ extends Node3D
 
 const CAPTURE_QUALITY: String = "quality"
 const CAPTURE_WETNESS: String = "wetness"
+const CAPTURE_WETNESS_STATE: String = "wetness_state"
 
 const QUALITY_NAMES: Array[String] = [
 	"Approx / Kajiya-Kay",
@@ -45,6 +46,7 @@ const WETNESS_WET_HOLD_SECONDS: float = 1.0
 var _profile: Resource
 var _capture_mode: String = CAPTURE_QUALITY
 var _wetness_tier: int = 1
+var _wetness_state_value: float = 0.0
 var _elapsed: float = 0.0
 var _active_quality_tier: int = -1
 var _orbit_pivot: Vector3
@@ -85,6 +87,11 @@ func _ready() -> void:
 			_profile.set(&"wetness", 0.0)
 			_refresh_presentation()
 			_update_wetness_label(0.0)
+		CAPTURE_WETNESS_STATE:
+			_set_quality_tier(_wetness_tier)
+			_profile.set(&"wetness", _wetness_state_value)
+			_refresh_presentation()
+			_update_wetness_state_label()
 		_:
 			_fail("Unsupported capture mode: %s" % _capture_mode)
 
@@ -99,6 +106,8 @@ func _process(delta: float) -> void:
 			_tick_quality_capture()
 		CAPTURE_WETNESS:
 			_tick_wetness_capture()
+		CAPTURE_WETNESS_STATE:
+			_tick_wetness_state_capture()
 
 
 func _tick_quality_capture() -> void:
@@ -140,6 +149,20 @@ func _tick_wetness_capture() -> void:
 	_update_wetness_label(wetness_value)
 
 
+func _tick_wetness_state_capture() -> void:
+	# Fixed-wetness full-orbit capture: wetness stays constant while the camera
+	# completes one 360-degree orbit over the same 6 s used by each quality
+	# segment. Fast and Cinematic state clips are combined side by side after
+	# capture, so each half keeps its own in-frame tier/wetness label.
+	if _elapsed >= QUALITY_SEGMENT_SECONDS:
+		_finish_capture()
+		return
+
+	var orbit_progress: float = clampf(_elapsed / QUALITY_SEGMENT_SECONDS, 0.0, 1.0)
+	_set_orbit_angle(TAU * orbit_progress)
+	_update_wetness_state_label()
+
+
 func _set_quality_tier(tier: int) -> void:
 	_active_quality_tier = clampi(tier, 0, QUALITY_NAMES.size() - 1)
 	_profile.set(&"quality_tier", _active_quality_tier)
@@ -169,6 +192,10 @@ func _update_wetness_label(wetness_value: float) -> void:
 	_title_label.text = "%s\nWetness %.2f" % [QUALITY_NAMES[_wetness_tier], wetness_value]
 
 
+func _update_wetness_state_label() -> void:
+	_title_label.text = "%s\nWetness %.2f" % [QUALITY_NAMES[_wetness_tier], _wetness_state_value]
+
+
 func _parse_user_args() -> void:
 	for argument in OS.get_cmdline_user_args():
 		if argument.begins_with("--capture="):
@@ -179,12 +206,21 @@ func _parse_user_args() -> void:
 				_wetness_tier = int(QUALITY_ALIASES[alias])
 			else:
 				push_warning("Unknown --tier=%s; defaulting to Fast Marschner" % alias)
+		elif argument.begins_with("--wetness="):
+			var raw: String = argument.trim_prefix("--wetness=")
+			if raw.is_valid_float():
+				_wetness_state_value = clampf(raw.to_float(), 0.0, 1.0)
+			else:
+				push_warning("Unknown --wetness=%s; defaulting to 0.0" % raw)
 
 
 func _finish_capture() -> void:
 	_finished = true
 	set_process(false)
-	print("HAIR_RELEASE_CAPTURE_OK mode=%s tier=%s" % [_capture_mode, QUALITY_NAMES[_wetness_tier]])
+	print(
+		"HAIR_RELEASE_CAPTURE_OK mode=%s tier=%s wetness=%.2f"
+		% [_capture_mode, QUALITY_NAMES[_wetness_tier], _wetness_state_value]
+	)
 	# SceneTree.quit() lets MovieWriter finalize the output container cleanly.
 	get_tree().quit(0)
 
