@@ -229,6 +229,18 @@ The three screenshots below show the basic resource hand-off:
 
 [![Material assignment](docs/images/new-groom-03-material-assignment.png)](docs/images/new-groom-03-material-assignment.png)
 
+## Demo videos
+
+The demo groom and these videos are released under **CC BY-NC 4.0**. The MP4s
+are attached to the private [PR13 demo media release](https://github.com/44madfire/GodotMarschnerHairShader/releases/tag/pr13-demo-media)
+instead of being stored in the repository.
+
+| Capture | Preview |
+| --- | --- |
+| [Quality tiers](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/quality-tiers.mp4) | [![Quality tiers preview](docs/images/demo-video-quality-tiers.png)](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/quality-tiers.mp4) |
+| [Fast Marschner wetness](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/fast-wetness.mp4) | [![Fast Marschner wetness preview](docs/images/demo-video-fast-wetness.png)](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/fast-wetness.mp4) |
+| [Cinematic Marschner wetness](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/cinematic-wetness.mp4) | [![Cinematic Marschner wetness preview](docs/images/demo-video-cinematic-wetness.png)](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/cinematic-wetness.mp4) |
+
 ## Primary runtime API
 
 ```text
