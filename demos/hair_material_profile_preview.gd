@@ -10,6 +10,7 @@ class_name HairMaterialProfilePreview
 
 const PREVIEW_ROOT_PATH: NodePath = NodePath("HairPreview")
 const PREVIEW_EXPOSURE_GAIN: float = 1.1
+const APPROX_ALBEDO_GAIN: Vector3 = Vector3(0.979, 1.158, 1.162)
 
 @export_category("Hair Setup")
 @export var material_profile: HairMaterialProfile:
@@ -143,6 +144,24 @@ func _apply_preview_material_defaults() -> void:
 		_preview_material.set_shader_parameter(&"freeze_bayer_phase", true)
 	if uniform_names.has(&"comparison_exposure_gain"):
 		_preview_material.set_shader_parameter(&"comparison_exposure_gain", PREVIEW_EXPOSURE_GAIN)
+
+	# Approx's Kajiya-Kay shader multiplies both longitudinal lobes by ALBEDO and
+	# then applies these lobe colors again. Keep the comparison's authored brown
+	# body color while removing that extra warm tint from the demo presentation.
+	if material_profile != null and material_profile.quality_tier == HairMaterialProfile.QualityTier.APPROX:
+		if uniform_names.has(&"primary_color"):
+			_preview_material.set_shader_parameter(&"primary_color", Color.WHITE)
+		if uniform_names.has(&"secondary_color"):
+			_preview_material.set_shader_parameter(&"secondary_color", Color.WHITE)
+		if uniform_names.has(&"albedo"):
+			var authored_albedo: Color = material_profile.albedo
+			var calibrated_albedo := Color(
+				clampf(authored_albedo.r * APPROX_ALBEDO_GAIN.x, 0.0, 1.0),
+				clampf(authored_albedo.g * APPROX_ALBEDO_GAIN.y, 0.0, 1.0),
+				clampf(authored_albedo.b * APPROX_ALBEDO_GAIN.z, 0.0, 1.0),
+				authored_albedo.a
+			)
+			_preview_material.set_shader_parameter(&"albedo", calibrated_albedo)
 
 
 func _has_required_groom_textures(material: ShaderMaterial) -> bool:
