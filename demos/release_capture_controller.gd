@@ -133,6 +133,9 @@ func _tick_wetness_capture() -> void:
 		wetness_value = orbit_progress
 
 	_profile.set(&"wetness", wetness_value)
+	# Refresh in the same frame so the displayed numeric label and shader uniform
+	# cannot drift by one frame if process ordering changes.
+	_refresh_presentation()
 	_set_orbit_angle(TAU * orbit_progress)
 	_update_wetness_label(wetness_value)
 
@@ -146,8 +149,8 @@ func _set_quality_tier(tier: int) -> void:
 
 
 func _refresh_presentation() -> void:
-	# HairMaterialProfilePreview exposes this editor/runtime refresh helper. Calling
-	# it at discrete tier changes avoids waiting a frame for signature polling.
+	# HairMaterialProfilePreview exposes this editor/runtime refresh helper. Use it
+	# for tier changes and capture-time wetness updates to keep output deterministic.
 	if _presentation.has_method(&"_refresh_preview"):
 		_presentation.call(&"_refresh_preview")
 
