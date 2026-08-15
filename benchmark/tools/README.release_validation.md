@@ -43,10 +43,16 @@ See `docs/release_media.md` for clip contents, licensing, visual review, and out
 Looping GIF previews of the validated captures live in this repository under
 `docs/images/` (source MP4s stay attached to the private
 [PR13 demo media release](https://github.com/44madfire/GodotMarschnerHairShader/releases/tag/pr13-demo-media)).
-The demo groom and these videos are released under **CC BY-NC 4.0**.
+The demo groom and these videos are released under **CC BY-NC 4.0**. Quality-tier
+previews show one orbit segment per tier (Approx, Fast Marschner, and Cinematic
+Marschner; Reference is omitted). Wetness previews are side-by-side
+Fast-vs-Cinematic comparisons at the dry, mid, and wet endpoints.
 
 | Capture | Preview |
 | --- | --- |
-| [Quality tiers](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/quality-tiers.mp4) | [![Quality tiers preview](../../docs/images/demo-video-quality-tiers.gif)](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/quality-tiers.mp4) |
-| [Fast Marschner wetness](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/fast-wetness.mp4) | [![Fast Marschner wetness preview](../../docs/images/demo-video-fast-wetness.gif)](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/fast-wetness.mp4) |
-| [Cinematic Marschner wetness](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/cinematic-wetness.mp4) | [![Cinematic Marschner wetness preview](../../docs/images/demo-video-cinematic-wetness.gif)](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/cinematic-wetness.mp4) |
+| [Quality tiers — Approx](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/quality-tiers.mp4) | [![Approx preview](../../docs/images/demo-video-approx.gif)](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/quality-tiers.mp4) |
+| [Quality tiers — Fast Marschner](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/quality-tiers.mp4) | [![Fast Marschner preview](../../docs/images/demo-video-fast.gif)](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/quality-tiers.mp4) |
+| [Quality tiers — Cinematic Marschner](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/quality-tiers.mp4) | [![Cinematic Marschner preview](../../docs/images/demo-video-cinematic.gif)](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/quality-tiers.mp4) |
+| [Wetness 0.00 — Fast vs Cinematic](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/fast-wetness.mp4) ([cinematic](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/cinematic-wetness.mp4)) | [![Wetness 0.00 preview](../../docs/images/demo-video-wetness-0.gif)](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/fast-wetness.mp4) |
+| [Wetness 0.50 — Fast vs Cinematic](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/fast-wetness.mp4) ([cinematic](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/cinematic-wetness.mp4)) | [![Wetness 0.50 preview](../../docs/images/demo-video-wetness-05.gif)](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/fast-wetness.mp4) |
+| [Wetness 1.00 — Fast vs Cinematic](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/fast-wetness.mp4) ([cinematic](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/cinematic-wetness.mp4)) | [![Wetness 1.00 preview](../../docs/images/demo-video-wetness-1.gif)](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/fast-wetness.mp4) |
