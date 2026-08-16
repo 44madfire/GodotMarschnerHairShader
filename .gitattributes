@@ -1,1 +1,14 @@
-benchmark/resources/luts/fast_marschner_r_standardized_lut_256x256x128.res filter=lfs diff=lfs merge=lfs -text
+# Godot text resources
+*.gd text eol=lf
+*.gdshader text eol=lf
+*.gdshaderinc text eol=lf
+*.tscn text eol=lf
+*.tres text eol=lf
+*.cfg text eol=lf
+*.md text eol=lf
+*.obj text eol=lf
+
+# Binary assets
+*.glb binary
+*.png binary
+*.res binary
