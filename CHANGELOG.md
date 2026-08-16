@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+Release-branch cleanup before the public launch.
+
+### Changed
+
+- Removed the development-only analytic Reference Marschner tier from the release addon and public `HairMaterialProfile` API. Release quality tiers are now Approx, Fast Marschner, and Cinematic Marschner.
+- Renamed public addon scripts to Godot-style snake_case filenames while preserving their PascalCase `class_name` APIs.
+- Renamed the Fast Marschner shader files to describe their release tier rather than their Unity implementation provenance.
+- Centralized shader-uniform reflection and parameter preservation in `internal/hair_shader_utils.gd`.
+- Replaced dictionary-based coverage-controller entries with a typed internal entry class.
+- Refocused the README on the release workflow and added `docs/architecture.md`.
+- The demo profile now opens on Cinematic Marschner instead of the removed Reference tier.
+
 ## 0.1.0-rc3
 
 Third release candidate of the Godot 4.7 production hair shader stack, packaged
