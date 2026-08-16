@@ -1,4 +1,4 @@
-// Unity HDRP Standard-style production Fast Marschner body.
+// Unity HDRP Standard-style production Fast body.
 // The top-level wrapper owns every uniform/varying declaration so Godot 4.7
 // exposes the complete material interface through get_shader_uniform_list().
 
@@ -30,7 +30,10 @@ vec3 unity_absorption_coefficient(vec3 base_color, float radial_roughness) {
 vec3 sample_unity_azimuthal(float phi, float cos_theta_d, float radial_roughness) {
 	ivec3 dims = textureSize(unity_azimuthal_lut, 0);
 	vec3 half_texel = 0.5 / vec3(max(dims, ivec3(2)));
-	vec3 uvw = vec3((phi + TAU) / (2.0 * TAU), cos_theta_d, radial_roughness);
+	vec3 uvw = vec3(
+		(phi + TAU) / (2.0 * TAU),
+		cos_theta_d,
+		radial_roughness);
 	uvw = clamp(uvw, half_texel, vec3(1.0) - half_texel);
 	return max(texture(unity_azimuthal_lut, uvw).rgb, vec3(0.0));
 }
@@ -58,7 +61,8 @@ vec3 unity_standard_bsdf(vec3 omega_i, vec3 omega_o_local) {
 	float cos_theta_t = sqrt(max(0.0, 1.0 - sin_theta_o * sin_theta_o / max(ior * ior, 1e-6)));
 
 	float h_tt = 0.0;
-	float f_tt = hair_fresnel_ior(cos_theta_o, ior);
+	float cos_gamma_o_tt = 1.0;
+	float f_tt = hair_fresnel_ior(cos_theta_o * cos_gamma_o_tt, ior);
 	float sin_gamma_t_tt = h_tt / max(eta_prime, 1e-5);
 	float cos_gamma_t_tt = sqrt(max(0.0, 1.0 - sin_gamma_t_tt * sin_gamma_t_tt));
 	vec3 tr_tt = exp(-max(sigma_a, vec3(0.0)) * (2.0 * cos_gamma_t_tt / max(cos_theta_t, 1e-4)));
@@ -101,9 +105,26 @@ void fragment() {
 	float depth = attributes_sample.g;
 	float seed = attributes_sample.b;
 #ifdef HAIR_COVERAGE_ALPHA_TO_COVERAGE
-	ALPHA = show_hair_cards ? 1.0 : hair_card_adjusted_coverage(coverage, depth, vertex_world, CAMERA_POSITION_WORLD, MODEL_MATRIX[0].xyz, PROJECTION_MATRIX[1][1]);
+	ALPHA = show_hair_cards ? 1.0 : hair_card_adjusted_coverage(
+		coverage,
+		depth,
+		vertex_world,
+		CAMERA_POSITION_WORLD,
+		MODEL_MATRIX[0].xyz,
+		PROJECTION_MATRIX[1][1]);
 #else
-	if (!hair_card_should_keep_phase(coverage, depth, vertex_world, UV, FRAGCOORD.xy, textureSize(attributes_texture, 0), bayer_phase_index, show_hair_cards, CAMERA_POSITION_WORLD, MODEL_MATRIX[0].xyz, PROJECTION_MATRIX[1][1])) discard;
+	if (!hair_card_should_keep_phase(
+		coverage,
+		depth,
+		vertex_world,
+		UV,
+		FRAGCOORD.xy,
+		textureSize(attributes_texture, 0),
+		bayer_phase_index,
+		show_hair_cards,
+		CAMERA_POSITION_WORLD,
+		MODEL_MATRIX[0].xyz,
+		PROJECTION_MATRIX[1][1])) discard;
 #endif
 	strand_depth = depth;
 
@@ -115,7 +136,14 @@ void fragment() {
 	ALBEDO = hair_card_base_albedo(albedo, u, coverage, hash, show_hashed_strands);
 	SPECULAR = specular;
 	ROUGHNESS = effective_longitudinal;
-	TANGENT = hair_card_frizzed_tangent(mat3(TANGENT, BINORMAL, NORMAL), tangent_texture_value, hash, u, longitudinal_roughness);
+	// Wetness is optical only; keep the authored dry roughness for tangent/frizz
+	// perturbation so the shader does not implicitly reshape the groom.
+	TANGENT = hair_card_frizzed_tangent(
+		mat3(TANGENT, BINORMAL, NORMAL),
+		tangent_texture_value,
+		hash,
+		u,
+		longitudinal_roughness);
 	mat3 strand_frame = hair_card_orthonormal_frame(TANGENT, NORMAL);
 	TANGENT = strand_frame[0];
 	BINORMAL = strand_frame[1];
@@ -128,6 +156,8 @@ void fragment() {
 	vec3 roughness = vec3(perceptual_l, 0.5 * perceptual_l, 2.0 * perceptual_l);
 	unity_beta_variance = roughness * roughness;
 	unity_radial_roughness = clamp(effective_azimuthal, 0.0, 0.99);
+	// Preserve the dry absorption reparameterization. Wet darkening is applied
+	// explicitly through transmission/multiple-scattering controls instead.
 	sigma_a = unity_absorption_coefficient(albedo, clamp(azimuthal_roughness, 0.0, 0.99));
 }
 
