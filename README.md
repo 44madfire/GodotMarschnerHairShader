@@ -46,6 +46,20 @@ Inspector fields and assets.
    `res://assets/hair/models/blowout/blowout_coords.png` and
    `blowout_attrib.png`).
 
+These are generated **groom-data maps**, not color, normal, or appearance
+textures. Keep them paired with the card mesh and UV atlas that produced them:
+
+| Map | Channels | Meaning |
+| --- | --- | --- |
+| `coords_texture` | RGB | Strand tangent direction, encoded from `[-1, 1]` into `[0, 1]` |
+| `coords_texture` | A | Root-to-tip coordinate (`0` at the root, `1` at the tip) |
+| `attributes_texture` | R | Card coverage / strand occupancy |
+| `attributes_texture` | G | Strand depth within the card layer |
+| `attributes_texture` | B | Deterministic per-strand seed for stable variation |
+
+The shaders decode these values per hair card. Use lossless import settings when
+compression would change the encoded tangent, coverage, depth, or seed values.
+
 [![Godot Inspector showing HairGroomData and its assigned groom textures](docs/images/new-groom-01-hair-groom-data.png)](docs/images/new-groom-01-hair-groom-data.png)
 
 *Screenshot 1 — `HairGroomData` owns the card-atlas maps; the channel
@@ -76,12 +90,30 @@ hides controls that do not affect that mode.*
    generated `ShaderMaterial` to its `material_override`. Change
    `quality_tier` and watch the editor viewport refresh.
 
-For your own scene, the final assignment is the same API:
+For your own scene, the simplest path is to let `create_material()` construct
+and configure the `ShaderMaterial`, then assign it to the hair mesh. Passing the
+owning viewport is recommended when `coverage_mode = Auto`, because it resolves
+the initial AA-dependent shader variant immediately:
 
 ```gdscript
-var material: ShaderMaterial = profile.create_material(groom_data)
+var material: ShaderMaterial = profile.create_material(groom_data, get_viewport())
 hair_mesh.material_override = material
 ```
+
+This is **not** a second required assignment step for the editor workflow; the
+preview scene performs the same work automatically. Use `apply_to()` only when
+your code already owns a `ShaderMaterial` and needs an explicit success result:
+
+```gdscript
+var material := ShaderMaterial.new()
+if not profile.apply_to(material, groom_data, get_viewport()):
+	push_error("Hair material setup failed")
+	return
+hair_mesh.material_override = material
+```
+
+Both paths bind the groom textures and the packaged Fast/Cinematic LUTs. Choose
+one path, not both.
 
 [![Godot Inspector showing the preview material and groom assignments](docs/images/new-groom-03-material-assignment.png)](docs/images/new-groom-03-material-assignment.png)
 
