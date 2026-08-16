@@ -23,8 +23,8 @@ CAPTURES = (
     {
         "name": "quality-tiers",
         "args": ("--capture=quality",),
-        "expected_duration": 24.0,
-        "description": "Approx, Fast, Cinematic, and Reference; one identical orbit per tier.",
+        "expected_duration": 18.0,
+        "description": "Approx, Fast, and Cinematic; one identical orbit per tier.",
     },
     {
         "name": "fast-wetness",

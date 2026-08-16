@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
 """Generate looping GIF previews for the PR13 demo media.
 
-Captures fixed-wetness full-orbit state clips (Fast and Cinematic Marschner at
-wetness 0.00 / 0.33 / 0.67 / 1.00) with Godot Movie Maker mode, combines each
-Fast/Cinematic pair side by side, and converts the result to a looping GIF
+Captures fixed-wetness full-orbit state clips (Approx / Kajiya-Kay, Fast
+Marschner, and Cinematic Marschner at wetness 0.00 / 0.33 / 0.67 / 1.00) with
+Godot Movie Maker mode and converts each clip individually to a looping GIF
 under docs/images/ using ffmpeg palettegen/paletteuse.
 
 Each wetness GIF is a full 6-second seamless orbit (the same duration as one
-quality-tier segment), not a crop from the changing-wetness ramp video. The
-quality-tier GIFs are split from the calibrated quality-tiers.mp4 release clip
-and are retained as-is; this script only (re)generates the wetness-state
-comparison GIFs.
+quality-tier segment), not a crop from the changing-wetness ramp video. Every
+tier/wetness combination is an individual GIF; the wetness README matrix lays
+them out as one GIF per cell with no side-by-side stacking. The quality-tier
+GIFs are split from the calibrated quality-tiers.mp4 release clip and are
+retained as-is; this script only (re)generates the wetness-state GIFs.
 
 The generated media depicts the CC BY-NC 4.0 demo groom. It is release media,
 not part of the MIT-only addon package.
@@ -34,13 +35,10 @@ MOVIE_MARKER = "HAIR_RELEASE_CAPTURE_OK"
 MEDIA_LICENSE = "CC BY-NC 4.0 (video depicts the CT2Hair/GodotHair demo groom)"
 
 WETNESS_VALUES = (0.00, 0.33, 0.67, 1.00)
-TIERS = ("fast", "cinematic")
-# Primary tier on the left for each README row. Row 2 emphasizes Fast, row 3
-# emphasizes Cinematic; both are side-by-side Fast-vs-Cinematic comparisons.
-ROW_LAYOUTS = (
-    ("fast", "fast-wetness"),
-    ("cinematic", "cinematic-wetness"),
-)
+# One individual GIF per tier at every fixed wetness state.
+TIERS = ("approx", "fast", "cinematic")
+# Wetness code embedded in the GIF file name: 0.00 -> 000, 1.00 -> 100.
+WETNESS_CODE = {0.00: "000", 0.33: "033", 0.67: "067", 1.00: "100"}
 
 
 def parse_args() -> argparse.Namespace:
@@ -61,8 +59,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--width", type=int, default=1920)
     parser.add_argument("--height", type=int, default=1080)
     parser.add_argument("--gif-fps", type=int, default=15, help="GIF frame rate")
-    parser.add_argument("--gif-width", type=int, default=960, help="Side-by-side GIF width")
-    parser.add_argument("--gif-height", type=int, default=270, help="Side-by-side GIF height")
+    parser.add_argument("--gif-width", type=int, default=480, help="Individual GIF width")
+    parser.add_argument("--gif-height", type=int, default=270, help="Individual GIF height")
     parser.add_argument("--ffmpeg", default="ffmpeg", help="ffmpeg executable")
     parser.add_argument("--ffprobe", default="ffprobe", help="ffprobe executable")
     parser.add_argument("--keep-intermediate", action="store_true", help="Keep state OGVs after GIF conversion")
@@ -197,8 +195,7 @@ def capture_state_clip(
 
 def convert_to_gif(
     ffmpeg: str,
-    left_path: Path,
-    right_path: Path,
+    source_path: Path,
     gif_path: Path,
     gif_fps: int,
     gif_width: int,
@@ -207,16 +204,14 @@ def convert_to_gif(
     palette_path = gif_path.with_suffix(".palette.png")
     scale = f"scale={gif_width}:{gif_height}:flags=lanczos"
 
-    # Pass 1: derive a shared palette from the side-by-side stream.
+    # Pass 1: derive a palette from the individual clip.
     palette_command = [
         ffmpeg,
         "-y",
         "-i",
-        str(left_path),
-        "-i",
-        str(right_path),
+        str(source_path),
         "-filter_complex",
-        f"[0:v][1:v]hstack=inputs=2,fps={gif_fps},{scale},palettegen=stats_mode=diff",
+        f"fps={gif_fps},{scale},palettegen=stats_mode=diff",
         str(palette_path),
     ]
     run_streamed(palette_command)
@@ -227,13 +222,11 @@ def convert_to_gif(
         ffmpeg,
         "-y",
         "-i",
-        str(left_path),
-        "-i",
-        str(right_path),
+        str(source_path),
         "-i",
         str(palette_path),
         "-filter_complex",
-        f"[0:v][1:v]hstack=inputs=2,fps={gif_fps},{scale}[x];[x][2:v]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle",
+        f"fps={gif_fps},{scale}[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle",
         str(gif_path),
     ]
     run_streamed(gif_command)
@@ -342,6 +335,7 @@ def main() -> int:
         "gif_fps": args.gif_fps,
         "gif_resolution": [args.gif_width, args.gif_height],
         "wetness_values": list(WETNESS_VALUES),
+        "tiers": list(TIERS),
         "gifs": [],
     }
 
@@ -353,15 +347,13 @@ def main() -> int:
                     godot, project, work_dir, tier, wetness, args.fps, args.width, args.height
                 )
 
-    for primary_tier, row_name in ROW_LAYOUTS:
-        secondary_tier = "cinematic" if primary_tier == "fast" else "fast"
+    for tier in TIERS:
         for wetness in WETNESS_VALUES:
-            left_path = clips[(primary_tier, wetness)]
-            right_path = clips[(secondary_tier, wetness)]
-            wetness_code = f"{int(round(wetness * 100)):03d}"
-            gif_name = f"demo-video-wetness-{primary_tier}-{wetness_code}.gif"
+            source_path = clips[(tier, wetness)]
+            wetness_code = WETNESS_CODE[wetness]
+            gif_name = f"demo-video-wetness-{tier}-{wetness_code}.gif"
             gif_path = output / gif_name
-            convert_to_gif(ffmpeg, left_path, right_path, gif_path, args.gif_fps, args.gif_width, args.gif_height)
+            convert_to_gif(ffmpeg, source_path, gif_path, args.gif_fps, args.gif_width, args.gif_height)
 
             if gif_path.stat().st_size > 10 * 1024 * 1024:
                 raise RuntimeError(f"{gif_name}: {gif_path.stat().st_size} bytes exceeds the 10 MB limit")
@@ -382,8 +374,7 @@ def main() -> int:
             manifest["gifs"].append(
                 {
                     "file": gif_name,
-                    "row": row_name,
-                    "primary_tier": primary_tier,
+                    "tier": tier,
                     "wetness": wetness,
                     "size_bytes": gif_path.stat().st_size,
                     "probe": probe,

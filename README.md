@@ -93,119 +93,13 @@ hair_mesh.material_override = material
 
 `apply_to()` validates a supplied groom before mutating the material and binds the production LUT required by Fast or Cinematic.
 
-## Coverage policy
-
-`HairCoveragePolicy.Mode.AUTO` follows the actual viewport AA state **and** rendering method:
-
-```text
-Forward+ or Mobile + MSAA  -> Alpha-to-Coverage
-otherwise Forward+ + TAA   -> 16-phase temporal Bayer
-otherwise                  -> Static Bayer, phase 0
-```
-
-Static Bayer is the stable fallback. Temporal Bayer advances once per rendered frame and is only selected automatically when TAA is actually available. A2C uses separate compiled shader variants because `alpha_to_coverage` is a shader render mode, not a runtime uniform switch.
-
-If viewport AA settings may change after material creation, register the material with a `HairCoverageController`:
+If the viewport's AA configuration can change after material creation, register the material with a `HairCoverageController`:
 
 ```gdscript
 coverage_controller.register_material(profile, material, get_viewport())
 ```
 
-The controller updates the effective coverage variant and the 16-phase Bayer index from rendered-frame indices.
-
-## Optical wetness
-
-`wetness` is a `0..1` shading control. `0` is the strict dry compatibility endpoint; `1` is the calibrated saturated optical response.
-
-Wetness deliberately does **not** modify groom geometry. Clumping, collapse, strand adhesion, weight, and other shape changes should come from shape keys, a separate wet groom, or strand/card deformation. A game or animation system can drive both the material wetness and the geometry transition from the same higher-level wetness signal.
-
-At increasing wetness the shader:
-
-- adds an untinted strand-aligned dielectric water-film highlight using approximate water IOR `1.333`;
-- narrows the effective longitudinal highlight response;
-- narrows Marschner azimuthal scattering where the tier has a physical azimuthal model;
-- reduces cuticle/tangent-shift separation;
-- suppresses diffuse/multiple scattering to darken the hair body;
-- suppresses Marschner TT/TRT internal transport while keeping surface R reflection distinct from the film layer.
-
-Final calibrated defaults:
-
-| Control | Default |
-| --- | ---: |
-| `wetness` | `0.0` |
-| `wet_film_roughness` | `0.10` |
-| `wet_film_specular_strength` | `2.0` |
-| `wet_longitudinal_roughness_scale` | `0.45` |
-| `wet_azimuthal_roughness_scale` | `0.55` |
-| `wet_internal_scatter_scale` | `0.35` |
-| `wet_transmission_scale` | `0.65` |
-| `wet_cuticle_shift_scale` | `0.50` |
-
-Fast wetness never changes its preintegrated eta/IOR contract: the Fast azimuthal LUT remains pinned to `1.55`. See [`docs/hair_wetness.md`](docs/hair_wetness.md) for the model, tier behavior, calibration, and validation details.
-
-## LUT contracts
-
-The production LUTs are directly serialized `ImageTexture3D` resources and are loaded without a runtime `PackedByteArray -> ImageTexture3D` reconstruction step.
-
-**Fast Marschner** uses `unity_hdrp_azimuthal_n_v1`:
-
-```text
-64 x 64 x 64
-RGBA16F
-R = N_R
-G = N_TT
-B = N_TRT
-A = 1
-eta = 1.55
-```
-
-**Cinematic Marschner** uses `deon_physical_longitudinal_log2q_v2`:
-
-```text
-128 x 128 x 64
-R16F
-R = log2(Q)
-beta range = [0.05, 64]
-low-beta transition = [0.05, 0.10]
-```
-
-On `development`, the production resources live under `res://assets/hair/luts/`. The release package carries the same validated payloads under `res://addons/marschner_hair/luts/`.
-
-Custom compatible `Texture3D` resources may be assigned through the Fast/Cinematic override properties. Legacy raw-data resources remain supported only for development benchmark compatibility.
-
-## Choosing a tier
-
-| Tier | Intended use | Main tradeoff |
-| --- | --- | --- |
-| Approx / Kajiya-Kay | Constrained hardware, fallback, non-Marschner comparison | Lowest cost, least physical fidelity |
-| Fast Marschner | Normal production Marschner path | Good quality/cost balance; fixed eta `1.55` LUT contract |
-| Cinematic Marschner | High-fidelity shots where extra per-light cost is acceptable | Conditioned longitudinal 3D LUT is the most expensive production tier |
-| Reference Marschner | Analytic comparison and validation | Validation baseline rather than the default shipping tier |
-
-Validated production cost ordering remains:
-
-```text
-Approx < Fast < Reference < Cinematic
-```
-
-Coverage cost can dominate on constrained GPUs; `coverage_mode = Auto` is the normal recommendation.
-
-## Material versus groom ownership
-
-```text
-HairMaterialProfile                 HairGroomData
--------------------                 -------------
-quality tier                         coords_texture
-coverage policy                      attributes_texture
-hair color
-roughness / specular / cuticle
-optical wetness
-absorption / melanin
-mode-specific LUT overrides
-Kajiya-Kay controls
-```
-
-A `HairMaterialProfile` can be reused across multiple grooms. `HairGroomData` belongs to the card atlas that generated its maps.
+The controller keeps the compiled coverage variant and 16-phase Bayer index in sync with the rendered frame. For the full runtime API reference see [`docs/api.md`](docs/api.md).
 
 ## Editor workflow
 
@@ -236,10 +130,9 @@ are attached to the private [PR13 demo media release](https://github.com/44madfi
 instead of being stored in the repository; the looping GIF previews below are
 stored in this repository and reflect the calibrated captures. Every GIF is a
 full 6-second seamless orbit. The quality row shows one orbit per tier (Approx,
-Fast Marschner, and Cinematic Marschner; Reference is omitted). The two wetness
-rows show side-by-side Fast-vs-Cinematic comparisons at the fixed wetness states
-0.00, 0.33, 0.67, and 1.00 — the Fast wetness row puts Fast on the left, the
-Cinematic wetness row puts Cinematic on the left.
+Fast Marschner, and Cinematic Marschner; Reference is omitted). The wetness
+matrix shows one individual GIF per cell for every tier at the fixed wetness
+states 0.00, 0.33, 0.67, and 1.00.
 
 ### Quality tiers (dry, wetness 0.00)
 
@@ -247,52 +140,16 @@ Cinematic wetness row puts Cinematic on the left.
 | --- | --- |
 | <strong>Cinematic Marschner</strong><br>[![Cinematic Marschner preview](docs/images/demo-video-cinematic.gif)](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/quality-tiers.mp4) | <strong>Reference omitted</strong><br>See the [quality-tiers.mp4](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/quality-tiers.mp4) release clip |
 
-### Fast wetness (side-by-side Fast vs Cinematic, Fast on the left)
+### Wetness matrix (fixed wetness states, one individual GIF per cell)
 
-MP4s: [fast-wetness.mp4](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/fast-wetness.mp4) and [cinematic-wetness.mp4](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/cinematic-wetness.mp4).
+MP4s: [fast-wetness.mp4](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/fast-wetness.mp4) and [cinematic-wetness.mp4](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/cinematic-wetness.mp4). The Approx column has no separate wetness MP4; its GIFs are standalone previews.
 
-| <strong>Wetness 0.00</strong><br>[![Wetness 0.00 preview](docs/images/demo-video-wetness-fast-000.gif)](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/fast-wetness.mp4) | <strong>Wetness 0.33</strong><br>[![Wetness 0.33 preview](docs/images/demo-video-wetness-fast-033.gif)](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/fast-wetness.mp4) |
-| --- | --- |
-| <strong>Wetness 0.67</strong><br>[![Wetness 0.67 preview](docs/images/demo-video-wetness-fast-067.gif)](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/fast-wetness.mp4) | <strong>Wetness 1.00</strong><br>[![Wetness 1.00 preview](docs/images/demo-video-wetness-fast-100.gif)](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/fast-wetness.mp4) |
-
-### Cinematic wetness (side-by-side Fast vs Cinematic, Cinematic on the left)
-
-MP4s: [fast-wetness.mp4](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/fast-wetness.mp4) and [cinematic-wetness.mp4](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/cinematic-wetness.mp4).
-
-| <strong>Wetness 0.00</strong><br>[![Wetness 0.00 preview](docs/images/demo-video-wetness-cinematic-000.gif)](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/cinematic-wetness.mp4) | <strong>Wetness 0.33</strong><br>[![Wetness 0.33 preview](docs/images/demo-video-wetness-cinematic-033.gif)](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/cinematic-wetness.mp4) |
-| --- | --- |
-| <strong>Wetness 0.67</strong><br>[![Wetness 0.67 preview](docs/images/demo-video-wetness-cinematic-067.gif)](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/cinematic-wetness.mp4) | <strong>Wetness 1.00</strong><br>[![Wetness 1.00 preview](docs/images/demo-video-wetness-cinematic-100.gif)](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/cinematic-wetness.mp4) |
-
-## Primary runtime API
-
-```text
-HairMaterialProfile.get_shader_resource(viewport = null) -> Shader
-HairMaterialProfile.get_effective_coverage_mode(viewport = null) -> int
-HairMaterialProfile.apply_to(material, groom_data = null, viewport = null) -> bool
-HairMaterialProfile.create_material(groom_data = null, viewport = null) -> ShaderMaterial
-HairMaterialProfile.update_coverage_for_viewport(material, viewport, rendered_frame_index = -1) -> bool
-HairMaterialProfile.bind_mode_resources(material) -> bool
-```
-
-Coverage modes:
-
-```gdscript
-HairCoveragePolicy.Mode.AUTO
-HairCoveragePolicy.Mode.STATIC_BAYER
-HairCoveragePolicy.Mode.TAA_BAYER
-HairCoveragePolicy.Mode.ALPHA_TO_COVERAGE
-```
-
-Quality tiers:
-
-```gdscript
-HairMaterialProfile.QualityTier.APPROX
-HairMaterialProfile.QualityTier.FAST_MARSCHNER
-HairMaterialProfile.QualityTier.CINEMATIC_MARSCHNER
-HairMaterialProfile.QualityTier.REFERENCE_MARSCHNER
-```
-
-For deeper authoring details see [`docs/hair_material_authoring.md`](docs/hair_material_authoring.md).
+| | <strong>Approx / Kajiya-Kay</strong> | <strong>Fast Marschner</strong> | <strong>Cinematic Marschner</strong> |
+| --- | --- | --- | --- |
+| <strong>Wetness 0.00</strong> | [![Approx wetness 0.00](docs/images/demo-video-wetness-approx-000.gif)](docs/images/demo-video-wetness-approx-000.gif) | [![Fast wetness 0.00](docs/images/demo-video-wetness-fast-000.gif)](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/fast-wetness.mp4) | [![Cinematic wetness 0.00](docs/images/demo-video-wetness-cinematic-000.gif)](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/cinematic-wetness.mp4) |
+| <strong>Wetness 0.33</strong> | [![Approx wetness 0.33](docs/images/demo-video-wetness-approx-033.gif)](docs/images/demo-video-wetness-approx-033.gif) | [![Fast wetness 0.33](docs/images/demo-video-wetness-fast-033.gif)](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/fast-wetness.mp4) | [![Cinematic wetness 0.33](docs/images/demo-video-wetness-cinematic-033.gif)](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/cinematic-wetness.mp4) |
+| <strong>Wetness 0.67</strong> | [![Approx wetness 0.67](docs/images/demo-video-wetness-approx-067.gif)](docs/images/demo-video-wetness-approx-067.gif) | [![Fast wetness 0.67](docs/images/demo-video-wetness-fast-067.gif)](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/fast-wetness.mp4) | [![Cinematic wetness 0.67](docs/images/demo-video-wetness-cinematic-067.gif)](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/cinematic-wetness.mp4) |
+| <strong>Wetness 1.00</strong> | [![Approx wetness 1.00](docs/images/demo-video-wetness-approx-100.gif)](docs/images/demo-video-wetness-approx-100.gif) | [![Fast wetness 1.00](docs/images/demo-video-wetness-fast-100.gif)](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/fast-wetness.mp4) | [![Cinematic wetness 1.00](docs/images/demo-video-wetness-cinematic-100.gif)](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/cinematic-wetness.mp4) |
 
 ## Validation
 
@@ -322,8 +179,10 @@ Before publishing a release package, also run the package-level checks in [`docs
 
 ## Further documentation
 
+- [`docs/api.md`](docs/api.md) — runtime API reference for `HairMaterialProfile`, `HairGroomData`, `HairCoveragePolicy`, quality tiers, and coverage modes.
 - [`docs/hair_material_authoring.md`](docs/hair_material_authoring.md) — profile/groom ownership, coverage, LUT binding, shader switching, and runtime APIs.
 - [`docs/hair_wetness.md`](docs/hair_wetness.md) — optical wetness model, calibrated controls, tier behavior, and validation.
 - [`docs/direct_lut_storage.md`](docs/direct_lut_storage.md) — direct `ImageTexture3D` storage decision and benchmarks.
 - [`docs/hair_coverage_benchmark.md`](docs/hair_coverage_benchmark.md) — coverage-path benchmark and policy rationale.
+- [`docs/release_media.md`](docs/release_media.md) — release/demo media capture workflow and licensing.
 - [`docs/release_validation.md`](docs/release_validation.md) — release packaging and final validation checklist.

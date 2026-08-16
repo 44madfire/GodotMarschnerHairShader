@@ -1,6 +1,6 @@
 # Release/demo media capture
 
-Release videos are generated from the demo project after the matching addon build has passed package-level validation. The media is meant to make the four shader tiers and optical wetness behavior easy to evaluate without requiring users to configure a scene first.
+Release videos are generated from the demo project after the matching addon build has passed package-level validation. The media is meant to make the three shipped shader tiers and optical wetness behavior easy to evaluate without requiring users to configure a scene first.
 
 Because the captures visibly reproduce the supplied CT2Hair/GodotHair demo groom, **project-supplied release videos are distributed with the demo media under CC BY-NC 4.0**, not as part of the MIT-only addon package. The capture overlay includes the attribution in-frame and the release description must repeat it.
 
@@ -31,18 +31,19 @@ The default release media set contains three videos.
 
 ### `quality-tiers.mp4`
 
-A dry comparison of all four compiled lighting models:
+A dry comparison of the three shipped lighting models:
 
 ```text
 Approx / Kajiya-Kay
 Fast Marschner
 Cinematic Marschner
-Reference Marschner
 ```
 
-Each tier gets a six-second segment. The first `0.5 s` is a static front view after the tier switch, followed by the same full 360-degree orbit. Total expected duration: about `24 s`.
+Each tier gets a six-second segment. The first `0.5 s` is a static front view after the tier switch, followed by the same full 360-degree orbit. Total expected duration: about `18 s`.
 
 The material remains at `wetness = 0.0` so the video isolates the lighting-model difference.
+
+Reference Marschner is intentionally omitted from release media: it remains a development/validation tier, and its analytic baseline is documented separately in the authoring and wetness docs.
 
 ### `fast-wetness.mp4`
 
@@ -60,7 +61,7 @@ Expected duration: about `10 s`.
 
 The same wetness progression with Cinematic Marschner. Expected duration: about `10 s`.
 
-Fast and Cinematic are the default wetness showcase because they are the two normal production Marschner choices. The capture controller also accepts `approx` and `reference` tiers for additional diagnostic clips when needed.
+Fast and Cinematic are the default wetness showcase because they are the two normal production Marschner choices. The capture controller also accepts `approx` for additional diagnostic clips when needed; `reference` is not part of the release-capture alias surface.
 
 ## In-frame labels
 
@@ -141,11 +142,10 @@ Automated metadata checks are not sufficient. Review the final MP4s at normal pl
 
 For `quality-tiers.mp4`, confirm:
 
-- all four labels appear in the intended order;
+- all three labels appear in the intended order;
 - each tier starts from the same camera framing and follows the same orbit;
 - no tier unexpectedly loses the groom textures or packaged LUT;
-- there are no black frames, shader-error frames, NaNs, or discontinuities at tier changes;
-- Reference is visibly a comparison tier, not accidentally aliased to Fast/Cinematic.
+- there are no black frames, shader-error frames, NaNs, or discontinuities at tier changes.
 
 For both wetness clips, confirm:
 

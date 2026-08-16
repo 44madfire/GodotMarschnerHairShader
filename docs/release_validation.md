@@ -303,7 +303,7 @@ When `ffprobe` is installed it also verifies:
 ```text
 resolution = 1920 x 1080
 fps = 60
-quality-tiers duration ~= 24 s
+quality-tiers duration ~= 18 s
 wetness clip duration ~= 10 s each
 ```
 

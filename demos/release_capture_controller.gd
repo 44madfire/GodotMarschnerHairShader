@@ -12,11 +12,13 @@ const CAPTURE_QUALITY: String = "quality"
 const CAPTURE_WETNESS: String = "wetness"
 const CAPTURE_WETNESS_STATE: String = "wetness_state"
 
+# Release media compares only the three shipped quality tiers. Reference
+# Marschner stays a development/validation tier and is intentionally not part
+# of the release-capture surface (its behavior is documented separately).
 const QUALITY_NAMES: Array[String] = [
 	"Approx / Kajiya-Kay",
 	"Fast Marschner",
 	"Cinematic Marschner",
-	"Reference Marschner",
 ]
 
 const QUALITY_ALIASES := {
@@ -26,8 +28,6 @@ const QUALITY_ALIASES := {
 	"fast-marschner": 1,
 	"cinematic": 2,
 	"cinematic-marschner": 2,
-	"reference": 3,
-	"reference-marschner": 3,
 }
 
 const STATIC_BAYER_MODE: int = 1
@@ -152,8 +152,8 @@ func _tick_wetness_capture() -> void:
 func _tick_wetness_state_capture() -> void:
 	# Fixed-wetness full-orbit capture: wetness stays constant while the camera
 	# completes one 360-degree orbit over the same 6 s used by each quality
-	# segment. Fast and Cinematic state clips are combined side by side after
-	# capture, so each half keeps its own in-frame tier/wetness label.
+	# segment. Each tier/wetness clip is kept individual; the GIF generator
+	# downscales every clip separately with its own in-frame tier/wetness label.
 	if _elapsed >= QUALITY_SEGMENT_SECONDS:
 		_finish_capture()
 		return

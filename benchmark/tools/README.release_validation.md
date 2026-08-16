@@ -1,6 +1,6 @@
 # Release validation helper tools
 
-Two small helpers support the package/media gates in `docs/release_validation.md`.
+Three small helpers support the package/media gates in `docs/release_validation.md`.
 
 ## Verify the demo embeds the exact addon build
 
@@ -38,6 +38,29 @@ RELEASE_MEDIA_CAPTURE_OK
 
 See `docs/release_media.md` for clip contents, licensing, visual review, and output details.
 
+## Generate the wetness-state GIF previews
+
+Looping previews for the wetness matrix below are generated from individual
+fixed-wetness state captures (one full 6-second orbit per tier/wetness cell):
+
+```bash
+python benchmark/tools/generate_release_gifs.py \
+  --godot /path/to/godot \
+  --project .
+```
+
+Expected marker:
+
+```text
+RELEASE_GIFS_OK
+```
+
+The runner captures Approx, Fast, and Cinematic at wetness 0.00/0.33/0.67/1.00
+(12 clips), converts each clip separately to a 480x270, 15 fps, infinitely
+looping GIF under `docs/images/demo-video-wetness-{tier}-{code}.gif`, and
+fails if any GIF exceeds 10 MB. Temporary OGV intermediates are removed unless
+`--keep-intermediate` is passed.
+
 ## Demo video previews
 
 Looping GIF previews of the validated captures live in this repository under
@@ -45,10 +68,9 @@ Looping GIF previews of the validated captures live in this repository under
 [PR13 demo media release](https://github.com/44madfire/GodotMarschnerHairShader/releases/tag/pr13-demo-media)).
 The demo groom and these videos are released under **CC BY-NC 4.0**. Every GIF
 is a full 6-second seamless orbit. The quality row shows one orbit per tier
-(Approx, Fast Marschner, and Cinematic Marschner; Reference is omitted). The two
-wetness rows show side-by-side Fast-vs-Cinematic comparisons at the fixed
-wetness states 0.00, 0.33, 0.67, and 1.00 — the Fast wetness row puts Fast on
-the left, the Cinematic wetness row puts Cinematic on the left.
+(Approx, Fast Marschner, and Cinematic Marschner; Reference is omitted). The
+wetness matrix shows one individual GIF per cell for every tier at the fixed
+wetness states 0.00, 0.33, 0.67, and 1.00.
 
 ### Quality tiers (dry, wetness 0.00)
 
@@ -56,18 +78,13 @@ the left, the Cinematic wetness row puts Cinematic on the left.
 | --- | --- |
 | <strong>Cinematic Marschner</strong><br>[![Cinematic Marschner preview](../../docs/images/demo-video-cinematic.gif)](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/quality-tiers.mp4) | <strong>Reference omitted</strong><br>See the [quality-tiers.mp4](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/quality-tiers.mp4) release clip |
 
-### Fast wetness (side-by-side Fast vs Cinematic, Fast on the left)
+### Wetness matrix (fixed wetness states, one individual GIF per cell)
 
-MP4s: [fast-wetness.mp4](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/fast-wetness.mp4) and [cinematic-wetness.mp4](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/cinematic-wetness.mp4).
+MP4s: [fast-wetness.mp4](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/fast-wetness.mp4) and [cinematic-wetness.mp4](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/cinematic-wetness.mp4). The Approx column has no separate wetness MP4; its GIFs are standalone previews.
 
-| <strong>Wetness 0.00</strong><br>[![Wetness 0.00 preview](../../docs/images/demo-video-wetness-fast-000.gif)](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/fast-wetness.mp4) | <strong>Wetness 0.33</strong><br>[![Wetness 0.33 preview](../../docs/images/demo-video-wetness-fast-033.gif)](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/fast-wetness.mp4) |
-| --- | --- |
-| <strong>Wetness 0.67</strong><br>[![Wetness 0.67 preview](../../docs/images/demo-video-wetness-fast-067.gif)](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/fast-wetness.mp4) | <strong>Wetness 1.00</strong><br>[![Wetness 1.00 preview](../../docs/images/demo-video-wetness-fast-100.gif)](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/fast-wetness.mp4) |
-
-### Cinematic wetness (side-by-side Fast vs Cinematic, Cinematic on the left)
-
-MP4s: [fast-wetness.mp4](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/fast-wetness.mp4) and [cinematic-wetness.mp4](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/cinematic-wetness.mp4).
-
-| <strong>Wetness 0.00</strong><br>[![Wetness 0.00 preview](../../docs/images/demo-video-wetness-cinematic-000.gif)](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/cinematic-wetness.mp4) | <strong>Wetness 0.33</strong><br>[![Wetness 0.33 preview](../../docs/images/demo-video-wetness-cinematic-033.gif)](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/cinematic-wetness.mp4) |
-| --- | --- |
-| <strong>Wetness 0.67</strong><br>[![Wetness 0.67 preview](../../docs/images/demo-video-wetness-cinematic-067.gif)](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/cinematic-wetness.mp4) | <strong>Wetness 1.00</strong><br>[![Wetness 1.00 preview](../../docs/images/demo-video-wetness-cinematic-100.gif)](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/cinematic-wetness.mp4) |
+| | <strong>Approx / Kajiya-Kay</strong> | <strong>Fast Marschner</strong> | <strong>Cinematic Marschner</strong> |
+| --- | --- | --- | --- |
+| <strong>Wetness 0.00</strong> | [![Approx wetness 0.00](../../docs/images/demo-video-wetness-approx-000.gif)](../../docs/images/demo-video-wetness-approx-000.gif) | [![Fast wetness 0.00](../../docs/images/demo-video-wetness-fast-000.gif)](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/fast-wetness.mp4) | [![Cinematic wetness 0.00](../../docs/images/demo-video-wetness-cinematic-000.gif)](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/cinematic-wetness.mp4) |
+| <strong>Wetness 0.33</strong> | [![Approx wetness 0.33](../../docs/images/demo-video-wetness-approx-033.gif)](../../docs/images/demo-video-wetness-approx-033.gif) | [![Fast wetness 0.33](../../docs/images/demo-video-wetness-fast-033.gif)](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/fast-wetness.mp4) | [![Cinematic wetness 0.33](../../docs/images/demo-video-wetness-cinematic-033.gif)](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/cinematic-wetness.mp4) |
+| <strong>Wetness 0.67</strong> | [![Approx wetness 0.67](../../docs/images/demo-video-wetness-approx-067.gif)](../../docs/images/demo-video-wetness-approx-067.gif) | [![Fast wetness 0.67](../../docs/images/demo-video-wetness-fast-067.gif)](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/fast-wetness.mp4) | [![Cinematic wetness 0.67](../../docs/images/demo-video-wetness-cinematic-067.gif)](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/cinematic-wetness.mp4) |
+| <strong>Wetness 1.00</strong> | [![Approx wetness 1.00](../../docs/images/demo-video-wetness-approx-100.gif)](../../docs/images/demo-video-wetness-approx-100.gif) | [![Fast wetness 1.00](../../docs/images/demo-video-wetness-fast-100.gif)](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/fast-wetness.mp4) | [![Cinematic wetness 1.00](../../docs/images/demo-video-wetness-cinematic-100.gif)](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/cinematic-wetness.mp4) |
