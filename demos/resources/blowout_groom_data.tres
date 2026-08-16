@@ -1,6 +1,6 @@
 [gd_resource type="Resource" script_class="HairGroomData" format=3]
 
-[ext_resource type="Script" path="res://addons/marschner_hair/HairGroomData.gd" id="1_groom_data"]
+[ext_resource type="Script" path="res://addons/marschner_hair/hair_groom_data.gd" id="1_groom_data"]
 [ext_resource type="Texture2D" path="res://assets/hair/models/blowout/blowout_coords.png" id="2_coords"]
 [ext_resource type="Texture2D" path="res://assets/hair/models/blowout/blowout_attrib.png" id="3_attributes"]
 
