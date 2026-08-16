@@ -1,165 +1,121 @@
-# Marschner Hair Shader — Demo Package (0.1.0-rc3)
+# Godot Marschner Hair Shader
 
-Mixed-license demo release for the Godot 4.7 production hair shader stack:
-an embedded MIT addon (`addons/marschner_hair/`) plus CC BY-NC 4.0 demo
-hair-card grooms under `assets/hair/models/`.
+Production hair-card shading for **Godot 4.7 Forward+**, with three release quality tiers and a reusable `HairMaterialProfile + HairGroomData` authoring workflow.
+
+The repository contains:
+
+- an MIT-licensed addon under `addons/marschner_hair/`;
+- a Godot demo project and calibrated preview scene;
+- CC BY-NC 4.0 demo grooms under `assets/hair/models/`.
+
+See [docs/architecture.md](docs/architecture.md) for the codebase layout and responsibility boundaries.
+
+## Release quality tiers
+
+| Tier | Model | LUT requirement |
+| --- | --- | --- |
+| Approx / Kajiya-Kay | inexpensive cylindrical fallback | none |
+| Fast Marschner | Unity HDRP Standard-style approximation | packaged 64×64×64 RGBA16F azimuthal LUT |
+| Cinematic Marschner | higher-fidelity non-separable Marschner model | packaged 128×128×64 R16F longitudinal LUT |
+
+Each tier has an ordered-dither and alpha-to-coverage compiled variant. `HairCoveragePolicy` can select the appropriate path from the active viewport AA configuration.
 
 ## Requirements
 
-- Godot 4.7 (Forward+ renderer). Open the project folder in the editor and
-  let the initial import finish before running.
+- Godot 4.7
+- Forward+ renderer
 
-## Default scene and run instructions
+Open the repository folder in Godot and allow the first asset import to finish before running the demo.
 
-The project opens on `demos/HairMaterialProfileEditor.tscn`, an editor-facing
-preview scene showing the Blowout groom on a head mesh under a calibrated
-studio rig.
+## Quick start
+
+The project opens on `demos/HairMaterialProfileEditor.tscn`, which previews the Blowout groom under a calibrated studio rig.
 
 1. Open the project in Godot 4.7.
-2. Wait for the groom `.glb`/`.png` import to complete.
-3. Press **F5** (or select the scene and open it directly) to run the demo.
+2. Wait for `.glb` and `.png` imports to finish.
+3. Press **F5**.
+4. Select the `HairMaterialProfileEditor` root node to edit the assigned profile in the Inspector.
+5. Change `quality_tier` to compare Approx, Fast Marschner, and Cinematic Marschner.
+6. Move `wetness` from `0` to `1` to inspect the optical wetness response.
 
-The preview is also live in the editor: select the `HairMaterialProfileEditor`
-root node and edit the assigned `HairMaterialProfile` resource. Change
-`quality_tier` to compare Approx / Fast Marschner / Cinematic Marschner /
-Reference Marschner, and move `wetness` from 0 (dry) to 1 (saturated) to see
-the optical water-film response. The groom is switched by assigning a
-different groom mesh or a matching `HairGroomData` resource pair.
+The preview also refreshes directly in the editor viewport.
 
-All ten bundled hairstyles (`bangs`, `blowout`, `bob`, `curly`, `jewfro`,
-`jheri`, `moptop`, `pixie`, `wavy`, `wings`) import with the default scene's
-workflow; Blowout is the calibrated reference groom of this release.
+## Using the addon in another project
 
-## Editor quick guide
+Copy `addons/marschner_hair/` into the target Godot project. The packaged Fast and Cinematic LUTs are already included; no LUT-generation step is required.
 
-The three resource hand-off steps below are the complete workflow for putting
-the shader on a hair mesh. The screenshots show this project's actual
-Inspector fields and assets.
+### 1. Create groom data
 
-### 1. Create the `HairGroomData` resource
+Create a `HairGroomData` resource and assign the card-atlas textures generated for the groom:
 
-1. In the FileSystem dock, open `res://demos/resources/`.
-2. Right-click the folder, choose **New > Resource...**, select
-   `HairGroomData`, and save the resource as `new_groom_data.tres`.
-3. Select the new resource and assign the generated card-atlas maps in the
-   Inspector: `coords_texture` and `attributes_texture` (for example
-   `res://assets/hair/models/blowout/blowout_coords.png` and
-   `blowout_attrib.png`).
+- `coords_texture`: RGB tangent direction, A root-to-tip coordinate;
+- `attributes_texture`: R coverage, G strand depth, B deterministic strand seed.
 
-[![Godot Inspector showing HairGroomData and its assigned groom textures](docs/images/new-groom-01-hair-groom-data.png)](docs/images/new-groom-01-hair-groom-data.png)
+![Godot Inspector showing HairGroomData and its assigned groom textures](docs/images/new-groom-01-hair-groom-data.png)
 
-*Screenshot 1 — `HairGroomData` owns the card-atlas maps; the channel
-contracts are not appearance-texture slots.*
+### 2. Create a material profile
 
-### 2. Create the `HairMaterialProfile` resource
+Create a `HairMaterialProfile` resource and select the desired `quality_tier`. The Inspector exposes only controls relevant to the selected tier.
 
-1. In the same folder, choose **New > Resource... > HairMaterialProfile**, then
-   save it as `new_hair_material_profile.tres`.
-2. Select the profile and open **Quality > `quality_tier`** in the Inspector.
-3. Choose one of `Approx / Kajiya-Kay`, `Fast Marschner`, `Cinematic
-   Marschner`, or `Reference Marschner`. The selected mode reveals its own
-   controls; Fast Marschner, for example, exposes `absorption_mode` and its
-   mode-specific absorption fields.
+![Godot Inspector showing HairMaterialProfile quality tiers](docs/images/new-groom-02-hair-material-profile.png)
 
-[![Godot Inspector showing HairMaterialProfile quality tiers](docs/images/new-groom-02-hair-material-profile.png)](docs/images/new-groom-02-hair-material-profile.png)
-
-*Screenshot 2 — `quality_tier` selects the compiled shader and the Inspector
-hides controls that do not affect that mode.*
-
-### 3. Assign the composed `ShaderMaterial` to the mesh
-
-1. Open `res://demos/HairMaterialProfileEditor.tscn`.
-2. Select the root `HairMaterialProfileEditor` node. In **Hair Setup**, assign
-   `material_profile` to `res://demos/resources/hair_material_profile_demo.tres`
-   and `groom_data` to `res://demos/resources/blowout_groom_data.tres`.
-3. The `@tool` preview resolves the `HairPreview` MeshInstance3D and writes the
-   generated `ShaderMaterial` to its `material_override`. Change
-   `quality_tier` and watch the editor viewport refresh.
-
-For your own scene, the final assignment is the same API:
+### 3. Create and assign the material
 
 ```gdscript
-var material: ShaderMaterial = profile.create_material(groom_data)
+var material: ShaderMaterial = profile.create_material(groom_data, get_viewport())
 hair_mesh.material_override = material
 ```
 
-[![Godot Inspector showing the preview material and groom assignments](docs/images/new-groom-03-material-assignment.png)](docs/images/new-groom-03-material-assignment.png)
+If AUTO coverage needs to track viewport AA changes at runtime, register the material with `HairCoverageController`.
 
-*Screenshot 3 — profile + groom data become a `ShaderMaterial`, then land on
-`MeshInstance3D.material_override`.*
+![Godot Inspector showing the preview material and groom assignments](docs/images/new-groom-03-material-assignment.png)
 
 ## Visual previews
 
-The demo groom and these captures are released under **CC BY-NC 4.0**. The GIFs
-below are bundled with this package and render from an extracted copy without
-any network access. The Reference Marschner tier is intentionally omitted from
-release media.
+### Quality tiers
 
-### Quality tiers (dry)
+| Approx | Fast Marschner | Cinematic Marschner |
+| --- | --- | --- |
+| ![Approx quality tier preview](docs/images/demo-video-approx.gif) | ![Fast Marschner preview](docs/images/demo-video-fast.gif) | ![Cinematic Marschner preview](docs/images/demo-video-cinematic.gif) |
 
-| Tier | Preview |
-| --- | --- |
-| Approx / Kajiya-Kay | ![Approx quality tier preview](docs/images/demo-video-approx.gif) |
-| Fast Marschner | ![Fast Marschner quality tier preview](docs/images/demo-video-fast.gif) |
-| Cinematic Marschner | ![Cinematic Marschner quality tier preview](docs/images/demo-video-cinematic.gif) |
-
-### Wetness response matrix
-
-Rows are `wetness` values (0 dry → 1 saturated); columns are quality tiers.
+### Wetness response
 
 | Wetness | Approx | Fast Marschner | Cinematic Marschner |
 | --- | --- | --- | --- |
-| 0.00 | ![Approx wetness 0.00](docs/images/demo-video-wetness-approx-000.gif) | ![Fast Marschner wetness 0.00](docs/images/demo-video-wetness-fast-000.gif) | ![Cinematic Marschner wetness 0.00](docs/images/demo-video-wetness-cinematic-000.gif) |
-| 0.33 | ![Approx wetness 0.33](docs/images/demo-video-wetness-approx-033.gif) | ![Fast Marschner wetness 0.33](docs/images/demo-video-wetness-fast-033.gif) | ![Cinematic Marschner wetness 0.33](docs/images/demo-video-wetness-cinematic-033.gif) |
-| 0.67 | ![Approx wetness 0.67](docs/images/demo-video-wetness-approx-067.gif) | ![Fast Marschner wetness 0.67](docs/images/demo-video-wetness-fast-067.gif) | ![Cinematic Marschner wetness 0.67](docs/images/demo-video-wetness-cinematic-067.gif) |
-| 1.00 | ![Approx wetness 1.00](docs/images/demo-video-wetness-approx-100.gif) | ![Fast Marschner wetness 1.00](docs/images/demo-video-wetness-fast-100.gif) | ![Cinematic Marschner wetness 1.00](docs/images/demo-video-wetness-cinematic-100.gif) |
+| 0.00 | ![Approx wetness 0.00](docs/images/demo-video-wetness-approx-000.gif) | ![Fast wetness 0.00](docs/images/demo-video-wetness-fast-000.gif) | ![Cinematic wetness 0.00](docs/images/demo-video-wetness-cinematic-000.gif) |
+| 0.33 | ![Approx wetness 0.33](docs/images/demo-video-wetness-approx-033.gif) | ![Fast wetness 0.33](docs/images/demo-video-wetness-fast-033.gif) | ![Cinematic wetness 0.33](docs/images/demo-video-wetness-cinematic-033.gif) |
+| 0.67 | ![Approx wetness 0.67](docs/images/demo-video-wetness-approx-067.gif) | ![Fast wetness 0.67](docs/images/demo-video-wetness-fast-067.gif) | ![Cinematic wetness 0.67](docs/images/demo-video-wetness-cinematic-067.gif) |
+| 1.00 | ![Approx wetness 1.00](docs/images/demo-video-wetness-approx-100.gif) | ![Fast wetness 1.00](docs/images/demo-video-wetness-fast-100.gif) | ![Cinematic wetness 1.00](docs/images/demo-video-wetness-cinematic-100.gif) |
 
-Optional full-resolution MP4 captures of the Fast and Cinematic tiers are
-attached to the [PR13 demo media release](https://github.com/44madfire/GodotMarschnerHairShader/releases/tag/pr13-demo-media):
-[quality-tiers.mp4](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/quality-tiers.mp4),
-[fast-wetness.mp4](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/fast-wetness.mp4),
-and
-[cinematic-wetness.mp4](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/cinematic-wetness.mp4).
+## Addon layout
 
-## Embedded addon (MIT)
+```text
+addons/marschner_hair/
+├── hair_material_profile.gd
+├── hair_groom_data.gd
+├── hair_coverage_policy.gd
+├── hair_coverage_controller.gd
+├── hair_marschner_lut_adapter.gd
+├── internal/
+│   └── hair_shader_utils.gd
+├── luts/
+└── shaders/
+```
 
-`addons/marschner_hair/` is the validated production runtime:
+The public resources use Godot-style snake_case filenames while retaining PascalCase `class_name` APIs.
 
-- `HairMaterialProfile`, `HairGroomData`, `HairMarschnerLUTAdapter`,
-  `HairCoveragePolicy`, `HairCoverageController` — authoring/runtime APIs.
-- `shaders/` — Approx, Fast Marschner, Cinematic Marschner, and Reference
-  Marschner tiers, each with a normal and an alpha-to-coverage variant.
-- `luts/` — the Fast (64x64x64 RGBA16F) and Cinematic (128x128x64 R16F)
-  production LUTs as directly serialized `ImageTexture3D` resources. They are
-  packaged: no LUT-generation step is needed.
+## Demo assets
 
-The addon is distributed under the MIT License (see `LICENSE`). Third-party
-attributions for code and assets are in `THIRD_PARTY_NOTICES.md`.
+All ten bundled hairstyles (`bangs`, `blowout`, `bob`, `curly`, `jewfro`, `jheri`, `moptop`, `pixie`, `wavy`, `wings`) use the same groom-data workflow. Blowout is the calibrated reference groom for the demo scene.
 
-## Supplied demo grooms (CC BY-NC 4.0)
+The demo grooms are adapted from the CT2Hair dataset (Meta Research) via the GodotHair project and are **not** covered by the addon MIT license. They remain under **CC BY-NC 4.0**. Replace them with appropriately licensed assets for commercial projects.
 
-The demo hair-card meshes and groom maps under `assets/hair/models/**` are
-adapted from the CT2Hair dataset (Meta Research) via the GodotHair project
-and are **not** part of the MIT license. They remain under
-**Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)** —
-see `assets/hair/models/LICENSE.md` and `THIRD_PARTY_NOTICES.md` for the full
-attribution. Do not use these grooms in commercial projects; replace them with
-your own appropriately licensed models.
-
-## Standalone addon archive
-
-The standalone MIT addon archive (no demo grooms, no demo media) is released
-separately from this demo package. The `addons/marschner_hair/` tree embedded
-here is byte-identical to that validated addon build; for an addon-only
-distribution, copy just `addons/marschner_hair/` plus the MIT `LICENSE` and
-`THIRD_PARTY_NOTICES.md` into your project.
-
-## Licensing summary
+## Licensing
 
 | Path | License |
 | --- | --- |
-| Project code, embedded addon (`addons/marschner_hair/`, scripts, shaders) | MIT |
-| Demo grooms and maps (`assets/hair/models/**`) | CC BY-NC 4.0 |
-| Upstream reference code (GodotHair) | MIT (see `THIRD_PARTY_NOTICES.md`) |
+| Project code and `addons/marschner_hair/` | MIT |
+| Demo grooms and maps under `assets/hair/models/**` | CC BY-NC 4.0 |
+| Upstream GodotHair reference code | MIT; see `THIRD_PARTY_NOTICES.md` |
 
-See `CHANGELOG.md` for release history and `VERSION` for the current version.
+See `LICENSE`, `THIRD_PARTY_NOTICES.md`, `CHANGELOG.md`, and `VERSION` for release details.
