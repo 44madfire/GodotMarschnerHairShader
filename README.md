@@ -122,14 +122,15 @@ The three screenshots below show the basic resource hand-off:
 
 ## Demo videos
 
-The demo groom and these videos are released under **CC BY-NC 4.0**. The MP4s
-are attached to the private [PR13 demo media release](https://github.com/44madfire/GodotMarschnerHairShader/releases/tag/pr13-demo-media)
-instead of being stored in the repository; the looping GIF previews below are
-stored in this repository and reflect the calibrated captures. Every GIF is a
-full 6-second seamless orbit. The quality row shows one orbit per tier (Approx,
-Fast Marschner, and Cinematic Marschner; Reference is omitted). The wetness
-matrix shows one individual GIF per cell for every tier at the fixed wetness
-states 0.00, 0.33, 0.67, and 1.00.
+The demo groom and these videos are released under **CC BY-NC 4.0**. The legacy
+full-resolution PR13 MP4 captures are attached to the private [PR13 demo media
+release](https://github.com/44madfire/GodotMarschnerHairShader/releases/tag/pr13-demo-media)
+rather than tracked in Git. The five current 1440x270 composite MP4 previews
+are tracked under `docs/images/` alongside the looping GIF previews. Every GIF
+is a full 6-second seamless orbit. The quality row shows one orbit per tier
+(Approx, Fast Marschner, and Cinematic Marschner; Reference is omitted). The
+wetness matrix shows one individual GIF per cell for every tier at the fixed
+wetness states 0.00, 0.33, 0.67, and 1.00.
 
 ### Composite videos
 

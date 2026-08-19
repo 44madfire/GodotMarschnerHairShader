@@ -115,6 +115,13 @@ Both direct `.res` files are committed on `development` and handled as binary re
 
 ## Release status
 
-The direct-LUT migration is already part of `development` and the current rc2 release package. Release users should receive the direct resources; they should not be asked to run the numerical generators or raw-data reconstruction path.
+The direct `ImageTexture3D` resources under `addons/marschner_hair/luts/` are
+the canonical production assets. `benchmark/resources/luts/` retains only
+numerical/raw validation fixtures, while `assets/hair/luts/` is a demo/reference
+mirror.
 
-When preparing a later release update, copy the validated direct textures unchanged into `addons/marschner_hair/luts/` and run the package-level smoke described in [`release_validation.md`](release_validation.md). That smoke is intended to verify the repathed preload/include/LUT paths in the actual distributable addon, not to regenerate the LUT payloads.
+Release packaging copies the addon tree unchanged and validates the already
+packaged direct resources with the package-level smoke described in
+[`release_validation.md`](release_validation.md). It does not rematerialize or
+repath the LUT payloads, and release users should not run the numerical
+generators or raw-data reconstruction path.
