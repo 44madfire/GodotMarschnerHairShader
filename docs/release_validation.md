@@ -75,9 +75,13 @@ addons/marschner_hair/
     README.md
 ```
 
+Every addon `.gd`, `.gdshader`, and `.gdshaderinc` file must ship with its
+matching Godot `.uid` sidecar. These sidecars are part of the addon identity
+and must be committed and included in the archive.
+
 The standalone addon release should also carry the project MIT `LICENSE` and applicable MIT third-party notice text at the archive/release level.
 
-Do **not** ship benchmark raw LUT resources, raw-data reconstruction fixtures, generated result sets, development scenes, experimental shader variants, `.uid` files, Windows `Zone.Identifier` artifacts, demo models, groom maps, or generated demo videos in the MIT addon archive.
+Do **not** ship benchmark raw LUT resources, raw-data reconstruction fixtures, generated result sets, development scenes, experimental shader variants, Windows `Zone.Identifier` artifacts, demo models, groom maps, or generated demo videos in the MIT addon archive.
 
 ## A2. Static path audit
 

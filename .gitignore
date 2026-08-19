@@ -1,6 +1,5 @@
 # Godot 4+ generated files
 .godot/
-*.uid
 
 # Python bytecode
 __pycache__/

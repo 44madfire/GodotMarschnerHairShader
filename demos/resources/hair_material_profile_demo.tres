@@ -1,6 +1,6 @@
 [gd_resource type="Resource" script_class="HairMaterialProfile" format=3 uid="uid://bnm7w384e34w6"]
 
-[ext_resource type="Script" uid="uid://bxu12qyhrw6r5" path="res://addons/marschner_hair/hair_material_profile.gd" id="1_profile"]
+[ext_resource type="Script" uid="uid://cbjbs0ipg6v51" path="res://addons/marschner_hair/hair_material_profile.gd" id="1_profile"]
 
 [resource]
 script = ExtResource("1_profile")
