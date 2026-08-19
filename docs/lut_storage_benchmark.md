@@ -1,9 +1,11 @@
 # Production LUT storage benchmark
 
-This benchmark compares the two serialization strategies available for the production Fast and Cinematic Marschner lookup tables:
+This benchmark compares the two serialization strategies that were considered for the production Fast and Cinematic Marschner lookup tables:
 
-1. **Raw-data Resource** — the current production representation. The `.res` stores dimensions, image format, numerical/model contract metadata, and a `PackedByteArray`. `HairMarschnerLUTAdapter` validates the resource and reconstructs a cached `ImageTexture3D` at runtime.
+1. **Raw-data Resource** — a benchmark-only representation. The `.res` stores dimensions, image format, numerical/model contract metadata, and a `PackedByteArray`. `HairMarschnerLUTAdapter` reconstructs a cached `ImageTexture3D` from it at runtime.
 2. **Direct ImageTexture3D** — the exact same texel payload is serialized by Godot 4.7 directly as an `ImageTexture3D` `.res` and loaded without the raw-data reconstruction step.
+
+**Production status:** the packaged addon binds the **direct `ImageTexture3D`** resources shipped under `addons/marschner_hair/luts/`. Raw-data LUT reconstruction is benchmark-only and is **not** the production path; the raw resources remain under `benchmark/resources/luts/` as numerical source/benchmark fixtures.
 
 The benchmark does not propose changing the release format by itself. It measures the startup/storage tradeoff now that direct `ImageTexture3D` persistence is known to work in the current engine target.
 
@@ -63,7 +65,7 @@ Fresh processes remove Godot-level resource caches but do **not** flush the oper
 
 ## Preparation integrity check
 
-Before timing, `prepare_lut_storage_benchmark.gd` converts each production raw resource to a temporary direct `ImageTexture3D` under `user://`.
+Before timing, `prepare_lut_storage_benchmark.gd` converts each benchmark raw resource to a temporary direct `ImageTexture3D` under `user://`.
 
 Preparation fails unless the direct round trip preserves:
 
@@ -78,7 +80,7 @@ Temporary direct resources are removed after the benchmark unless `--keep-direct
 
 ## Run
 
-If the production LUTs already exist:
+If the benchmark raw LUTs already exist:
 
 ```bash
 python benchmark/tools/run_lut_storage_benchmark.py \
@@ -86,7 +88,7 @@ python benchmark/tools/run_lut_storage_benchmark.py \
   --project .
 ```
 
-If either production LUT is missing, generate it automatically first:
+If either benchmark raw LUT is missing, generate it automatically first:
 
 ```bash
 python benchmark/tools/run_lut_storage_benchmark.py \
@@ -124,7 +126,7 @@ python benchmark/tools/run_lut_storage_benchmark.py \
   --headless
 ```
 
-For the release decision, prefer a normal renderer run because it is closer to how the resources are used by an actual project. Headless mode is useful as an additional serialization/tooling compatibility check.
+For the historical release-format decision, prefer a normal renderer run because it is closer to how the resources are used by an actual project. Headless mode is useful as an additional serialization/tooling compatibility check.
 
 ## Outputs
 
@@ -153,6 +155,8 @@ LUT_STORAGE_BENCHMARK_OK
 ```
 
 ## Interpreting the result
+
+The benchmark's conclusion was adopted: production now ships direct `ImageTexture3D` resources, and the raw-data representation remains a benchmark fixture. The reasoning below is the historical decision record.
 
 The raw-data representation has capabilities that a bare `ImageTexture3D` does not carry:
 

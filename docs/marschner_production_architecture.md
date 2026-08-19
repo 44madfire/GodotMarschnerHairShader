@@ -10,7 +10,7 @@ This branch promotes the recent Unity/Cinematic experiments into an explicit pro
 | Cinematic | `hair_marschner_cinematic.gdshader` | angle-domain/log-Q energy-conserving 3D LUT | Existing analytic baseline N/A | Full analytic reference |
 | Reference | `hair.gdshader` | Full analytic non-separable d'Eon path | Existing baseline | Validation only |
 
-`HairMaterialProfile` exposes `APPROX`, `FAST_MARSCHNER`, `CINEMATIC_MARSCHNER`, and `REFERENCE_MARSCHNER`. Existing serialized tier value `2` selects Cinematic; the analytic reference is value `3`.
+The packaged addon's `HairMaterialProfile` exposes `APPROX`, `FAST_MARSCHNER`, and `CINEMATIC_MARSCHNER` (serialized values `0`-`2`). The analytic Reference shader (`hair.gdshader`) is a benchmark-only validation baseline outside the addon and is not part of the tier enum.
 
 ## Fast contract
 
@@ -86,7 +86,7 @@ benchmark/resources/luts/
     cinematic_longitudinal_kernel_128x128x64.res
 ```
 
-These files are generated locally rather than checked in by this branch. Godot 4.7 does not reliably self-contain `ImageTexture3D` data in `.res`; the resource stores raw image bytes and `HairMarschnerLUTAdapter` reconstructs/caches the runtime `Texture3D`.
+These files are generated locally rather than checked in by this branch. They are benchmark raw-data fixtures: production now ships the same texel payload as directly serialized `ImageTexture3D` resources under `addons/marschner_hair/luts/`, and `HairMarschnerLUTAdapter` loads those directly without raw-data reconstruction.
 
 Generate them with:
 
@@ -158,7 +158,7 @@ The runner:
 2. gates that LUT against Unity compute-generator texel-center parity and records off-grid direct-integral error as characterization;
 3. generates the 128×128×64 angle-domain/log-Q Cinematic LUT;
 4. validates its off-grid interpolation and projected integrals through the actual `0.05/0.10` low-beta transition;
-5. runs `test_marschner_production_profile.gd` to verify shader selection, top-level uniform reflection, LUT reconstruction/binding, Fast eta pinning, and Cinematic v2 metadata;
+5. runs `test_marschner_production_profile.gd` to verify shader selection, top-level uniform reflection, LUT binding, Fast eta pinning, and Cinematic v2 metadata;
 6. reports complete Cinematic energy parity;
 7. runs the existing windowed GPU comparison unless `--skip-runtime` is passed;
 8. writes `benchmark/results/marschner_tier_split_study.json`.

@@ -1,7 +1,7 @@
 # Runtime API reference
 
 Concise, manually maintained reference for the production hair runtime. The
-runtime keeps four quality tiers as separate compiled shaders behind one
+runtime keeps three quality tiers as separate compiled shaders behind one
 authoring surface (`HairMaterialProfile`) plus groom-specific card data
 (`HairGroomData`) and a shared coverage policy (`HairCoveragePolicy`).
 
@@ -22,14 +22,12 @@ Serialized values remain stable for compatibility:
 0  Approx / Kajiya-Kay
 1  Fast Marschner
 2  Cinematic Marschner
-3  Reference Marschner
 ```
 
 ```gdscript
 HairMaterialProfile.QualityTier.APPROX
 HairMaterialProfile.QualityTier.FAST_MARSCHNER
 HairMaterialProfile.QualityTier.CINEMATIC_MARSCHNER
-HairMaterialProfile.QualityTier.REFERENCE_MARSCHNER
 ```
 
 | Tier | Intended use | Main tradeoff |
@@ -37,9 +35,11 @@ HairMaterialProfile.QualityTier.REFERENCE_MARSCHNER
 | Approx / Kajiya-Kay | Constrained hardware, fallback, non-Marschner comparison | Lowest cost, least physical fidelity |
 | Fast Marschner | Normal production Marschner path | Good quality/cost balance; fixed eta `1.55` LUT contract |
 | Cinematic Marschner | High-fidelity shots where extra per-light cost is acceptable | Conditioned longitudinal 3D LUT is the most expensive production tier |
-| Reference Marschner | Analytic comparison and validation | Validation baseline rather than the default shipping tier |
 
-Validated production cost ordering: `Approx < Fast < Reference < Cinematic`.
+The analytic **Reference Marschner** shader is a benchmark-only validation
+baseline outside the packaged addon; it is not part of the `QualityTier` enum.
+Benchmark cost ordering across the four development tiers (Reference included):
+`Approx < Fast < Reference < Cinematic`.
 
 ### Exported properties
 

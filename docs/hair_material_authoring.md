@@ -2,7 +2,7 @@
 
 The production hair models remain separate compiled shaders, but artists and runtime callers should treat `HairMaterialProfile` as the single material-look authoring surface and `HairGroomData` as the groom-specific card-data surface.
 
-This deliberately avoids a runtime-branching mega-shader. Approx/Kajiya-Kay, Fast Marschner, Cinematic Marschner, and analytic Reference retain independent shader binaries while sharing the same groom, coverage, wetness, and card-preparation contracts.
+This deliberately avoids a runtime-branching mega-shader. Approx/Kajiya-Kay, Fast Marschner, and Cinematic Marschner retain independent shader binaries while sharing the same groom, coverage, wetness, and card-preparation contracts. The analytic Reference shader is a benchmark-only validation baseline outside the packaged addon.
 
 ## Material profile versus groom data
 
@@ -65,7 +65,6 @@ For migration, `HairGroomData.from_shader_material(old_material)` can capture `c
 0  Approx / Kajiya-Kay
 1  Fast Marschner
 2  Cinematic Marschner
-3  Reference Marschner
 ```
 
 The Inspector presents friendly dropdown labels. Changing the tier refreshes the property list and hides controls that do not affect the selected shader. Hidden fields remain serialized, so switching away from a tier and back does not discard its settings.
@@ -92,9 +91,9 @@ The optional Fast LUT override accepts a compatible `Texture3D`. Normal users sh
 
 Cinematic exposes authorable IOR and an optional conditioned-longitudinal LUT override. The default `deon_physical_longitudinal_log2q_v2` LUT is packaged as a direct `ImageTexture3D` resource.
 
-### Reference Marschner
+### Reference Marschner (benchmark-only)
 
-Reference preserves the analytic baseline and is primarily intended for validation/comparison. It still receives the shared base-hair, coverage, and wetness parameters.
+Reference preserves the analytic baseline and is primarily intended for validation/comparison. It is **not** part of the packaged addon: it remains a development/benchmark shader outside the `HairMaterialProfile` tier enum, and it still receives the shared base-hair, coverage, and wetness parameters.
 
 ## Coverage authoring
 
@@ -210,7 +209,7 @@ On the validated Godot 4.7 setup, ImageTexture3D materialization/integrity check
 
 ## Shared card preparation
 
-All four production variants include `hair_card_common.gdshaderinc` for behavior independent of the lighting model:
+All production variants include `hair_card_common.gdshaderinc` for behavior independent of the lighting model:
 
 ```text
 coverage/depth ordered dithering or A2C coverage preparation

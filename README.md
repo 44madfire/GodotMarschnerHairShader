@@ -1,11 +1,12 @@
 # Godot Marschner Hair Shader
 
-A Godot 4.7 hair-card shading stack with four explicit production quality tiers, viewport-aware coverage, packaged 3D LUT resources, and a shared optical-wetness model.
+A Godot 4.7 hair-card shading stack with three explicit production quality tiers, viewport-aware coverage, packaged 3D LUT resources, and a shared optical-wetness model.
 
 - **Approx / Kajiya-Kay** — lightweight fallback for constrained hardware.
 - **Fast Marschner** — Unity HDRP Standard-style Marschner with a preintegrated azimuthal LUT.
 - **Cinematic Marschner** — higher-fidelity Marschner using the conditioned longitudinal LUT while retaining analytic azimuthal/attenuation behavior.
-- **Reference Marschner** — full analytic baseline intended primarily for comparison and validation.
+
+The packaged addon exposes only these three tiers. The analytic **Reference Marschner** shader remains a development/benchmark validation baseline outside the addon; it is not part of the shipped `HairMaterialProfile` tier enum.
 
 The tiers remain **separate compiled shaders**. `HairMaterialProfile` is the common authoring API and selects the appropriate shader instead of compiling one runtime-branching mega-shader.
 
@@ -57,7 +58,7 @@ Choose a `quality_tier` and normally leave `coverage_mode` on **Auto**. The Insp
 
 The main authoring groups are:
 
-- **Quality** — Approx, Fast, Cinematic, or Reference.
+- **Quality** — Approx, Fast, or Cinematic.
 - **Coverage** — Auto, Static Bayer, TAA Temporal Bayer, or Alpha-to-Coverage.
 - **Base Hair** — color, longitudinal/azimuthal roughness, specular scale, and cuticle tilt.
 - **Wetness** — optical wetness and its film/fiber-response endpoints.
@@ -133,6 +134,22 @@ full 6-second seamless orbit. The quality row shows one orbit per tier (Approx,
 Fast Marschner, and Cinematic Marschner; Reference is omitted). The wetness
 matrix shows one individual GIF per cell for every tier at the fixed wetness
 states 0.00, 0.33, 0.67, and 1.00.
+
+### Composite videos
+
+Repository-hosted MP4 links may download instead of playing inline; GitHub attachment URLs (release downloads) are needed for inline playback. Each MP4 is a horizontal strip of the three quality tiers (Approx | Fast Marschner | Cinematic Marschner) at 1440x270, H.264, 15 fps, 6 seconds (90 frames).
+
+- [Quality tiers composite (Approx / Fast / Cinematic)](docs/images/demo-video-quality-composite.mp4)
+- [Wetness 0.00 composite](docs/images/demo-video-wetness-000-composite.mp4)
+- [Wetness 0.33 composite](docs/images/demo-video-wetness-033-composite.mp4)
+- [Wetness 0.67 composite](docs/images/demo-video-wetness-067-composite.mp4)
+- [Wetness 1.00 composite](docs/images/demo-video-wetness-100-composite.mp4)
+
+Regenerate them from the source GIFs with:
+
+```bash
+bash docs/images/make_composite_mp4s.sh
+```
 
 ### Quality tiers (dry, wetness 0.00)
 

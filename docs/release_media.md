@@ -27,41 +27,37 @@ Release media uses **Static Bayer** coverage for deterministic presentation. Aut
 
 ## Standard capture set
 
-The default release media set contains three videos.
-
-### `quality-tiers.mp4`
-
-A dry comparison of the three shipped lighting models:
+The current release media set contains five composite previews, each a horizontal 3-panel strip of the three quality tiers (Approx / Kajiya-Kay | Fast Marschner | Cinematic Marschner):
 
 ```text
-Approx / Kajiya-Kay
-Fast Marschner
-Cinematic Marschner
+demo-video-quality-composite.mp4     # dry, wetness 0.00
+demo-video-wetness-000-composite.mp4 # wetness 0.00
+demo-video-wetness-033-composite.mp4 # wetness 0.33
+demo-video-wetness-067-composite.mp4 # wetness 0.67
+demo-video-wetness-100-composite.mp4 # wetness 1.00
 ```
 
-Each tier gets a six-second segment. The first `0.5 s` is a static front view after the tier switch, followed by the same full 360-degree orbit. Total expected duration: about `18 s`.
-
-The material remains at `wetness = 0.0` so the video isolates the lighting-model difference.
+Every composite is 1440x270 (480x270 per panel), H.264/yuv420p, 15 fps, 90 frames, and exactly 6 seconds — one full seamless orbit. The quality composite is dry and isolates the lighting-model difference across the three tiers. The four wetness composites fix the wetness state at 0.00, 0.33, 0.67, and 1.00 so the optical response can be compared across tiers and states without a changing-wetness ramp.
 
 Reference Marschner is intentionally omitted from release media: it remains a development/validation tier, and its analytic baseline is documented separately in the authoring and wetness docs.
 
-### `fast-wetness.mp4`
+## Building the composites
 
-Fast Marschner using the calibrated optical wetness model:
+Each composite is assembled from three source GIFs by `docs/images/make_composite_mp4s.sh`:
 
-```text
-1 s dry hold
-8 s linear wetness 0 -> 1 + one 360-degree orbit
-1 s saturated hold
+```bash
+bash docs/images/make_composite_mp4s.sh
 ```
 
-Expected duration: about `10 s`.
+The source GIFs are generated first by `benchmark/tools/generate_release_gifs.py`:
 
-### `cinematic-wetness.mp4`
+```bash
+python benchmark/tools/generate_release_gifs.py \
+  --godot /path/to/godot \
+  --project .
+```
 
-The same wetness progression with Cinematic Marschner. Expected duration: about `10 s`.
-
-Fast and Cinematic are the default wetness showcase because they are the two normal production Marschner choices. The capture controller also accepts `approx` for additional diagnostic clips when needed; `reference` is not part of the release-capture alias surface.
+The GIF runner captures one state clip per tier (approx, fast, cinematic) per fixed wetness state (0.00, 0.33, 0.67, 1.00) with Godot Movie Maker and converts each clip to a looping 480x270 GIF at 15 fps. Every wetness GIF is a full 6-second seamless orbit at its fixed state. The composite script then h-stacks the three tier GIFs and re-encodes each strip at 1440x270, 15 fps, 6 seconds (90 frames), CRF 18 H.264/yuv420p.
 
 ## In-frame labels
 
@@ -77,86 +73,66 @@ Do not crop the attribution out of project-published media.
 
 Godot Movie Maker mode performs non-real-time recording with fixed simulation timing, which is preferable to a desktop screen recorder for shader comparisons. The capture controller exits through `SceneTree.quit()` so MovieWriter can finalize the output container cleanly.
 
-The project automation records an OGV intermediate by default and then converts it to H.264 MP4 for browser/release use:
+The current workflow records state clips with Movie Maker and produces the composite previews in two steps (`generate_release_gifs.py`, then `make_composite_mp4s.sh`, see above). The GIF runner writes its temporary OGV intermediates under `benchmark/results/release_media/state/`; those intermediates and its manifest are intentionally not source-controlled. The source GIFs and the five composite MP4s under `docs/images/` are tracked by Git so the previews render inline in the README.
 
-```bash
-python benchmark/tools/capture_release_media.py \
-  --godot /path/to/godot \
-  --project .
-```
-
-Default output:
+The GIF runner parameters are:
 
 ```text
-benchmark/results/release_media/
-  quality-tiers.mp4
-  fast-wetness.mp4
-  cinematic-wetness.mp4
-  release_media_manifest.json
+MovieWriter capture: 1920 x 1080, 60 fps, OGV intermediate
+GIF output:          480 x 270, 15 fps, 6 s (90 frames), infinite loop
+Composite output:    1440 x 270, H.264/yuv420p, 15 fps, 6 s (90 frames), CRF 18
 ```
-
-Generated release media is intentionally not source-controlled. Attach the reviewed MP4 files to the demo release or another release-media host.
-
-The default capture parameters are:
-
-```text
-1920 x 1080
-60 fps
-Godot OGV intermediate
-H.264/yuv420p MP4
-CRF 15
-```
-
-Use `--movie-format avi` if OGV is unavailable. OGV recording requires a Godot editor build; both OGV and AVI are intermediate capture formats and the final distribution files should normally be the generated MP4s.
 
 Useful overrides:
 
 ```bash
-# Capture only the quality comparison.
-python benchmark/tools/capture_release_media.py \
+# Capture only the wetness-state GIFs (12 clips: 3 tiers x 4 states).
+python benchmark/tools/generate_release_gifs.py \
   --godot /path/to/godot \
-  --captures quality-tiers
+  --project .
 
-# Keep the MovieWriter intermediate for inspection.
-python benchmark/tools/capture_release_media.py \
+# Keep the MovieWriter OGV intermediates for inspection.
+python benchmark/tools/generate_release_gifs.py \
   --godot /path/to/godot \
   --keep-intermediate
 
-# Skip MP4 conversion when ffmpeg is unavailable.
-python benchmark/tools/capture_release_media.py \
-  --godot /path/to/godot \
-  --no-mp4
+# Rebuild only the composite MP4s from the existing GIFs (no Godot needed).
+bash docs/images/make_composite_mp4s.sh
 ```
 
-The runner prints:
+The GIF runner prints:
 
 ```text
-RELEASE_MEDIA_CAPTURE_OK
+RELEASE_GIFS_OK
 ```
 
-only after every requested Godot capture exits successfully. When `ffprobe` is available it additionally verifies resolution, frame rate, and expected clip duration.
+only after every requested Godot capture exits successfully. When `ffprobe` is available it additionally verifies GIF resolution, frame rate, frame count, duration, and the infinite-loop extension; `make_composite_mp4s.sh` should be followed by the same ffprobe verification on each composite (1440x270, 15 fps, 90 frames, 6 s).
+
+### Historical capture workflow
+
+The pre-composite release workflow recorded three full-resolution clips with `benchmark/tools/capture_release_media.py` (`quality-tiers.mp4` about 18 s, `fast-wetness.mp4` and `cinematic-wetness.mp4` about 10 s each, 1920x1080 / 60 fps, OGV intermediate converted to H.264/yuv420p MP4 at CRF 15, marker `RELEASE_MEDIA_CAPTURE_OK`). That script is retained for reference and its clips remain attached to the PR13 demo media release as full-resolution downloads, but the five composite previews above are the current standard capture set.
 
 ## Visual review gate
 
-Automated metadata checks are not sufficient. Review the final MP4s at normal playback speed and frame-step representative sections.
+Automated metadata checks are not sufficient. Review the final composite MP4s at normal playback speed and frame-step representative sections.
 
-For `quality-tiers.mp4`, confirm:
+For `demo-video-quality-composite.mp4`, confirm:
 
-- all three labels appear in the intended order;
-- each tier starts from the same camera framing and follows the same orbit;
+- all three tier labels appear in the intended order across the strip;
+- each panel starts from the same camera framing and follows the same orbit;
 - no tier unexpectedly loses the groom textures or packaged LUT;
 - there are no black frames, shader-error frames, NaNs, or discontinuities at tier changes.
 
-For both wetness clips, confirm:
+For the four wetness composites, confirm:
 
-- the first second is the established dry endpoint;
-- wetness increases monotonically from `0` to `1`;
+- each panel shows its fixed wetness state (`0.00`, `0.33`, `0.67`, or `1.00`) rather than a ramp;
+- the four composites progress monotonically from dry to saturated;
 - the body darkens while highlights become tighter/more neutral rather than simply bleaching the groom;
-- the final saturated frame remains finite and stable;
+- the saturated (`1.00`) frame remains finite and stable;
 - camera movement is smooth and returns to the starting view;
 - the attribution remains readable throughout.
 
-Compare the dry frame from the wetness clips against the corresponding tier in the quality clip. Material and lighting should agree apart from encoding noise.
+Compare the dry (`0.00`) wetness composite against the quality composite. Material and lighting should agree apart from encoding noise.
 
 ## Release placement
 
@@ -165,9 +141,11 @@ Recommended release assets:
 ```text
 marschner-hair-addon-<version>.zip       # MIT runtime, no demo groom/media
 marschner-hair-demo-<version>.zip        # mixed-license demo package
-quality-tiers.mp4                        # demo media, CC BY-NC 4.0
-fast-wetness.mp4                         # demo media, CC BY-NC 4.0
-cinematic-wetness.mp4                    # demo media, CC BY-NC 4.0
+demo-video-quality-composite.mp4         # demo media, CC BY-NC 4.0
+demo-video-wetness-000-composite.mp4     # demo media, CC BY-NC 4.0
+demo-video-wetness-033-composite.mp4     # demo media, CC BY-NC 4.0
+demo-video-wetness-067-composite.mp4     # demo media, CC BY-NC 4.0
+demo-video-wetness-100-composite.mp4     # demo media, CC BY-NC 4.0
 ```
 
 The demo release text should cross-reference the matching addon version and state that the videos and supplied groom assets are CC BY-NC 4.0 evaluation/demo material. Users who only need the shader/runtime should be directed to the MIT addon package.

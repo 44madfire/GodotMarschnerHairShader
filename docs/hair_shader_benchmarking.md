@@ -1,6 +1,6 @@
 # Production hair shader benchmarking
 
-This benchmark suite measures the four production `HairMaterialProfile` tiers on the same Blowout groom, camera, lighting rig, groom textures, and material profile:
+This benchmark suite measures the four development tiers (the three production `HairMaterialProfile` tiers plus the benchmark-only Reference shader) on the same Blowout groom, camera, lighting rig, groom textures, and material profile:
 
 | Tier | Runtime shader |
 | --- | --- |
@@ -46,7 +46,7 @@ extra lights    0, 7
 process repeats 3
 ```
 
-Each Godot process measures `NO_HAIR`, the three calibration/control shaders, and all four production tiers. The production tier order rotates and reverses across process repeats to reduce order bias.
+Each Godot process measures `NO_HAIR`, the three calibration/control shaders, and all four development tiers (three production plus benchmark-only Reference). The production tier order rotates and reverses across process repeats to reduce order bias.
 
 Useful presets:
 

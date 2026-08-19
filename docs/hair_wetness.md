@@ -92,9 +92,9 @@ The dry absorption reparameterization is intentionally left unchanged so wet dar
 
 Cinematic applies the same optical policy while retaining its analytic azimuthal geometry and conditioned longitudinal LUT. Effective wet roughness is fed through the existing Chiang-style roughness reparameterization before the R/TT/TRT longitudinal kernel is evaluated. TT/TRT and multiple scattering are attenuated separately, and the water-film lobe is added on top.
 
-### Reference Marschner
+### Reference Marschner (benchmark-only)
 
-Reference preserves the analytic Marschner baseline. Wetness narrows effective roughness, reduces cuticle shift, suppresses multiple scattering, and adds the water-film lobe. Internal wet attenuation is approximated by increasing the existing fiber absorption coefficient according to `wet_transmission_scale`; this leaves the surface R path unaffected while preferentially darkening TT/TRT.
+Reference preserves the analytic Marschner baseline and is a development/benchmark shader outside the packaged addon. Wetness narrows effective roughness, reduces cuticle shift, suppresses multiple scattering, and adds the water-film lobe. Internal wet attenuation is approximated by increasing the existing fiber absorption coefficient according to `wet_transmission_scale`; this leaves the surface R path unaffected while preferentially darkening TT/TRT.
 
 ## Water-film lobe
 
@@ -169,7 +169,7 @@ HAIR_WETNESS_RUNTIME_OK
 
 The runtime test covers:
 
-- all four quality tiers;
+- the three production tiers plus the benchmark-only Reference shader;
 - Static Bayer and A2C compiled shader families;
 - wetness values `0`, `0.25`, `0.5`, `0.75`, and `1`;
 - direct Fast/Cinematic LUT binding;
@@ -206,6 +206,6 @@ The measured wetness cost is therefore within run-to-run noise for this benchmar
 
 ## Release considerations
 
-The development wetness implementation is validated. A release still needs a **package-level smoke test after repathing** the production files from `assets/hair/` to `addons/marschner_hair/`. That test is intended to catch broken preload/include/LUT paths and to confirm the eight normal/A2C production variants in the actual distributable addon.
+The development wetness implementation is validated. A release still needs a **package-level smoke test after repathing** the production files from `assets/hair/` to `addons/marschner_hair/`. That test is intended to catch broken preload/include/LUT paths and to confirm the six normal/A2C production variants in the actual distributable addon.
 
 See [`release_validation.md`](release_validation.md) for the final package checklist.

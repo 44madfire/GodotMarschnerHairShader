@@ -12,12 +12,12 @@ The production algorithms are already validated on `development`. Release valida
 
 Already validated on `development`:
 
-- four separate quality tiers: Approx, Fast, Cinematic, Reference;
+- three production quality tiers (Approx, Fast, Cinematic) plus the benchmark-only Reference validation shader;
 - Static Bayer, 16-phase TAA Bayer, and A2C coverage behavior;
 - viewport-aware Auto coverage policy;
 - direct Fast/Cinematic `ImageTexture3D` LUT loading and contract binding;
 - Fast eta/IOR `1.55` pinning;
-- optical wetness interface and runtime propagation across all four tiers and both normal/A2C shader families;
+- optical wetness interface and runtime propagation across the three production tiers and the benchmark-only Reference shader, in both normal/A2C shader families;
 - wetness dry compatibility, visual progression, component ablation, and final film calibration;
 - wetness GPU cost on RTX 5090 and AMD integrated graphics;
 - shader-parameter documentation comments are present in the production shader sources;
@@ -34,11 +34,13 @@ The release addon should contain only the runtime surface:
 
 ```text
 addons/marschner_hair/
-  HairGroomData.gd
-  HairMaterialProfile.gd
-  HairMarschnerLUTAdapter.gd
-  HairCoveragePolicy.gd
-  HairCoverageController.gd
+  hair_groom_data.gd
+  hair_material_profile.gd
+  hair_marschner_lut_adapter.gd
+  hair_coverage_policy.gd
+  hair_coverage_controller.gd
+  internal/
+    hair_shader_utils.gd
   shaders/
     hair_approx.gdshader
     hair_approx_a2c.gdshader
@@ -46,9 +48,7 @@ addons/marschner_hair/
     hair_marschner_unity_fast_a2c.gdshader
     hair_marschner_cinematic.gdshader
     hair_marschner_cinematic_a2c.gdshader
-    hair.gdshader
-    hair_a2c.gdshader
-    ...shared production includes...
+    ...shared production includes (hair_common.gdshaderinc, hair_card_common.gdshaderinc, ...)
   luts/
     unity_azimuthal_64.res
     cinematic_longitudinal_kernel_128x128x64.res
@@ -94,7 +94,7 @@ In the fresh project, construct one complete `HairGroomData` using known-valid g
 For each quality tier, create both compiled coverage shader families:
 
 ```text
-4 quality tiers x 2 compiled coverage families = 8 variants
+3 quality tiers x 2 compiled coverage families = 6 variants
 ```
 
 For every variant verify:
@@ -110,9 +110,9 @@ For every variant verify:
 
 Run this with a normal rendering context. On the validated Godot 4.7 setup, do not rely on `--headless` for direct `ImageTexture3D` validation.
 
-## A5. Force a real draw/compile of all eight variants
+## A5. Force a real draw/compile of all six variants
 
-Material/RID creation alone is not a complete shader-compile test. Render at least one frame with each of the eight production variants on a small card/quad mesh under a light.
+Material/RID creation alone is not a complete shader-compile test. Render at least one frame with each of the six production variants on a small card/quad mesh under a light.
 
 The goal is not image-quality benchmarking. Confirm only that:
 
@@ -122,7 +122,7 @@ The goal is not image-quality benchmarking. Confirm only that:
 - Fast/Cinematic do not fall back because of missing LUTs;
 - switching normal <-> A2C variants does not drop the wetness parameters.
 
-A small sequential harness is preferable to opening eight separate editor windows.
+A small sequential harness is preferable to opening six separate editor windows.
 
 ## A6. Auto coverage smoke
 
@@ -241,7 +241,7 @@ wavy
 wings
 ```
 
-Cycle each groom once and confirm its mesh and associated groom textures import and render without missing-resource errors. One production tier is sufficient for this all-groom asset smoke; the eight-variant shader matrix is already covered by Gate A.
+Cycle each groom once and confirm its mesh and associated groom textures import and render without missing-resource errors. One production tier is sufficient for this all-groom asset smoke; the six-variant shader matrix is already covered by Gate A.
 
 Use Blowout as the standardized release-validation/media groom because the current profile and groom-data resources are already calibrated around it.
 
@@ -259,7 +259,6 @@ With Blowout selected, compare at minimum:
 Approx dry
 Fast dry
 Cinematic dry
-Reference dry
 Fast wetness 1.0
 Cinematic wetness 1.0
 ```
@@ -275,39 +274,44 @@ The canonical workflow is documented in [`release_media.md`](release_media.md).
 Run:
 
 ```bash
-python benchmark/tools/capture_release_media.py \
+python benchmark/tools/generate_release_gifs.py \
   --godot /path/to/godot \
   --project .
+bash docs/images/make_composite_mp4s.sh
 ```
 
-The default capture set is:
+The current release media set is the five composite previews, each a horizontal 3-panel strip (Approx | Fast Marschner | Cinematic Marschner):
 
 ```text
-quality-tiers.mp4
-fast-wetness.mp4
-cinematic-wetness.mp4
+demo-video-quality-composite.mp4
+demo-video-wetness-000-composite.mp4
+demo-video-wetness-033-composite.mp4
+demo-video-wetness-067-composite.mp4
+demo-video-wetness-100-composite.mp4
 ```
 
 The capture harness uses deterministic Movie Maker timing and the original GodotHair camera-orbit convention. Release videos use Static Bayer coverage so camera/shader comparisons are deterministic; coverage behavior itself remains covered by Gate A.
 
+> **Historical note (pre-composite workflow):** earlier releases captured three full-resolution clips (`quality-tiers.mp4`, `fast-wetness.mp4`, `cinematic-wetness.mp4`) at 1920x1080 / 60 fps with durations of about 18 s and 10 s via `benchmark/tools/capture_release_media.py`. Those clips remain attached to the PR13 demo media release as full-resolution downloads but are no longer the current capture set.
+
 ## C1. Automated media checks
 
-The capture runner must reach:
+The GIF capture runner must reach:
 
 ```text
-RELEASE_MEDIA_CAPTURE_OK
+RELEASE_GIFS_OK
 ```
 
-When `ffprobe` is installed it also verifies:
+Each composite preview is assembled from three source GIFs by `docs/images/make_composite_mp4s.sh`. When `ffprobe` is installed, verify every composite:
 
 ```text
-resolution = 1920 x 1080
-fps = 60
-quality-tiers duration ~= 18 s
-wetness clip duration ~= 10 s each
+resolution = 1440 x 270
+fps = 15
+frames = 90
+duration = 6 s
 ```
 
-Generated files live under `benchmark/results/release_media/` and are intentionally ignored by Git.
+Source GIFs and composite MP4s live under `docs/images/` and are tracked by Git; the MovieWriter OGV intermediates under `benchmark/results/release_media/` are intentionally ignored by Git.
 
 ## C2. Human video review
 
@@ -315,9 +319,9 @@ Review the final MP4s rather than only the MovieWriter intermediate.
 
 Confirm:
 
-- one identical full orbit is shown for every quality tier;
+- one identical full orbit is shown for every quality tier and wetness state;
 - tier labels match the shader actually displayed;
-- wetness clips progress monotonically from `0` to `1`;
+- the four wetness composites show the fixed states `0.00`, `0.33`, `0.67`, `1.00` in increasing order;
 - dry endpoints agree with the quality comparison apart from encoding noise;
 - saturated wetness remains finite/stable;
 - camera movement is smooth and returns to the starting view;
@@ -345,7 +349,7 @@ Unless the underlying shader/coverage/LUT math changes again, the following expe
 [ ] current development production files are repackaged under addons/marschner_hair
 [ ] no development-only resource paths remain in the addon
 [ ] fresh-project import has no parser/preload/include errors
-[ ] all 8 quality/coverage variants create and render at least one frame
+[ ] all 6 quality/coverage variants create and render at least one frame
 [ ] Fast and Cinematic direct LUTs validate in the packaged paths
 [ ] Auto coverage resolves correctly for Forward+/Mobile/Compatibility smoke
 [ ] one normal and one A2C shader show the expected Inspector parameter tooltips
@@ -369,11 +373,9 @@ Unless the underlying shader/coverage/LUT math changes again, the following expe
 ## Release media
 
 ```text
-[ ] quality-tiers.mp4 captured from the validated demo package
-[ ] fast-wetness.mp4 captured from the validated demo package
-[ ] cinematic-wetness.mp4 captured from the validated demo package
-[ ] RELEASE_MEDIA_CAPTURE_OK reached
-[ ] resolution/fps/duration metadata checks pass (when ffprobe is available)
+[ ] five composite previews (quality + wetness 0.00/0.33/0.67/1.00) built from the validated demo package
+[ ] RELEASE_GIFS_OK reached by generate_release_gifs.py
+[ ] 1440x270 / 15 fps / 90 frames / 6 s metadata checks pass (when ffprobe is available)
 [ ] final MP4 visual review passes
 [ ] CC BY-NC attribution is visible in-frame and repeated in release text
 ```

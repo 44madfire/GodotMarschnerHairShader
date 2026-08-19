@@ -2,7 +2,7 @@
 
 This follow-up extends the production LUT storage experiment with a third representation:
 
-1. `raw`: current scripted resource with metadata plus `PackedByteArray`, reconstructed by `HairMarschnerLUTAdapter`.
+1. `raw`: legacy/benchmark scripted resource with metadata plus `PackedByteArray`, reconstructed by `HairMarschnerLUTAdapter`.
 2. `direct`: bare serialized `ImageTexture3D`.
 3. `manifest`: a small validated resource containing the Fast/Cinematic semantic contract and an **external** reference to the same directly serialized `ImageTexture3D` used by the `direct` case.
 

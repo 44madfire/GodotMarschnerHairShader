@@ -1,6 +1,11 @@
 # ImageTexture3D persistence probe
 
-The LUT adapter stores production lookup tables as validated raw-data resources and reconstructs `ImageTexture3D` objects at runtime. That representation remains useful because it keeps dimensions, format, numerical metadata, and model contracts explicit; it is **not** intended to work around a current Godot 4.7 inability to serialize `ImageTexture3D`.
+> **Status:** this probe predates the direct-LUT migration. Production now ships
+> directly serialized `ImageTexture3D` resources (see
+> [`direct_lut_storage.md`](direct_lut_storage.md)); the raw-data representation
+> described below is the historical development/benchmark path.
+
+The LUT adapter originally stored production lookup tables as validated raw-data resources and reconstructed `ImageTexture3D` objects at runtime. That representation kept dimensions, format, numerical metadata, and model contracts explicit; it was **not** intended to work around a current Godot 4.7 inability to serialize `ImageTexture3D`.
 
 Godot historically had an `ImageTexture3D` serialization defect, but modern engine versions contain an `_images` serialization path. This development probe verifies the behavior independently in the version/build actually used by this project.
 
