@@ -5,15 +5,10 @@ class_name HairMarschnerLUTAdapter
 ##
 ## Production LUTs are directly serialized ImageTexture3D resources. Their
 ## semantic contract is owned by the shader slot/code below; runtime validation
-## checks the texture structure before binding. The legacy raw-data helpers are
-## retained only so the development storage benchmarks can reproduce the old
-## PackedByteArray -> ImageTexture3D path.
+## checks the texture structure before binding.
 
-const DEFAULT_UNITY_LUT_PATH: String = "res://assets/hair/luts/unity_azimuthal_64.res"
-const DEFAULT_CINEMATIC_LUT_PATH: String = "res://assets/hair/luts/cinematic_longitudinal_kernel_128x128x64.res"
-
-const LEGACY_UNITY_DATA_PATH: String = "res://benchmark/resources/luts/unity_azimuthal_64.res"
-const LEGACY_CINEMATIC_DATA_PATH: String = "res://benchmark/resources/luts/cinematic_longitudinal_kernel_128x128x64.res"
+const DEFAULT_UNITY_LUT_PATH: String = "res://addons/marschner_hair/luts/unity_azimuthal_64.res"
+const DEFAULT_CINEMATIC_LUT_PATH: String = "res://addons/marschner_hair/luts/cinematic_longitudinal_kernel_128x128x64.res"
 
 const UNITY_CONTRACT: String = "unity_hdrp_azimuthal_n_v1"
 const UNITY_SIZE: Vector3i = Vector3i(64, 64, 64)
@@ -35,16 +30,6 @@ func load_default_unity_texture() -> ImageTexture3D:
 
 func load_default_cinematic_texture() -> ImageTexture3D:
 	return _load_direct_texture_checked(DEFAULT_CINEMATIC_LUT_PATH, CINEMATIC_SIZE, CINEMATIC_FORMAT) as ImageTexture3D
-
-
-## Legacy benchmark API. New production code should use load_default_*_texture().
-func load_default_unity_data() -> Resource:
-	return _load_legacy_checked(LEGACY_UNITY_DATA_PATH, UNITY_CONTRACT)
-
-
-## Legacy benchmark API. New production code should use load_default_*_texture().
-func load_default_cinematic_data() -> Resource:
-	return _load_legacy_checked(LEGACY_CINEMATIC_DATA_PATH, CINEMATIC_CONTRACT)
 
 
 func validate_unity_texture(texture: Texture3D, require_rid: bool = true) -> PackedStringArray:
@@ -92,9 +77,9 @@ func bind_cinematic(material: ShaderMaterial, data: Resource = null) -> bool:
 func missing_default_resources() -> PackedStringArray:
 	var result := PackedStringArray()
 	if not ResourceLoader.exists(DEFAULT_UNITY_LUT_PATH):
-		result.append("Missing direct Fast LUT %s. Run with a rendering context: godot --path <project> --script res://benchmark/tools/materialize_direct_production_luts.gd" % DEFAULT_UNITY_LUT_PATH)
+		result.append("Missing packaged Fast Marschner LUT: %s" % DEFAULT_UNITY_LUT_PATH)
 	if not ResourceLoader.exists(DEFAULT_CINEMATIC_LUT_PATH):
-		result.append("Missing direct Cinematic LUT %s. Run with a rendering context: godot --path <project> --script res://benchmark/tools/materialize_direct_production_luts.gd" % DEFAULT_CINEMATIC_LUT_PATH)
+		result.append("Missing packaged Cinematic Marschner LUT: %s" % DEFAULT_CINEMATIC_LUT_PATH)
 	return result
 
 
@@ -148,9 +133,7 @@ func _unity_texture_from_input(data: Resource) -> Texture3D:
 		return load_default_unity_texture()
 	if data is Texture3D:
 		return data as Texture3D
-	if not _legacy_resource_matches_contract(data, UNITY_CONTRACT):
-		return null
-	return texture3d_from_resource(data)
+	return null
 
 
 func _cinematic_texture_from_input(data: Resource) -> Texture3D:
@@ -158,71 +141,9 @@ func _cinematic_texture_from_input(data: Resource) -> Texture3D:
 		return load_default_cinematic_texture()
 	if data is Texture3D:
 		return data as Texture3D
-	if not _legacy_resource_matches_contract(data, CINEMATIC_CONTRACT):
-		return null
-	return texture3d_from_resource(data)
-
-
-## Legacy development-benchmark compatibility only. Production binding never
-## enters this raw-data reconstruction path when the default LUTs are present.
-func texture3d_from_resource(data: Resource) -> Texture3D:
-	if data == null:
-		return null
-	if data is Texture3D:
-		return data as Texture3D
-
-	var bytes_value: Variant = data.get(&"data")
-	var sx_value: Variant = data.get(&"size_x")
-	var sy_value: Variant = data.get(&"size_y")
-	var sz_value: Variant = data.get(&"size_z")
-	var format_value: Variant = data.get(&"format")
-	if not (bytes_value is PackedByteArray):
-		return null
-	if not (sx_value is int) or not (sy_value is int) or not (sz_value is int) or not (format_value is int):
-		return null
-
-	var bytes: PackedByteArray = bytes_value
-	var sx := int(sx_value)
-	var sy := int(sy_value)
-	var sz := int(sz_value)
-	var format := int(format_value)
-	if sx <= 0 or sy <= 0 or sz <= 0 or bytes.is_empty() or bytes.size() % sz != 0:
-		return null
-
-	var slice_bytes := int(bytes.size() / sz)
-	var slices: Array[Image] = []
-	for z in sz:
-		var image := Image.create_from_data(sx, sy, false, format, bytes.slice(z * slice_bytes, (z + 1) * slice_bytes))
-		if image == null:
-			return null
-		slices.append(image)
-
-	var texture := ImageTexture3D.new()
-	texture.create(format, sx, sy, sz, false, slices)
-	if texture.get_width() != sx or texture.get_height() != sy or texture.get_depth() != sz:
-		return null
-	return texture
+	return null
 
 
 ## Kept for callers written against the former cached reconstruction adapter.
 func clear_cache() -> void:
 	pass
-
-
-func _load_legacy_checked(path: String, contract: String) -> Resource:
-	if not ResourceLoader.exists(path):
-		return null
-	var data: Resource = ResourceLoader.load(path, "", ResourceLoader.CACHE_MODE_REUSE)
-	return data if _legacy_resource_matches_contract(data, contract) else null
-
-
-func _legacy_resource_matches_contract(data: Resource, contract: String) -> bool:
-	if data == null or String(data.get(&"contract")) != contract:
-		return false
-	if data.has_method(&"validation_errors"):
-		var errors_value: Variant = data.call(&"validation_errors")
-		if errors_value is PackedStringArray:
-			var errors: PackedStringArray = errors_value
-			if not errors.is_empty():
-				return false
-	return true

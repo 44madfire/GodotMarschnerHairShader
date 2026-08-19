@@ -7,12 +7,17 @@ extends SceneTree
 ## groom-owned parameters across shader swaps.
 ## Explicit local types are intentional: Godot 4.7 rejects inference from
 ## Script.new(), dynamic property access, and some Variant-returning APIs.
+##
+## The packaged addon profile exposes the three production tiers (Approx, Fast,
+## Cinematic). Reference Marschner is a separate development/validation tier and
+## is checked directly against its shader rather than through the profile.
 
-const ProfileScript := preload("res://assets/hair/materials/HairMaterialProfile.gd")
-const LUTAdapterScript := preload("res://assets/hair/materials/HairMarschnerLUTAdapter.gd")
-const APPROX_SHADER_PATH: String = "res://assets/hair/materials/shaders/hair_approx.gdshader"
-const FAST_SHADER_PATH: String = "res://assets/hair/materials/shaders/hair_marschner_unity_fast.gdshader"
-const CINEMATIC_SHADER_PATH: String = "res://assets/hair/materials/shaders/hair_marschner_cinematic.gdshader"
+const ProfileScript := preload("res://addons/marschner_hair/hair_material_profile.gd")
+const LUTAdapterScript := preload("res://addons/marschner_hair/hair_marschner_lut_adapter.gd")
+const LegacyLUTAdapterScript := preload("res://benchmark/resources/hair_marschner_legacy_lut_adapter.gd")
+const APPROX_SHADER_PATH: String = "res://addons/marschner_hair/shaders/hair_approx.gdshader"
+const FAST_SHADER_PATH: String = "res://addons/marschner_hair/shaders/hair_marschner_unity_fast.gdshader"
+const CINEMATIC_SHADER_PATH: String = "res://addons/marschner_hair/shaders/hair_marschner_cinematic.gdshader"
 const REFERENCE_SHADER_PATH: String = "res://assets/hair/materials/shaders/hair.gdshader"
 const CINEMATIC_CONTRACT: String = "deon_physical_longitudinal_log2q_v2"
 const CINEMATIC_BLEND: Vector2 = Vector2(0.05, 0.10)
@@ -20,7 +25,6 @@ const CINEMATIC_BLEND: Vector2 = Vector2(0.05, 0.10)
 const TIER_APPROX: int = 0
 const TIER_FAST: int = 1
 const TIER_CINEMATIC: int = 2
-const TIER_REFERENCE: int = 3
 
 var _failures: PackedStringArray = PackedStringArray()
 
@@ -42,10 +46,10 @@ func _run() -> void:
 	_assert_shader(profile, TIER_APPROX, APPROX_SHADER_PATH)
 	_assert_shader(profile, TIER_FAST, FAST_SHADER_PATH)
 	_assert_shader(profile, TIER_CINEMATIC, CINEMATIC_SHADER_PATH)
-	_assert_shader(profile, TIER_REFERENCE, REFERENCE_SHADER_PATH)
 	_assert_dynamic_authoring_surface(profile)
 	_assert_consolidated_apply(profile, adapter)
 	_assert_explicit_shader_compatibility(profile, adapter)
+	_assert_reference_shader_contract()
 
 	if not _failures.is_empty():
 		for failure_value in _failures:
@@ -93,12 +97,6 @@ func _assert_dynamic_authoring_surface(profile: Resource) -> void:
 	_check(not _editor_property_visible(profile, &"primary_color"), "Cinematic should hide Kajiya-Kay controls")
 	_check(_editor_category_visible(profile, &"Cinematic Marschner"), "Cinematic category should be visible in Cinematic mode")
 
-	profile.set(&"quality_tier", TIER_REFERENCE)
-	_check(not _editor_property_visible(profile, &"ior"), "Reference should keep its existing analytic interface rather than expose unused profile IOR")
-	_check(not _editor_property_visible(profile, &"unity_azimuthal_lut_data"), "Reference should hide Fast LUT controls")
-	_check(not _editor_property_visible(profile, &"cinematic_longitudinal_lut_data"), "Reference should hide Cinematic LUT controls")
-	_check(not _editor_property_visible(profile, &"primary_color"), "Reference should hide Kajiya-Kay controls")
-
 
 func _assert_consolidated_apply(profile: Resource, adapter: RefCounted) -> void:
 	var groom_material: ShaderMaterial = ShaderMaterial.new()
@@ -124,7 +122,7 @@ func _assert_consolidated_apply(profile: Resource, adapter: RefCounted) -> void:
 	_check(bool(groom_material.get_shader_parameter(&"freeze_bayer_phase")), "freeze_bayer_phase was not preserved across Approx -> Fast")
 	var fast_texture: Texture3D = groom_material.get_shader_parameter(&"unity_azimuthal_lut") as Texture3D
 	_check(fast_texture != null and fast_texture.get_rid().is_valid(), "apply_to() did not bind the Fast Unity azimuthal LUT")
-	var unity_data: Resource = adapter.call(&"load_default_unity_data") as Resource
+	var unity_data: Resource = LegacyLUTAdapterScript.new().call(&"load_default_unity_data") as Resource
 	if unity_data != null:
 		var eta: float = float(unity_data.get(&"eta"))
 		_check(is_equal_approx(float(groom_material.get_shader_parameter(&"ior")), eta), "Fast apply_to() did not pin IOR to the Unity LUT eta")
@@ -151,12 +149,12 @@ func _assert_explicit_shader_compatibility(profile: Resource, adapter: RefCounte
 	fast.shader = profile.call(&"get_shader_resource") as Shader
 	_assert_required_uniforms(fast.shader, [
 		&"albedo", &"coords_texture", &"attributes_texture", &"unity_azimuthal_lut",
-		&"ior", &"absorption_mode", &"freeze_bayer_phase", &"lobe_scales",
+		&"ior", &"absorption_mode", &"bayer_phase_index", &"lobe_scales",
 	])
 	profile.call(&"apply_to_shader_material", fast)
 	var fast_texture: Texture3D = fast.get_shader_parameter(&"unity_azimuthal_lut") as Texture3D
 	_check(fast_texture != null and fast_texture.get_rid().is_valid(), "Fast Unity azimuthal LUT was not bound as a valid Texture3D")
-	var unity_data: Resource = adapter.call(&"load_default_unity_data") as Resource
+	var unity_data: Resource = LegacyLUTAdapterScript.new().call(&"load_default_unity_data") as Resource
 	if unity_data != null:
 		var eta: float = float(unity_data.get(&"eta"))
 		_check(is_equal_approx(float(fast.get_shader_parameter(&"ior")), eta), "Fast ior was not pinned to the Unity LUT eta")
@@ -169,13 +167,13 @@ func _assert_explicit_shader_compatibility(profile: Resource, adapter: RefCounte
 	_assert_required_uniforms(cinematic.shader, [
 		&"albedo", &"coords_texture", &"attributes_texture", &"cinematic_longitudinal_lut",
 		&"cinematic_longitudinal_beta_range", &"cinematic_longitudinal_low_beta_blend",
-		&"ior", &"freeze_bayer_phase", &"lobe_scales",
+		&"ior", &"bayer_phase_index", &"lobe_scales",
 	])
 	profile.call(&"apply_to_shader_material", cinematic)
 	var cinematic_texture: Texture3D = cinematic.get_shader_parameter(&"cinematic_longitudinal_lut") as Texture3D
 	_check(cinematic_texture != null and cinematic_texture.get_rid().is_valid(), "Cinematic longitudinal LUT was not bound as a valid Texture3D")
 	_check(is_equal_approx(float(cinematic.get_shader_parameter(&"ior")), 1.42), "Cinematic should preserve the profile IOR instead of pinning to 1.55")
-	var cinematic_data: Resource = adapter.call(&"load_default_cinematic_data") as Resource
+	var cinematic_data: Resource = LegacyLUTAdapterScript.new().call(&"load_default_cinematic_data") as Resource
 	if cinematic_data != null:
 		_check(String(cinematic_data.get(&"contract")) == CINEMATIC_CONTRACT, "Cinematic LUT contract was not the angle/log-Q v2 contract")
 		var expected_beta: Vector2 = Vector2(float(cinematic_data.get(&"beta_min")), float(cinematic_data.get(&"beta_max")))
@@ -194,6 +192,20 @@ func _assert_explicit_shader_compatibility(profile: Resource, adapter: RefCounte
 		_check(cinematic_texture.get_width() == int(cinematic_data.get(&"size_x")), "Cinematic Texture3D width did not match LUT metadata")
 		_check(cinematic_texture.get_height() == int(cinematic_data.get(&"size_y")), "Cinematic Texture3D height did not match LUT metadata")
 		_check(cinematic_texture.get_depth() == int(cinematic_data.get(&"size_z")), "Cinematic Texture3D depth did not match LUT metadata")
+
+
+## Reference Marschner is a development/validation tier outside the packaged
+## addon. It is not part of the production profile's tier enum; verify its
+## shader contract directly so the Reference validation case stays covered.
+func _assert_reference_shader_contract() -> void:
+	var reference_shader: Shader = load(REFERENCE_SHADER_PATH) as Shader
+	_check(reference_shader != null, "Reference shader failed to load")
+	if reference_shader != null:
+		_assert_required_uniforms(reference_shader, [
+			&"albedo", &"coords_texture", &"attributes_texture",
+			&"wetness", &"wet_film_roughness", &"wet_film_specular_strength",
+			&"bayer_phase_index", &"lobe_scales",
+		])
 
 
 func _editor_property_visible(profile: Resource, property_name: StringName) -> bool:

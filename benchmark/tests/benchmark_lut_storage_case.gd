@@ -9,7 +9,7 @@ extends SceneTree
 ## Process startup is intentionally outside the timed region. The Python runner
 ## launches one process per sample to avoid ResourceLoader and adapter cache hits.
 
-const LUT_ADAPTER := preload("res://assets/hair/materials/HairMarschnerLUTAdapter.gd")
+const LUT_ADAPTER := preload("res://benchmark/resources/hair_marschner_legacy_lut_adapter.gd")
 
 const FAST_RAW_PATH: String = "res://benchmark/resources/luts/unity_azimuthal_64.res"
 const CINEMATIC_RAW_PATH: String = "res://benchmark/resources/luts/cinematic_longitudinal_kernel_128x128x64.res"

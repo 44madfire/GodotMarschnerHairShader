@@ -11,6 +11,7 @@ class_name HairMaterialProfilePreview
 const PREVIEW_ROOT_PATH: NodePath = NodePath("HairPreview")
 const PREVIEW_EXPOSURE_GAIN: float = 1.1
 const APPROX_ALBEDO_GAIN: Vector3 = Vector3(0.979, 1.158, 1.162)
+const ShaderUtils := preload("res://addons/marschner_hair/internal/hair_shader_utils.gd")
 
 @export_category("Hair Setup")
 @export var material_profile: HairMaterialProfile:
@@ -39,7 +40,7 @@ const APPROX_ALBEDO_GAIN: Vector3 = Vector3(0.979, 1.158, 1.162)
 
 ## Select the HairMaterialProfile resource above, then change its quality tier.
 ## The visible groom refreshes in the editor without entering play mode.
-@export_multiline var editor_instructions: String = "Assign a HairMaterialProfile and HairGroomData. Change quality_tier to compare Approx, Fast, Cinematic, and Reference in the editor viewport."
+@export_multiline var editor_instructions: String = "Assign a HairMaterialProfile and HairGroomData. Change quality_tier to compare Approx, Fast, and Cinematic in the editor viewport."
 
 var _preview_mesh: MeshInstance3D
 var _source_material: ShaderMaterial
@@ -130,12 +131,7 @@ func _apply_preview_material_defaults() -> void:
 	if _preview_material == null or _preview_material.shader == null:
 		return
 
-	var uniform_names: Dictionary = {}
-	for uniform_value in _preview_material.shader.get_shader_uniform_list():
-		var uniform: Dictionary = uniform_value
-		var uniform_name: StringName = StringName(uniform.get("name", ""))
-		if uniform_name != &"":
-			uniform_names[uniform_name] = true
+	var uniform_names: Dictionary = ShaderUtils.uniform_names(_preview_material.shader)
 
 	# These are presentation-only controls exposed by the compiled preview
 	# variants. Keep them on the local copy so profile/groom resources remain the

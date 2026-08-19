@@ -1,6 +1,8 @@
 extends SceneTree
 
-const HairMaterialProfileScript := preload("res://assets/hair/materials/HairMaterialProfile.gd")
+const HairMaterialProfileScript := preload("res://addons/marschner_hair/hair_material_profile.gd")
+const REFERENCE_SHADER: Shader = preload("res://assets/hair/materials/shaders/hair.gdshader")
+const REFERENCE_A2C_SHADER: Shader = preload("res://assets/hair/materials/shaders/hair_a2c.gdshader")
 
 const REQUIRED_WETNESS_UNIFORMS: Array[StringName] = [
 	&"wetness",
@@ -43,7 +45,10 @@ func _initialize() -> void:
 			_fail("Unexpected wetness default for %s: got %s, expected %s" % [property_name, actual, expected])
 			return
 
-	for tier in range(4):
+	# The packaged addon profile exposes the three production tiers. Reference
+	# Marschner is a separate validation tier checked directly against its
+	# shaders below.
+	for tier in range(3):
 		profile.quality_tier = tier
 		for coverage_mode in [STATIC_BAYER_MODE, ALPHA_TO_COVERAGE_MODE]:
 			profile.coverage_mode = coverage_mode
@@ -56,6 +61,18 @@ func _initialize() -> void:
 				if not uniform_names.has(required_name):
 					_fail("%s is missing wetness uniform %s" % [shader.resource_path, required_name])
 					return
+
+	# Reference wetness interface: both compiled coverage families must expose
+	# the same wetness contract as the production tiers.
+	for reference_shader in [REFERENCE_SHADER, REFERENCE_A2C_SHADER]:
+		if reference_shader == null:
+			_fail("Reference shader failed to load")
+			return
+		var uniform_names := _shader_uniform_names(reference_shader)
+		for required_name in REQUIRED_WETNESS_UNIFORMS:
+			if not uniform_names.has(required_name):
+				_fail("%s is missing wetness uniform %s" % [reference_shader.resource_path, required_name])
+				return
 
 	print("HAIR_WETNESS_INTERFACE_OK")
 	quit(0)

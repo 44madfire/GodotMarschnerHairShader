@@ -4,9 +4,9 @@ class_name HairMaterialProfile
 
 ## User-facing hair material profile.
 ##
-## Presents one authoring surface while keeping Approx, Fast Marschner,
-## Cinematic Marschner, and Reference Marschner as separate compiled shaders.
-## Pair this resource with HairGroomData for new hair-card grooms.
+## Presents one authoring surface while keeping Approx, Fast Marschner, and
+## Cinematic Marschner as separate compiled shaders. Pair this resource with
+## HairGroomData for new hair-card grooms.
 ##
 ## Coverage AUTO is editor-safe: without a runtime viewport it resolves to a
 ## stable Bayer phase. With HairCoverageController, AUTO follows viewport AA:
@@ -17,24 +17,22 @@ class_name HairMaterialProfile
 ## pipeline rather than this material profile.
 ##
 ## Serialized tier values remain unchanged for compatibility:
-## 0 = Approx/Kajiya-Kay, 1 = Unity Fast, 2 = Cinematic, 3 = Reference.
+## 0 = Approx/Kajiya-Kay, 1 = Unity Fast, 2 = Cinematic.
 enum QualityTier {
 	APPROX = 0,
 	FAST_MARSCHNER = 1,
 	CINEMATIC_MARSCHNER = 2,
-	REFERENCE_MARSCHNER = 3,
 }
 
-const APPROX_SHADER: Shader = preload("res://assets/hair/materials/shaders/hair_approx.gdshader")
-const FAST_MARSCHNER_SHADER: Shader = preload("res://assets/hair/materials/shaders/hair_marschner_unity_fast.gdshader")
-const CINEMATIC_MARSCHNER_SHADER: Shader = preload("res://assets/hair/materials/shaders/hair_marschner_cinematic.gdshader")
-const REFERENCE_MARSCHNER_SHADER: Shader = preload("res://assets/hair/materials/shaders/hair.gdshader")
-const APPROX_A2C_SHADER: Shader = preload("res://assets/hair/materials/shaders/hair_approx_a2c.gdshader")
-const FAST_MARSCHNER_A2C_SHADER: Shader = preload("res://assets/hair/materials/shaders/hair_marschner_unity_fast_a2c.gdshader")
-const CINEMATIC_MARSCHNER_A2C_SHADER: Shader = preload("res://assets/hair/materials/shaders/hair_marschner_cinematic_a2c.gdshader")
-const REFERENCE_MARSCHNER_A2C_SHADER: Shader = preload("res://assets/hair/materials/shaders/hair_a2c.gdshader")
-const LUTAdapter := preload("res://assets/hair/materials/HairMarschnerLUTAdapter.gd")
-const CoveragePolicy := preload("res://assets/hair/materials/HairCoveragePolicy.gd")
+const APPROX_SHADER: Shader = preload("res://addons/marschner_hair/shaders/hair_approx.gdshader")
+const FAST_MARSCHNER_SHADER: Shader = preload("res://addons/marschner_hair/shaders/hair_marschner_unity_fast.gdshader")
+const CINEMATIC_MARSCHNER_SHADER: Shader = preload("res://addons/marschner_hair/shaders/hair_marschner_cinematic.gdshader")
+const APPROX_A2C_SHADER: Shader = preload("res://addons/marschner_hair/shaders/hair_approx_a2c.gdshader")
+const FAST_MARSCHNER_A2C_SHADER: Shader = preload("res://addons/marschner_hair/shaders/hair_marschner_unity_fast_a2c.gdshader")
+const CINEMATIC_MARSCHNER_A2C_SHADER: Shader = preload("res://addons/marschner_hair/shaders/hair_marschner_cinematic_a2c.gdshader")
+const LUTAdapter := preload("res://addons/marschner_hair/hair_marschner_lut_adapter.gd")
+const CoveragePolicy := preload("res://addons/marschner_hair/hair_coverage_policy.gd")
+const ShaderUtils := preload("res://addons/marschner_hair/internal/hair_shader_utils.gd")
 
 ## Shader parameters intentionally owned by the groom/material rather than this
 ## profile. apply_to() carries them across compiled shader changes when both the
@@ -54,10 +52,10 @@ const PRESERVED_SHADER_PARAMETERS: Array[StringName] = [
 @export_category("Quality")
 ## Selects the compiled lighting model. Switching this value also refreshes the
 ## Inspector and hides controls that are irrelevant to the chosen tier.
-@export_enum("Approx / Kajiya-Kay", "Fast Marschner", "Cinematic Marschner", "Reference Marschner")
+@export_enum("Approx / Kajiya-Kay", "Fast Marschner", "Cinematic Marschner")
 var quality_tier: int = QualityTier.APPROX:
 	set(value):
-		var clamped_value: int = clampi(value, QualityTier.APPROX, QualityTier.REFERENCE_MARSCHNER)
+		var clamped_value: int = clampi(value, QualityTier.APPROX, QualityTier.CINEMATIC_MARSCHNER)
 		if quality_tier == clamped_value:
 			return
 		quality_tier = clamped_value
@@ -102,8 +100,8 @@ var coverage_mode: int = CoveragePolicy.Mode.AUTO
 ## Remaining diffuse/multiple-scattering intensity at full wetness. Lower values
 ## darken the hair body while leaving the added water-film reflection bright.
 @export_range(0.0, 1.0, 0.001) var wet_internal_scatter_scale: float = 0.35
-## Remaining Marschner TT/TRT transport at full wetness. Reference maps this to
-## an absorption increase; Approx retains it only for cross-tier consistency.
+## Remaining Marschner TT/TRT transport at full wetness. Approx retains it only
+## for cross-tier consistency.
 @export_range(0.0, 1.0, 0.001) var wet_transmission_scale: float = 0.65
 ## Remaining cuticle/tangent-shift separation at full wetness. Lower values make
 ## the coated optical boundary behave smoother while leaving groom geometry alone.
@@ -132,8 +130,7 @@ var absorption_mode: int = 0:
 ## the default is calibrated to the current Fast Marschner implementation.
 @export_range(0.0, 0.01, 0.0001) var melanin_absorption_scale: float = 0.001
 ## Optional Unity Fast azimuthal LUT override. Leave null to load the packaged
-## direct ImageTexture3D at res://assets/hair/luts/unity_azimuthal_64.res.
-## Legacy raw-data Resources remain accepted for benchmark/compatibility use.
+## direct ImageTexture3D at res://addons/marschner_hair/luts/unity_azimuthal_64.res.
 @export var unity_azimuthal_lut_data: Resource
 
 @export_category("Cinematic Marschner")
@@ -142,8 +139,7 @@ var absorption_mode: int = 0:
 @export_range(1.0, 2.0, 0.001) var ior: float = 1.55
 ## Optional conditioned longitudinal LUT override. Leave null to load the
 ## packaged direct ImageTexture3D at
-## res://assets/hair/luts/cinematic_longitudinal_kernel_128x128x64.res.
-## Legacy raw-data Resources remain accepted for benchmark/compatibility use.
+## res://addons/marschner_hair/luts/cinematic_longitudinal_kernel_128x128x64.res.
 @export var cinematic_longitudinal_lut_data: Resource
 
 @export_category("Approx / Kajiya-Kay")
@@ -231,9 +227,7 @@ func _shader_for_effective_coverage(effective_mode: int) -> Shader:
 			return FAST_MARSCHNER_A2C_SHADER if use_a2c else FAST_MARSCHNER_SHADER
 		QualityTier.CINEMATIC_MARSCHNER:
 			return CINEMATIC_MARSCHNER_A2C_SHADER if use_a2c else CINEMATIC_MARSCHNER_SHADER
-		QualityTier.REFERENCE_MARSCHNER:
-			return REFERENCE_MARSCHNER_A2C_SHADER if use_a2c else REFERENCE_MARSCHNER_SHADER
-	return REFERENCE_MARSCHNER_A2C_SHADER if use_a2c else REFERENCE_MARSCHNER_SHADER
+	return APPROX_A2C_SHADER if use_a2c else APPROX_SHADER
 
 
 ## Primary material authoring/runtime API.
@@ -257,11 +251,11 @@ func apply_to(material: ShaderMaterial, groom_data: Resource = null, viewport: V
 
 	var preserved_values: Dictionary = {}
 	if material.shader != null and material.shader != target_shader:
-		preserved_values = _capture_shader_parameters(material, PRESERVED_SHADER_PARAMETERS)
+		preserved_values = ShaderUtils.capture_parameters(material, PRESERVED_SHADER_PARAMETERS)
 
 	material.shader = target_shader
 	if not preserved_values.is_empty():
-		_restore_shader_parameters(material, preserved_values)
+		ShaderUtils.restore_parameters(material, preserved_values)
 
 	var profile_bound: bool = _apply_profile_to_current_shader(material, true)
 	var groom_bound: bool = true
@@ -298,7 +292,7 @@ func _set_coverage_phase(material: ShaderMaterial, effective_mode: int, rendered
 		return false
 	if CoveragePolicy.uses_alpha_to_coverage(effective_mode):
 		return true
-	var known_parameters: Dictionary = _shader_uniform_names(material.shader)
+	var known_parameters: Dictionary = ShaderUtils.uniform_names(material.shader)
 	if not known_parameters.has(&"bayer_phase_index"):
 		return false
 	material.set_shader_parameter(&"bayer_phase_index", CoveragePolicy.bayer_phase(effective_mode, rendered_frame_index))
@@ -316,7 +310,7 @@ func _apply_profile_to_current_shader(material: ShaderMaterial, warn_on_bind_fai
 	if material == null or material.shader == null:
 		return false
 
-	var known_parameters: Dictionary = _shader_uniform_names(material.shader)
+	var known_parameters: Dictionary = ShaderUtils.uniform_names(material.shader)
 	var values: Dictionary = {
 		&"albedo": albedo,
 		&"longitudinal_roughness": longitudinal_roughness,
@@ -355,42 +349,8 @@ func _apply_profile_to_current_shader(material: ShaderMaterial, warn_on_bind_fai
 
 	var bound: bool = bind_mode_resources(material)
 	if not bound and warn_on_bind_failure:
-		push_warning("HairMaterialProfile could not bind the packaged direct LUT required by %s. Verify the production LUT assets are present and structurally valid; legacy raw-data overrides remain supported for development/compatibility." % material.shader.resource_path)
+		push_warning("HairMaterialProfile could not bind the packaged direct LUT required by %s. Verify the production LUT assets are present and structurally valid." % material.shader.resource_path)
 	return bound
-
-
-func _shader_uniform_names(shader: Shader) -> Dictionary:
-	var known_parameters: Dictionary = {}
-	if shader == null:
-		return known_parameters
-	var uniforms: Array = shader.get_shader_uniform_list()
-	for uniform_value in uniforms:
-		var uniform: Dictionary = uniform_value
-		var uniform_name: StringName = StringName(uniform.get("name", ""))
-		if uniform_name != &"":
-			known_parameters[uniform_name] = true
-	return known_parameters
-
-
-func _capture_shader_parameters(material: ShaderMaterial, parameter_names: Array[StringName]) -> Dictionary:
-	var captured: Dictionary = {}
-	if material == null or material.shader == null:
-		return captured
-	var known_parameters: Dictionary = _shader_uniform_names(material.shader)
-	for parameter_name in parameter_names:
-		if known_parameters.has(parameter_name):
-			captured[parameter_name] = material.get_shader_parameter(parameter_name)
-	return captured
-
-
-func _restore_shader_parameters(material: ShaderMaterial, captured: Dictionary) -> void:
-	if material == null or material.shader == null:
-		return
-	var known_parameters: Dictionary = _shader_uniform_names(material.shader)
-	for parameter_name_value in captured:
-		var parameter_name: StringName = StringName(parameter_name_value)
-		if known_parameters.has(parameter_name):
-			material.set_shader_parameter(parameter_name, captured[parameter_name_value])
 
 
 ## Binds only the resource required by the material's explicit shader variant.

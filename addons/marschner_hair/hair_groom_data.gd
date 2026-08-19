@@ -9,6 +9,8 @@ class_name HairGroomData
 ## can therefore be reused across many grooms while each groom owns the texture
 ## data generated for its card atlas.
 
+const ShaderUtils := preload("res://addons/marschner_hair/internal/hair_shader_utils.gd")
+
 @export_category("Hair Card Textures")
 ## RGB = tangent direction encoded from [-1, 1] to [0, 1].
 ## A   = root-to-tip coordinate.
@@ -49,14 +51,7 @@ func apply_to_shader_material(material: ShaderMaterial, warn_on_failure: bool = 
 			push_warning(validation_message())
 		return false
 
-	var uniform_names: Dictionary = {}
-	var uniforms: Array = material.shader.get_shader_uniform_list()
-	for uniform_value in uniforms:
-		var uniform: Dictionary = uniform_value
-		var uniform_name: StringName = StringName(uniform.get("name", ""))
-		if uniform_name != &"":
-			uniform_names[uniform_name] = true
-
+	var uniform_names: Dictionary = ShaderUtils.uniform_names(material.shader)
 	if not uniform_names.has(&"coords_texture") or not uniform_names.has(&"attributes_texture"):
 		if warn_on_failure:
 			push_warning("%s does not expose the shared hair groom texture contract." % material.shader.resource_path)
@@ -72,7 +67,7 @@ func apply_to_shader_material(material: ShaderMaterial, warn_on_failure: bool = 
 ## Returned as Resource so this script never depends on its own global class
 ## name being registered during headless parsing.
 static func from_shader_material(material: ShaderMaterial) -> Resource:
-	var groom: Resource = (load("res://assets/hair/materials/HairGroomData.gd") as GDScript).new()
+	var groom: Resource = (load("res://addons/marschner_hair/hair_groom_data.gd") as GDScript).new()
 	if material == null or material.shader == null:
 		return groom
 	groom.set(&"coords_texture", material.get_shader_parameter(&"coords_texture") as Texture2D)

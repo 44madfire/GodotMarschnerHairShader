@@ -1,6 +1,6 @@
 extends SceneTree
 
-const LUT_ADAPTER := preload("res://assets/hair/materials/HairMarschnerLUTAdapter.gd")
+const LUT_ADAPTER := preload("res://addons/marschner_hair/hair_marschner_lut_adapter.gd")
 const PROFILE_TEMPLATE: Resource = preload("res://demos/resources/hair_material_profile_demo.tres")
 const GROOM_DATA: Resource = preload("res://demos/resources/blowout_groom_data.tres")
 
@@ -50,8 +50,11 @@ func _run() -> void:
 	if _has_property(PROFILE_TEMPLATE, &"coverage_mode"):
 		coverage_modes = [COVERAGE_STATIC_BAYER, COVERAGE_ALPHA_TO_COVERAGE]
 
+	# The packaged addon profile exposes the three production tiers. Reference
+	# Marschner (tier 3) is a separate validation tier that binds no LUT, so it
+	# is intentionally not part of the direct-LUT binding matrix.
 	for coverage_mode in coverage_modes:
-		for tier in 4:
+		for tier in 3:
 			var profile: Resource = PROFILE_TEMPLATE.duplicate(true)
 			profile.set(&"quality_tier", tier)
 			if coverage_mode >= 0:

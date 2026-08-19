@@ -26,7 +26,8 @@ const FROZEN_TIME_SCALE := 1e-6
 
 const ProfileTemplate: Resource = preload("res://demos/resources/hair_material_profile_demo.tres")
 const GroomData: Resource = preload("res://demos/resources/blowout_groom_data.tres")
-const LUTAdapterScript := preload("res://assets/hair/materials/HairMarschnerLUTAdapter.gd")
+const LUTAdapterScript := preload("res://addons/marschner_hair/hair_marschner_lut_adapter.gd")
+const REFERENCE_SHADER: Shader = preload("res://assets/hair/materials/shaders/hair.gdshader")
 const CARD_CONTROL_SHADER: Shader = preload("res://benchmark/shaders/hair_card_cost_control.gdshader")
 const ALU_PROBE_SHADER: Shader = preload("res://benchmark/shaders/hair_alu_cost_probe.gdshader")
 const LUT_PROBE_SHADER: Shader = preload("res://benchmark/shaders/hair_lut_cost_probe.gdshader")
@@ -206,7 +207,10 @@ func _find_groom(controller: Node, groom_id: StringName) -> MeshInstance3D:
 
 func _build_production_materials() -> Dictionary:
 	var materials: Dictionary = {}
-	for tier in 4:
+	# The packaged addon profile exposes the three production tiers (Approx,
+	# Fast, Cinematic). Reference Marschner (tier 3) is a separate validation
+	# case built directly from the Reference shader below.
+	for tier in 3:
 		var profile: Resource = ProfileTemplate.duplicate(true)
 		profile.set(&"quality_tier", tier)
 		var material: ShaderMaterial = profile.call(&"create_material", GroomData) as ShaderMaterial
@@ -218,7 +222,26 @@ func _build_production_materials() -> Dictionary:
 			continue
 		_pin_material(material)
 		materials[tier] = material
+	materials[TIER_REFERENCE] = _build_reference_material()
 	return materials
+
+
+## Reference Marschner is a development/validation tier outside the packaged
+## addon. It is not part of the production profile's tier enum, so its material
+## is built directly from the Reference shader with the demo profile values and
+## groom textures applied.
+func _build_reference_material() -> ShaderMaterial:
+	var material := ShaderMaterial.new()
+	material.shader = REFERENCE_SHADER
+	if material.shader == null:
+		_fail("Failed to load the Reference shader")
+		return material
+	var profile: Resource = ProfileTemplate.duplicate(true)
+	profile.call(&"apply_to_shader_material", material)
+	if not bool(GroomData.call(&"apply_to_shader_material", material)):
+		_fail("Failed to bind groom textures to the Reference material")
+	_pin_material(material)
+	return material
 
 
 func _build_probe_materials(lut_adapter: RefCounted) -> Dictionary:
@@ -230,8 +253,8 @@ func _build_probe_materials(lut_adapter: RefCounted) -> Dictionary:
 		_fail("Failed to construct one or more benchmark probe materials")
 		return materials
 
-	var cinematic_data: Resource = lut_adapter.call(&"load_default_cinematic_data") as Resource
-	var lut_texture: Texture3D = lut_adapter.call(&"texture3d_from_resource", cinematic_data) as Texture3D
+	var cinematic_data: Resource = lut_adapter.call(&"load_default_cinematic_texture") as Resource
+	var lut_texture: Texture3D = cinematic_data as Texture3D
 	if lut_texture == null:
 		_fail("Failed to reconstruct Cinematic Texture3D for LUT sampling probe")
 		return materials

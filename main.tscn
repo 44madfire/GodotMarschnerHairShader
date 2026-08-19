@@ -5,7 +5,8 @@
 [ext_resource type="Script" uid="uid://cvfc4qabpq4vw" path="res://addons/debug_camera/debug_camera.gd" id="3_b1qrp"]
 [ext_resource type="ArrayMesh" uid="uid://cwuw3j5gfe4nc" path="res://assets/hair/head.obj" id="4_come4"]
 [ext_resource type="Script" uid="uid://3ryg5b8nctk" path="res://util/hairstyle_controller.gd" id="5_h8e4i"]
-[ext_resource type="Shader" uid="uid://bn82eehj8tcof" path="res://assets/hair/materials/shaders/hair.gdshader" id="6_4lmeg"]
+[ext_resource type="Shader" uid="uid://bqqjvoveuochd" path="res://addons/marschner_hair/shaders/hair_marschner_cinematic.gdshader" id="6_4lmeg"]
+[ext_resource type="ImageTexture3D" path="res://addons/marschner_hair/luts/cinematic_longitudinal_kernel_128x128x64.res" id="6_lut"]
 [ext_resource type="PackedScene" uid="uid://kl4byj0m145v" path="res://assets/hair/models/bangs/bangs.glb" id="6_ok6jj"]
 [ext_resource type="Texture2D" uid="uid://cfv504m7jggh" path="res://assets/hair/models/bangs/bangs_attrib.png" id="7_0cp0l"]
 [ext_resource type="Texture2D" uid="uid://b8kejqgci7udw" path="res://assets/hair/models/bangs/bangs_coords.png" id="8_d2t1y"]
@@ -116,6 +117,9 @@ shader_parameter/attributes_texture = ExtResource("7_0cp0l")
 shader_parameter/show_hair_cards = false
 shader_parameter/show_hashed_strands = false
 shader_parameter/lobe_scales = Vector3(1, 1, 1)
+shader_parameter/cinematic_longitudinal_lut = ExtResource("6_lut")
+shader_parameter/cinematic_longitudinal_beta_range = Vector2(0.05, 64)
+shader_parameter/cinematic_longitudinal_low_beta_blend = Vector2(0.05, 0.1)
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_4ie7r"]
 render_priority = 0
@@ -130,6 +134,9 @@ shader_parameter/attributes_texture = ExtResource("10_0n3wm")
 shader_parameter/show_hair_cards = false
 shader_parameter/show_hashed_strands = false
 shader_parameter/lobe_scales = Vector3(1, 1, 1)
+shader_parameter/cinematic_longitudinal_lut = ExtResource("6_lut")
+shader_parameter/cinematic_longitudinal_beta_range = Vector2(0.05, 64)
+shader_parameter/cinematic_longitudinal_low_beta_blend = Vector2(0.05, 0.1)
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_xr8vy"]
 render_priority = 0
@@ -144,6 +151,9 @@ shader_parameter/attributes_texture = ExtResource("13_f6a44")
 shader_parameter/show_hair_cards = false
 shader_parameter/show_hashed_strands = false
 shader_parameter/lobe_scales = Vector3(1, 1, 1)
+shader_parameter/cinematic_longitudinal_lut = ExtResource("6_lut")
+shader_parameter/cinematic_longitudinal_beta_range = Vector2(0.05, 64)
+shader_parameter/cinematic_longitudinal_low_beta_blend = Vector2(0.05, 0.1)
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_clena"]
 render_priority = 0
@@ -158,6 +168,9 @@ shader_parameter/attributes_texture = ExtResource("16_uypp3")
 shader_parameter/show_hair_cards = false
 shader_parameter/show_hashed_strands = false
 shader_parameter/lobe_scales = Vector3(1, 1, 5)
+shader_parameter/cinematic_longitudinal_lut = ExtResource("6_lut")
+shader_parameter/cinematic_longitudinal_beta_range = Vector2(0.05, 64)
+shader_parameter/cinematic_longitudinal_low_beta_blend = Vector2(0.05, 0.1)
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_gffhh"]
 render_priority = 0
@@ -172,6 +185,9 @@ shader_parameter/attributes_texture = ExtResource("19_6iyjs")
 shader_parameter/show_hair_cards = false
 shader_parameter/show_hashed_strands = false
 shader_parameter/lobe_scales = Vector3(1, 1, 1)
+shader_parameter/cinematic_longitudinal_lut = ExtResource("6_lut")
+shader_parameter/cinematic_longitudinal_beta_range = Vector2(0.05, 64)
+shader_parameter/cinematic_longitudinal_low_beta_blend = Vector2(0.05, 0.1)
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_qt882"]
 render_priority = 0
@@ -186,6 +202,9 @@ shader_parameter/attributes_texture = ExtResource("22_rnkwl")
 shader_parameter/show_hair_cards = false
 shader_parameter/show_hashed_strands = false
 shader_parameter/lobe_scales = Vector3(1, 1, 1)
+shader_parameter/cinematic_longitudinal_lut = ExtResource("6_lut")
+shader_parameter/cinematic_longitudinal_beta_range = Vector2(0.05, 64)
+shader_parameter/cinematic_longitudinal_low_beta_blend = Vector2(0.05, 0.1)
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_r1mo8"]
 render_priority = 0
@@ -200,6 +219,9 @@ shader_parameter/attributes_texture = ExtResource("25_ruth0")
 shader_parameter/show_hair_cards = false
 shader_parameter/show_hashed_strands = false
 shader_parameter/lobe_scales = Vector3(1, 1, 1)
+shader_parameter/cinematic_longitudinal_lut = ExtResource("6_lut")
+shader_parameter/cinematic_longitudinal_beta_range = Vector2(0.05, 64)
+shader_parameter/cinematic_longitudinal_low_beta_blend = Vector2(0.05, 0.1)
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_2d385"]
 render_priority = 0
@@ -214,6 +236,9 @@ shader_parameter/attributes_texture = ExtResource("28_sm6fg")
 shader_parameter/show_hair_cards = false
 shader_parameter/show_hashed_strands = false
 shader_parameter/lobe_scales = Vector3(1, 1, 1)
+shader_parameter/cinematic_longitudinal_lut = ExtResource("6_lut")
+shader_parameter/cinematic_longitudinal_beta_range = Vector2(0.05, 64)
+shader_parameter/cinematic_longitudinal_low_beta_blend = Vector2(0.05, 0.1)
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_hqj0t"]
 render_priority = 0
@@ -228,6 +253,9 @@ shader_parameter/attributes_texture = ExtResource("31_uatky")
 shader_parameter/show_hair_cards = false
 shader_parameter/show_hashed_strands = false
 shader_parameter/lobe_scales = Vector3(1, 1, 1)
+shader_parameter/cinematic_longitudinal_lut = ExtResource("6_lut")
+shader_parameter/cinematic_longitudinal_beta_range = Vector2(0.05, 64)
+shader_parameter/cinematic_longitudinal_low_beta_blend = Vector2(0.05, 0.1)
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_dtpic"]
 render_priority = 0
@@ -242,6 +270,9 @@ shader_parameter/attributes_texture = ExtResource("34_wu3dr")
 shader_parameter/show_hair_cards = false
 shader_parameter/show_hashed_strands = false
 shader_parameter/lobe_scales = Vector3(1, 1, 1)
+shader_parameter/cinematic_longitudinal_lut = ExtResource("6_lut")
+shader_parameter/cinematic_longitudinal_beta_range = Vector2(0.05, 64)
+shader_parameter/cinematic_longitudinal_low_beta_blend = Vector2(0.05, 0.1)
 
 [node name="Main" type="Node" unique_id=1761627268]
 

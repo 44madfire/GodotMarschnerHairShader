@@ -1,7 +1,9 @@
 extends SceneTree
-const Policy := preload("res://assets/hair/materials/HairCoveragePolicy.gd")
+const Policy := preload("res://addons/marschner_hair/hair_coverage_policy.gd")
 const ProfileTemplate: Resource = preload("res://demos/resources/hair_material_profile_demo.tres")
 const GroomData: Resource = preload("res://demos/resources/blowout_groom_data.tres")
+const REFERENCE_SHADER: Shader = preload("res://assets/hair/materials/shaders/hair.gdshader")
+const REFERENCE_A2C_SHADER: Shader = preload("res://assets/hair/materials/shaders/hair_a2c.gdshader")
 func _initialize() -> void:
 	call_deferred("_run")
 func _run() -> void:
@@ -10,7 +12,9 @@ func _run() -> void:
 		quit(1)
 		return
 	var failures := PackedStringArray()
-	for tier in 4:
+	# The packaged addon profile exposes the three production tiers. Reference
+	# Marschner is a separate validation tier exercised directly below.
+	for tier in 3:
 		var profile: Resource = ProfileTemplate.duplicate(true)
 		profile.set(&"quality_tier", tier)
 		profile.set(&"coverage_mode", Policy.Mode.AUTO)
@@ -30,6 +34,22 @@ func _run() -> void:
 		_check(bool(profile.call(&"update_coverage_for_viewport", material, root, 22)), "a2c %d" % tier, failures)
 		if material != null:
 			_check(material.shader != null and material.shader != stable, "a2c shader %d" % tier, failures)
+
+	# Reference coverage runtime: the normal and A2C compiled families must both
+	# create valid materials and expose the shared groom contract.
+	var reference_material := ShaderMaterial.new()
+	reference_material.shader = REFERENCE_SHADER
+	_check(reference_material.shader != null and reference_material.get_rid().is_valid(), "reference static material", failures)
+	if reference_material.shader != null:
+		GroomData.call(&"apply_to_shader_material", reference_material)
+		_check(reference_material.get_shader_parameter(&"coords_texture") != null, "reference static groom textures", failures)
+	var reference_a2c_material := ShaderMaterial.new()
+	reference_a2c_material.shader = REFERENCE_A2C_SHADER
+	_check(reference_a2c_material.shader != null and reference_a2c_material.get_rid().is_valid(), "reference a2c material", failures)
+	if reference_a2c_material.shader != null:
+		GroomData.call(&"apply_to_shader_material", reference_a2c_material)
+		_check(reference_a2c_material.get_shader_parameter(&"coords_texture") != null, "reference a2c groom textures", failures)
+
 	if failures.is_empty():
 		print("HAIR_COVERAGE_RUNTIME_POLICY_OK")
 		quit(0)

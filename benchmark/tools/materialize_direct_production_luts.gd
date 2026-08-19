@@ -4,14 +4,16 @@ extends SceneTree
 ## resources consumed by production. The raw generators remain the numerical
 ## source of truth; this step changes serialization only.
 
-const LUT_ADAPTER := preload("res://assets/hair/materials/HairMarschnerLUTAdapter.gd")
+const LUT_ADAPTER := preload("res://addons/marschner_hair/hair_marschner_lut_adapter.gd")
+const LEGACY_ADAPTER := preload("res://benchmark/resources/hair_marschner_legacy_lut_adapter.gd")
 
 func _initialize() -> void:
 	var adapter: RefCounted = LUT_ADAPTER.new()
+	var legacy_adapter: RefCounted = LEGACY_ADAPTER.new()
 	var result := {
 		"schema": "marschner_direct_lut_materialization_v1",
-		"fast": _materialize_one(adapter, "fast", adapter.call(&"load_default_unity_data") as Resource, LUT_ADAPTER.DEFAULT_UNITY_LUT_PATH, true),
-		"cinematic": _materialize_one(adapter, "cinematic", adapter.call(&"load_default_cinematic_data") as Resource, LUT_ADAPTER.DEFAULT_CINEMATIC_LUT_PATH, false),
+		"fast": _materialize_one(adapter, legacy_adapter, "fast", legacy_adapter.call(&"load_default_unity_data") as Resource, LUT_ADAPTER.DEFAULT_UNITY_LUT_PATH, true),
+		"cinematic": _materialize_one(adapter, legacy_adapter, "cinematic", legacy_adapter.call(&"load_default_cinematic_data") as Resource, LUT_ADAPTER.DEFAULT_CINEMATIC_LUT_PATH, false),
 	}
 	print("DIRECT_LUT_MATERIALIZATION_RESULT " + JSON.stringify(result))
 	if not bool(result.fast.get("ok", false)) or not bool(result.cinematic.get("ok", false)):
@@ -21,7 +23,7 @@ func _initialize() -> void:
 	print("DIRECT_LUT_MATERIALIZATION_OK")
 	quit(0)
 
-func _materialize_one(adapter: RefCounted, kind: String, raw: Resource, out_path: String, is_fast: bool) -> Dictionary:
+func _materialize_one(adapter: RefCounted, legacy_adapter: RefCounted, kind: String, raw: Resource, out_path: String, is_fast: bool) -> Dictionary:
 	var out := {"ok": false, "kind": kind, "path": out_path}
 	if raw == null:
 		out["error"] = "validated raw source LUT is missing"
@@ -33,7 +35,7 @@ func _materialize_one(adapter: RefCounted, kind: String, raw: Resource, out_path
 			if not raw_errors.is_empty():
 				out["error"] = "raw LUT invalid: %s" % "; ".join(raw_errors)
 				return out
-	var texture: Texture3D = adapter.call(&"texture3d_from_resource", raw) as Texture3D
+	var texture: Texture3D = legacy_adapter.call(&"texture3d_from_resource", raw) as Texture3D
 	if texture == null:
 		out["error"] = "raw LUT could not be reconstructed"
 		return out

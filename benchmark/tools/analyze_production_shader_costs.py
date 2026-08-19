@@ -16,9 +16,9 @@ from collections import Counter
 from pathlib import Path
 
 TIERS = {
-    "approx": "assets/hair/materials/shaders/hair_approx.gdshader",
-    "fast": "assets/hair/materials/shaders/hair_marschner_unity_fast.gdshader",
-    "cinematic": "assets/hair/materials/shaders/hair_marschner_cinematic.gdshader",
+    "approx": "addons/marschner_hair/shaders/hair_approx.gdshader",
+    "fast": "addons/marschner_hair/shaders/hair_marschner_unity_fast.gdshader",
+    "cinematic": "addons/marschner_hair/shaders/hair_marschner_cinematic.gdshader",
     "reference": "assets/hair/materials/shaders/hair.gdshader",
 }
 

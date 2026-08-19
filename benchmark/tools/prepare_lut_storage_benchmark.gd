@@ -6,7 +6,7 @@ extends SceneTree
 ## Godot 4.7's directly serialized ImageTexture3D representation. Direct files
 ## are written under user:// so benchmark artifacts never modify the project.
 
-const LUT_ADAPTER := preload("res://assets/hair/materials/HairMarschnerLUTAdapter.gd")
+const LUT_ADAPTER := preload("res://benchmark/resources/hair_marschner_legacy_lut_adapter.gd")
 
 const FAST_RAW_PATH: String = "res://benchmark/resources/luts/unity_azimuthal_64.res"
 const CINEMATIC_RAW_PATH: String = "res://benchmark/resources/luts/cinematic_longitudinal_kernel_128x128x64.res"

@@ -1,6 +1,8 @@
 extends SceneTree
-const Policy := preload("res://assets/hair/materials/HairCoveragePolicy.gd")
-const Profile := preload("res://assets/hair/materials/HairMaterialProfile.gd")
+const Policy := preload("res://addons/marschner_hair/hair_coverage_policy.gd")
+const Profile := preload("res://addons/marschner_hair/hair_material_profile.gd")
+const REFERENCE_SHADER: Shader = preload("res://assets/hair/materials/shaders/hair.gdshader")
+const REFERENCE_A2C_SHADER: Shader = preload("res://assets/hair/materials/shaders/hair_a2c.gdshader")
 func _initialize() -> void:
 	var failures := PackedStringArray()
 	var viewport := SubViewport.new()
@@ -35,9 +37,11 @@ func _initialize() -> void:
 	# Shader selection is verified against the real current rendering method in
 	# the separate windowed runtime-policy smoke test. Here we keep deterministic
 	# headless coverage-policy assertions independent of that environment.
+	# The packaged addon profile exposes the three production tiers; Reference
+	# Marschner is a separate validation tier checked directly below.
 	var profile: Resource = Profile.new()
 	profile.set(&"coverage_mode", Policy.Mode.STATIC_BAYER)
-	for tier in 4:
+	for tier in 3:
 		profile.set(&"quality_tier", tier)
 		var stable: Shader = profile.call(&"get_shader_resource", viewport) as Shader
 		profile.set(&"coverage_mode", Policy.Mode.TAA_BAYER)
@@ -47,6 +51,12 @@ func _initialize() -> void:
 		profile.set(&"coverage_mode", Policy.Mode.STATIC_BAYER)
 		_check(stable != null and temporal == stable, "tier %d Bayer shader" % tier, failures)
 		_check(a2c != null and a2c != stable, "tier %d A2C shader" % tier, failures)
+
+	# Reference coverage: the normal and A2C compiled families must differ while
+	# both expose the shared groom contract.
+	_check(REFERENCE_SHADER != null and REFERENCE_A2C_SHADER != null, "Reference shaders failed to load", failures)
+	if REFERENCE_SHADER != null and REFERENCE_A2C_SHADER != null:
+		_check(REFERENCE_A2C_SHADER != REFERENCE_SHADER, "Reference A2C shader must differ from the normal variant", failures)
 
 	if failures.is_empty():
 		print("HAIR_COVERAGE_POLICY_OK")

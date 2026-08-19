@@ -4,15 +4,19 @@ extends SceneTree
 ## Verifies that a new groom can build a material from HairGroomData without an
 ## existing generated source ShaderMaterial and that every compiled production
 ## variant still exposes the common card texture interface.
+##
+## The packaged addon profile exposes the three production tiers (Approx, Fast,
+## Cinematic). Reference Marschner is a separate development/validation tier and
+## is checked directly against its shader.
 
-const ProfileScript := preload("res://assets/hair/materials/HairMaterialProfile.gd")
-const GroomDataScript := preload("res://assets/hair/materials/HairGroomData.gd")
+const ProfileScript := preload("res://addons/marschner_hair/hair_material_profile.gd")
+const GroomDataScript := preload("res://addons/marschner_hair/hair_groom_data.gd")
 const PreviewScript := preload("res://demos/hair_material_profile_preview.gd")
+const REFERENCE_SHADER: Shader = preload("res://assets/hair/materials/shaders/hair.gdshader")
 
 const TIER_APPROX: int = 0
 const TIER_FAST: int = 1
 const TIER_CINEMATIC: int = 2
-const TIER_REFERENCE: int = 3
 
 var _failures: PackedStringArray = PackedStringArray()
 
@@ -32,13 +36,20 @@ func _run() -> void:
 	groom.set(&"attributes_texture", attributes_texture)
 	_check(bool(groom.call(&"is_complete")), "HairGroomData should be complete after both textures are assigned")
 
-	for tier in [TIER_APPROX, TIER_FAST, TIER_CINEMATIC, TIER_REFERENCE]:
+	for tier in [TIER_APPROX, TIER_FAST, TIER_CINEMATIC]:
 		profile.set(&"quality_tier", tier)
 		var shader: Shader = profile.call(&"get_shader_resource") as Shader
 		_check(shader != null, "tier %d returned a null shader" % tier)
 		if shader != null:
 			_assert_uniform(shader, &"coords_texture")
 			_assert_uniform(shader, &"attributes_texture")
+
+	# Reference Marschner is a separate validation tier outside the packaged
+	# addon; verify its shared groom contract directly.
+	_check(REFERENCE_SHADER != null, "Reference shader failed to load")
+	if REFERENCE_SHADER != null:
+		_assert_uniform(REFERENCE_SHADER, &"coords_texture")
+		_assert_uniform(REFERENCE_SHADER, &"attributes_texture")
 
 	# New-groom path: no source ShaderMaterial exists. The profile creates the
 	# material, selects Approx, and HairGroomData supplies both generated maps.
@@ -52,11 +63,14 @@ func _run() -> void:
 	# Reference needs no LUT, so use it to verify explicit groom data rebinds the
 	# card contract after a shader-variant swap rather than relying on preserved
 	# state from the source material.
-	profile.set(&"quality_tier", TIER_REFERENCE)
-	var reference_applied: bool = bool(profile.call(&"apply_to", material, groom))
-	_check(reference_applied, "Reference apply_to(material, groom) failed")
-	_check(material.get_shader_parameter(&"coords_texture") == coords_texture, "Reference swap lost coords_texture")
-	_check(material.get_shader_parameter(&"attributes_texture") == attributes_texture, "Reference swap lost attributes_texture")
+	var reference_material := ShaderMaterial.new()
+	reference_material.shader = REFERENCE_SHADER
+	_check(reference_material.shader != null, "Reference material shader failed to load")
+	if reference_material.shader != null:
+		var reference_applied: bool = bool(groom.call(&"apply_to_shader_material", reference_material))
+		_check(reference_applied, "Reference groom apply_to_shader_material() failed")
+		_check(reference_material.get_shader_parameter(&"coords_texture") == coords_texture, "Reference swap lost coords_texture")
+		_check(reference_material.get_shader_parameter(&"attributes_texture") == attributes_texture, "Reference swap lost attributes_texture")
 
 	# Hardening: a non-null Resource that is not HairGroomData-compatible must be
 	# rejected before apply_to() mutates the material. Select a different target

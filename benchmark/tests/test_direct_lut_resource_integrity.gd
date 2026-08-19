@@ -1,10 +1,11 @@
 extends SceneTree
-const LUT_ADAPTER := preload("res://assets/hair/materials/HairMarschnerLUTAdapter.gd")
+const LUT_ADAPTER := preload("res://addons/marschner_hair/hair_marschner_lut_adapter.gd")
+const LEGACY_ADAPTER := preload("res://benchmark/resources/hair_marschner_legacy_lut_adapter.gd")
 func _initialize() -> void:
 	var adapter: RefCounted = LUT_ADAPTER.new()
 	var failures := PackedStringArray()
-	_check_one(adapter, "fast", LUT_ADAPTER.DEFAULT_UNITY_LUT_PATH, LUT_ADAPTER.LEGACY_UNITY_DATA_PATH, true, failures)
-	_check_one(adapter, "cinematic", LUT_ADAPTER.DEFAULT_CINEMATIC_LUT_PATH, LUT_ADAPTER.LEGACY_CINEMATIC_DATA_PATH, false, failures)
+	_check_one(adapter, "fast", LUT_ADAPTER.DEFAULT_UNITY_LUT_PATH, LEGACY_ADAPTER.LEGACY_UNITY_DATA_PATH, true, failures)
+	_check_one(adapter, "cinematic", LUT_ADAPTER.DEFAULT_CINEMATIC_LUT_PATH, LEGACY_ADAPTER.LEGACY_CINEMATIC_DATA_PATH, false, failures)
 	if not failures.is_empty():
 		for failure in failures: push_error(failure)
 		print("DIRECT_LUT_RESOURCE_INTEGRITY_FAILED"); quit(1); return
