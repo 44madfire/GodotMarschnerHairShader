@@ -19,17 +19,13 @@ The tiers remain **separate compiled shaders**. `HairMaterialProfile` is the com
 
 ## Repository layout
 
-The `development` branch contains demos, benchmarks, validation tools, experimental/reference material, and the production sources under:
-
-```text
-res://assets/hair/
-```
-
-The distributable release branch repackages the production runtime under:
+The production runtime is canonical under:
 
 ```text
 res://addons/marschner_hair/
 ```
+
+`assets/hair/` holds demo/reference material: the CC BY-NC demo groom models and the benchmark-only analytic Reference shader. `benchmark/` retains the validation suite, Reference/experimental shader variants, and raw LUT fixtures. The generated production shader wrappers under `addons/marschner_hair/shaders/` are produced from the canonical templates in `tools/templates/` by `tools/generate_hair_shaders.py`.
 
 Release users should copy only the addon package described by the release README. Development-only raw LUT fixtures and benchmark generators are not runtime dependencies.
 
@@ -192,7 +188,7 @@ godot --path . --script res://benchmark/tests/test_hair_wetness_runtime.gd
 
 The direct `ImageTexture3D` checks require a normal rendering context on the validated Godot 4.7 setup; the headless display path can serialize/load those resources as empty 1x1x1 stubs.
 
-Before publishing a release package, also run the package-level checks in [`docs/release_validation.md`](docs/release_validation.md). Those checks exist specifically to catch repathing/import mistakes introduced when the production sources move from `assets/hair/` to `addons/marschner_hair/`.
+Before publishing a release package, also run the package-level checks in [`docs/release_validation.md`](docs/release_validation.md). Those checks exist specifically to catch drift between the canonical `addons/marschner_hair/` sources and their templates, plus import/path mistakes in the packaged addon.
 
 ## Further documentation
 

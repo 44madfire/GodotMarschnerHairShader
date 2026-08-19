@@ -206,6 +206,6 @@ The measured wetness cost is therefore within run-to-run noise for this benchmar
 
 ## Release considerations
 
-The development wetness implementation is validated. A release still needs a **package-level smoke test after repathing** the production files from `assets/hair/` to `addons/marschner_hair/`. That test is intended to catch broken preload/include/LUT paths and to confirm the six normal/A2C production variants in the actual distributable addon.
+The wetness implementation is validated. A release still needs a **package-level smoke test** of the canonical `addons/marschner_hair/` runtime. That test is intended to catch broken preload/include/LUT paths and to confirm the six normal/A2C production variants in the actual distributable addon.
 
 See [`release_validation.md`](release_validation.md) for the final package checklist.

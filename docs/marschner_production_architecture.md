@@ -66,17 +66,25 @@ Normal Cinematic sampling is one filtered 3D texture lookup per lobe. There is n
 ## Shader layout
 
 ```text
-assets/hair/materials/shaders/
-    hair_marschner_common.gdshaderinc
+addons/marschner_hair/shaders/
+    hair_common.gdshaderinc
+    hair_card_common.gdshaderinc
+    hair_kajiya_kay.gdshaderinc
+
+    hair_approx.gdshader
+    hair_approx_a2c.gdshader
+    hair_approx_body.gdshaderinc
 
     hair_marschner_unity_fast.gdshader
+    hair_marschner_unity_fast_a2c.gdshader
     hair_marschner_unity_fast_body.gdshaderinc
 
     hair_marschner_cinematic.gdshader
+    hair_marschner_cinematic_a2c.gdshader
     hair_marschner_cinematic_body.gdshaderinc
 ```
 
-Uniform and varying declarations intentionally remain in the top-level `.gdshader` wrappers. Godot 4.7 also requires care around inferred locals sourced from dynamic APIs, so the production LUT adapter and headless profile test use explicit local types at those seams.
+The six `.gdshader` wrappers are generated from the canonical templates in `tools/templates/` by `tools/generate_hair_shaders.py`; the shared includes and the three `_body.gdshaderinc` files are hand-maintained. Uniform and varying declarations intentionally remain in the top-level `.gdshader` wrappers. Godot 4.7 also requires care around inferred locals sourced from dynamic APIs, so the production LUT adapter and headless profile test use explicit local types at those seams.
 
 ## Generated resources
 

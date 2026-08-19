@@ -177,7 +177,7 @@ lobe_scales
 use_area_light_multipliers
 ```
 
-`freeze_bayer_phase` is retained only as a compatibility-preserved name for older materials; the production coverage policy uses `bayer_phase_index` and `HairCoverageController`.
+The production coverage policy uses `bayer_phase_index` and `HairCoverageController`.
 
 Explicit `HairGroomData` takes precedence over preserved groom textures.
 
@@ -189,19 +189,14 @@ Explicit `HairGroomData` takes precedence over preserved groom textures.
 
 Normal production code does not reconstruct the LUTs from raw byte resources.
 
-Development paths:
-
-```text
-res://assets/hair/luts/unity_azimuthal_64.res
-res://assets/hair/luts/cinematic_longitudinal_kernel_128x128x64.res
-```
-
-Release-package paths:
+Production LUT paths:
 
 ```text
 res://addons/marschner_hair/luts/unity_azimuthal_64.res
 res://addons/marschner_hair/luts/cinematic_longitudinal_kernel_128x128x64.res
 ```
+
+The same validated resources are mirrored under `assets/hair/luts/` for the demo/reference material; the addon is the canonical runtime source.
 
 `HairMarschnerLUTAdapter` loads these directly as `ImageTexture3D`, checks the expected dimensions/format/RID, and binds the fixed semantic contract. Legacy raw-data helpers remain only for development storage benchmarks.
 

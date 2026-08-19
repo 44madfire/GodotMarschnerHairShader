@@ -109,7 +109,6 @@ func _assert_consolidated_apply(profile: Resource, adapter: RefCounted) -> void:
 	groom_material.set_shader_parameter(&"coords_texture", coords_texture)
 	groom_material.set_shader_parameter(&"attributes_texture", attributes_texture)
 	groom_material.set_shader_parameter(&"show_hair_cards", true)
-	groom_material.set_shader_parameter(&"freeze_bayer_phase", true)
 
 	profile.set(&"quality_tier", TIER_FAST)
 	profile.set(&"absorption_mode", 0)
@@ -119,7 +118,6 @@ func _assert_consolidated_apply(profile: Resource, adapter: RefCounted) -> void:
 	_check(groom_material.get_shader_parameter(&"coords_texture") == coords_texture, "coords_texture was not preserved across Approx -> Fast")
 	_check(groom_material.get_shader_parameter(&"attributes_texture") == attributes_texture, "attributes_texture was not preserved across Approx -> Fast")
 	_check(bool(groom_material.get_shader_parameter(&"show_hair_cards")), "show_hair_cards was not preserved across Approx -> Fast")
-	_check(bool(groom_material.get_shader_parameter(&"freeze_bayer_phase")), "freeze_bayer_phase was not preserved across Approx -> Fast")
 	var fast_texture: Texture3D = groom_material.get_shader_parameter(&"unity_azimuthal_lut") as Texture3D
 	_check(fast_texture != null and fast_texture.get_rid().is_valid(), "apply_to() did not bind the Fast Unity azimuthal LUT")
 	var unity_data: Resource = LegacyLUTAdapterScript.new().call(&"load_default_unity_data") as Resource
@@ -135,7 +133,6 @@ func _assert_consolidated_apply(profile: Resource, adapter: RefCounted) -> void:
 	_check(groom_material.get_shader_parameter(&"coords_texture") == coords_texture, "coords_texture was not preserved across Fast -> Cinematic")
 	_check(groom_material.get_shader_parameter(&"attributes_texture") == attributes_texture, "attributes_texture was not preserved across Fast -> Cinematic")
 	_check(bool(groom_material.get_shader_parameter(&"show_hair_cards")), "show_hair_cards was not preserved across Fast -> Cinematic")
-	_check(bool(groom_material.get_shader_parameter(&"freeze_bayer_phase")), "freeze_bayer_phase was not preserved across Fast -> Cinematic")
 	_check(is_equal_approx(float(groom_material.get_shader_parameter(&"ior")), 1.42), "Cinematic apply_to() should preserve arbitrary profile IOR")
 	var cinematic_texture: Texture3D = groom_material.get_shader_parameter(&"cinematic_longitudinal_lut") as Texture3D
 	_check(cinematic_texture != null and cinematic_texture.get_rid().is_valid(), "apply_to() did not bind the Cinematic longitudinal LUT")

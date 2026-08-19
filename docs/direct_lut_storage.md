@@ -39,19 +39,14 @@ Cinematic:
 - low-beta transition: [0.05, 0.10]
 - channel: `R=log2(Q)`
 
-Development production paths:
-
-```text
-res://assets/hair/luts/unity_azimuthal_64.res
-res://assets/hair/luts/cinematic_longitudinal_kernel_128x128x64.res
-```
-
-The distributable addon repaths the same validated resources to:
+Production LUT paths:
 
 ```text
 res://addons/marschner_hair/luts/unity_azimuthal_64.res
 res://addons/marschner_hair/luts/cinematic_longitudinal_kernel_128x128x64.res
 ```
+
+The same validated resources are mirrored under `assets/hair/luts/` for the demo/reference material; the addon is the canonical runtime source.
 
 ## Godot 4.7 rendering-context constraint
 

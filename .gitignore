@@ -2,6 +2,10 @@
 .godot/
 *.uid
 
+# Python bytecode
+__pycache__/
+*.pyc
+
 .slim/deepwork/
 
 # BEGIN oh-my-opencode-slim worktrees

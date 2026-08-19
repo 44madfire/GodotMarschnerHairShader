@@ -60,12 +60,21 @@ Usage
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 TEMPLATE_DIR = REPO_ROOT / "tools" / "templates"
 SHADER_DIR = REPO_ROOT / "addons" / "marschner_hair" / "shaders"
+
+# Unresolved-token detection --------------------------------------------------
+
+TOKEN_PATTERN = re.compile(r"\{\{.*?\}\}")
+
+
+class TemplateError(Exception):
+    """Raised when a template is malformed or contains unresolved tokens."""
 
 # Variant tokens -------------------------------------------------------------
 
@@ -162,34 +171,76 @@ def parse_template(path: Path) -> tuple[str, str]:
     Sections are delimited by the marker comments above. Content outside the
     markers (the documentation header) is ignored. Both returned strings end
     with exactly one trailing newline.
+
+    Raises TemplateError when the WRAPPER section is missing or empty, or when
+    a BODY section is unbalanced.
     """
     text = path.read_text(encoding="utf-8")
     wrapper_lines: list[str] = []
     body_lines: list[str] = []
     section: str | None = None
+    saw_wrapper_start = False
+    saw_wrapper_end = False
+    saw_body_start = False
+    saw_body_end = False
     for line in text.splitlines():
         stripped = line.strip()
         if stripped == WRAPPER_START:
             section = "wrapper"
+            saw_wrapper_start = True
             continue
         if stripped == WRAPPER_END:
             section = None
+            saw_wrapper_end = True
             continue
         if stripped == BODY_START:
             section = "body"
+            saw_body_start = True
             continue
         if stripped == BODY_END:
             section = None
+            saw_body_end = True
             continue
         if section == "wrapper":
             wrapper_lines.append(line)
         elif section == "body":
             body_lines.append(line)
+    if not saw_wrapper_start or not saw_wrapper_end:
+        raise TemplateError(
+            f"{path}: missing WRAPPER section markers "
+            f"(expected {WRAPPER_START} ... {WRAPPER_END})"
+        )
+    if not wrapper_lines:
+        raise TemplateError(f"{path}: WRAPPER section is empty")
+    if saw_body_start != saw_body_end:
+        raise TemplateError(f"{path}: unbalanced BODY section markers")
     return "\n".join(wrapper_lines) + "\n", "\n".join(body_lines) + "\n"
 
 
+def _unresolved_tokens(text: str) -> list[str]:
+    """Return the distinct unresolved {{...}} tokens in text, in order."""
+    seen: list[str] = []
+    for match in TOKEN_PATTERN.finditer(text):
+        token = match.group(0)
+        if token not in seen:
+            seen.append(token)
+    return seen
+
+
+def _check_no_unresolved_tokens(text: str, path: Path, section: str) -> None:
+    unresolved = _unresolved_tokens(text)
+    if unresolved:
+        raise TemplateError(
+            f"{path}: unresolved template tokens in {section} section: "
+            + ", ".join(unresolved)
+        )
+
+
 def render_wrapper(wrapper_text: str, *, alpha_to_coverage: bool, tier_comment: str) -> str:
-    """Substitute the variant tokens into a wrapper section."""
+    """Substitute the variant tokens into a wrapper section.
+
+    Raises TemplateError when any {{...}} token remains after substitution.
+    """
     substitutions = {
         "{{RENDER_MODE}}": RENDER_MODE_A2C if alpha_to_coverage else RENDER_MODE_NORMAL,
         "{{BAYER_PHASE_INDEX}}": "" if alpha_to_coverage else BAYER_PHASE_INDEX_BLOCK,
@@ -199,17 +250,29 @@ def render_wrapper(wrapper_text: str, *, alpha_to_coverage: bool, tier_comment: 
     }
     for token, value in substitutions.items():
         wrapper_text = wrapper_text.replace(token, value)
+    _check_no_unresolved_tokens(wrapper_text, Path("<wrapper>"), "WRAPPER")
     return wrapper_text
 
 
 def generate_all() -> dict[Path, bytes]:
-    """Return {output_path: content_bytes} for every generated file."""
+    """Return {output_path: content_bytes} for every generated file.
+
+    Raises TemplateError when a required section is missing/empty or a template
+    contains unresolved {{...}} tokens.
+    """
     generated: dict[Path, bytes] = {}
     for spec in TEMPLATE_SPECS:
         template_path = TEMPLATE_DIR / spec["template"]
         if not template_path.is_file():
             raise FileNotFoundError(f"missing template: {template_path}")
         wrapper_text, body_text = parse_template(template_path)
+        if spec["body_output"] is not None:
+            if not body_text.strip():
+                raise TemplateError(
+                    f"{template_path}: missing or empty required BODY section "
+                    f"(expected {BODY_START} ... {BODY_END})"
+                )
+            _check_no_unresolved_tokens(body_text, template_path, "BODY")
         for filename, alpha_to_coverage in spec["outputs"]:
             content = render_wrapper(
                 wrapper_text,

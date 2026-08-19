@@ -43,7 +43,6 @@ const PRESERVED_SHADER_PARAMETERS: Array[StringName] = [
 	&"show_hair_cards",
 	&"show_hashed_strands",
 	&"bayer_phase_index",
-	&"freeze_bayer_phase",
 	&"comparison_exposure_gain",
 	&"lobe_scales",
 	&"use_area_light_multipliers",

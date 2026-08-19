@@ -28,6 +28,26 @@ The release package therefore does **not** need another full production benchmar
 
 # Gate A — standalone MIT addon
 
+## A0. Generated shader drift check
+
+The six production `.gdshader` wrappers and the shared Approx body include are
+generated from the canonical templates in `tools/templates/`. Run the drift
+check before any packaging step:
+
+```bash
+python3 tools/generate_hair_shaders.py --check
+```
+
+Expected success text:
+
+```text
+ok: 7 generated shader files match their templates
+```
+
+Any `missing:` or `drift:` line means the checked-in addon shaders no longer
+match their templates; regenerate with `python3 tools/generate_hair_shaders.py`
+and re-run the check before continuing.
+
 ## A1. Package from the current production sources
 
 The release addon should contain only the runtime surface:
@@ -61,7 +81,7 @@ Do **not** ship benchmark raw LUT resources, raw-data reconstruction fixtures, g
 
 ## A2. Static path audit
 
-After repathing, search the distributed addon for stale development-only paths. The addon should not reference:
+After packaging, search the distributed addon for stale development-only paths. The addon should not reference:
 
 ```text
 res://assets/hair/
@@ -346,7 +366,8 @@ Unless the underlying shader/coverage/LUT math changes again, the following expe
 ## MIT addon
 
 ```text
-[ ] current development production files are repackaged under addons/marschner_hair
+[ ] tools/generate_hair_shaders.py --check passes ("ok: 7 generated shader files match their templates")
+[ ] current production files are canonical under addons/marschner_hair
 [ ] no development-only resource paths remain in the addon
 [ ] fresh-project import has no parser/preload/include errors
 [ ] all 6 quality/coverage variants create and render at least one frame
