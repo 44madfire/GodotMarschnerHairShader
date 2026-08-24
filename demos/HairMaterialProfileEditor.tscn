@@ -1,11 +1,11 @@
 [gd_scene format=3 uid="uid://dg8mbfj8253ds"]
 
-[ext_resource type="Script" path="res://demos/hair_material_profile_preview.gd" id="1_preview"]
+[ext_resource type="Script" uid="uid://2t46vwivo4mb" path="res://demos/hair_material_profile_preview.gd" id="1_preview"]
 [ext_resource type="Resource" path="res://demos/resources/hair_material_profile_demo.tres" id="2_profile"]
-[ext_resource type="PackedScene" path="res://assets/hair/models/blowout/blowout.glb" id="3_groom"]
-[ext_resource type="ArrayMesh" path="res://assets/hair/head.obj" id="4_head"]
+[ext_resource type="PackedScene" uid="uid://0kfhl4adgyut" path="res://assets/hair/models/blowout/blowout.glb" id="3_groom"]
+[ext_resource type="ArrayMesh" uid="uid://cwuw3j5gfe4nc" path="res://assets/hair/head.obj" id="4_head"]
 [ext_resource type="Resource" path="res://demos/resources/blowout_groom_data.tres" id="5_groom_data"]
-[ext_resource type="Shader" path="res://assets/sky.gdshader" id="9_sky"]
+[ext_resource type="Shader" uid="uid://cj7us4xysxwpi" path="res://assets/sky.gdshader" id="9_sky"]
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_preview_sky"]
 shader = ExtResource("9_sky")

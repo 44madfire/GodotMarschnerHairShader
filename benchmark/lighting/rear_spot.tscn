@@ -1,0 +1,16 @@
+[gd_scene format=3]
+
+[node name="RearSpot" type="Node3D"]
+
+[node name="Spot" type="SpotLight3D" parent="."]
+position = Vector3(0, 0.35, -0.65)
+rotation_degrees = Vector3(-18, 180, 0)
+light_color = Color(0.72, 0.84, 1, 1)
+light_energy = 5.0
+light_specular = 0.8
+shadow_enabled = true
+shadow_bias = 0.02
+shadow_opacity = 0.9
+spot_range = 3.0
+spot_angle = 32.0
+spot_angle_attenuation = 1.0

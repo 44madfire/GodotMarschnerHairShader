@@ -1,0 +1,25 @@
+[gd_resource type="Resource" script_class="BenchmarkSuite" load_steps=17 format=3]
+
+[ext_resource type="Script" path="res://benchmark/resources/benchmark_suite.gd" id="1_benchmark_suite"]
+[ext_resource type="Resource" path="res://benchmark/cases/light_blowout_baseline_environment_only.tres" id="2_case"]
+[ext_resource type="Resource" path="res://benchmark/cases/light_blowout_baseline_single_directional_key.tres" id="3_case"]
+[ext_resource type="Resource" path="res://benchmark/cases/light_blowout_baseline_front_omni.tres" id="4_case"]
+[ext_resource type="Resource" path="res://benchmark/cases/light_blowout_baseline_rear_spot.tres" id="5_case"]
+[ext_resource type="Resource" path="res://benchmark/cases/light_blowout_baseline_four_light_rig.tres" id="6_case"]
+[ext_resource type="Resource" path="res://benchmark/cases/light_blowout_baseline_area_light.tres" id="7_case"]
+[ext_resource type="Resource" path="res://benchmark/cases/light_blowout_baseline_eight_light_stress.tres" id="8_case"]
+[ext_resource type="Script" path="res://benchmark/resources/benchmark_case.gd" id="9_benchmark_case"]
+[ext_resource type="Resource" path="res://benchmark/cases/light_blowout_fast_marschner_environment_only.tres" id="10_case"]
+[ext_resource type="Resource" path="res://benchmark/cases/light_blowout_fast_marschner_single_directional_key.tres" id="11_case"]
+[ext_resource type="Resource" path="res://benchmark/cases/light_blowout_fast_marschner_front_omni.tres" id="12_case"]
+[ext_resource type="Resource" path="res://benchmark/cases/light_blowout_fast_marschner_rear_spot.tres" id="13_case"]
+[ext_resource type="Resource" path="res://benchmark/cases/light_blowout_fast_marschner_four_light_rig.tres" id="14_case"]
+[ext_resource type="Resource" path="res://benchmark/cases/light_blowout_fast_marschner_area_light.tres" id="15_case"]
+[ext_resource type="Resource" path="res://benchmark/cases/light_blowout_fast_marschner_eight_light_stress.tres" id="16_case"]
+[resource]
+resource_name = "Light scaling suite"
+script = ExtResource("1_benchmark_suite")
+id = &"light_scaling_suite"
+display_name = "Light scaling suite"
+cases = Array[ExtResource("9_benchmark_case")]([ExtResource("2_case"), ExtResource("3_case"), ExtResource("4_case"), ExtResource("5_case"), ExtResource("6_case"), ExtResource("7_case"), ExtResource("8_case"), ExtResource("10_case"), ExtResource("11_case"), ExtResource("12_case"), ExtResource("13_case"), ExtResource("14_case"), ExtResource("15_case"), ExtResource("16_case")])
+output_subdirectory = "light_scaling_suite"

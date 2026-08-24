@@ -1,8 +1,24 @@
-# Godot editor/generated files
+# Godot 4+ generated files
 .godot/
-*.uid
-*.import
-*.translation
 
-# Windows Zone.Identifier artifacts
-*:Zone.Identifier
+# Python bytecode
+__pycache__/
+*.pyc
+
+.slim/deepwork/
+
+# BEGIN oh-my-opencode-slim worktrees
+.slim/worktrees/
+.slim/worktrees.json
+# END oh-my-opencode-slim worktrees
+
+# imgui-godot build temp files
+addons/imgui-godot/bin/~*
+
+# Generated Marschner tier-split benchmark artifacts
+benchmark/resources/luts/*.res
+benchmark/results/*.json
+benchmark/results/production_tiers_*/
+
+# Generated release/demo movie captures and media manifests
+benchmark/results/release_media/

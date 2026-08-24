@@ -79,6 +79,6 @@ varying mat3 inv_tangent_matrix;
 varying vec3 omega_o;
 
 #define HAIR_COVERAGE_ALPHA_TO_COVERAGE
-#include "./hair_marschner_common.gdshaderinc"
+#include "./hair_common.gdshaderinc"
 #include "./hair_card_common.gdshaderinc"
 #include "./hair_marschner_cinematic_body.gdshaderinc"

@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="BenchmarkSuite" load_steps=11 format=3]
+
+[ext_resource type="Script" path="res://benchmark/resources/benchmark_suite.gd" id="1_benchmark_suite"]
+[ext_resource type="Resource" path="res://benchmark/cases/blowout_coverage_control.tres" id="2_coverage_control"]
+[ext_resource type="Resource" path="res://benchmark/cases/blowout_frozen_baseline.tres" id="3_frozen_baseline"]
+[ext_resource type="Resource" path="res://benchmark/cases/blowout_approximate_kajiya_kay.tres" id="4_approximate_kajiya_kay"]
+[ext_resource type="Script" path="res://benchmark/resources/benchmark_case.gd" id="5_benchmark_case"]
+[ext_resource type="Resource" path="res://benchmark/cases/blowout_builtin_alpha_hash.tres" id="6_builtin_alpha_hash"]
+[ext_resource type="Resource" path="res://benchmark/cases/blowout_no_hair.tres" id="7_no_hair"]
+[ext_resource type="Resource" path="res://benchmark/cases/blowout_coverage_control_rear.tres" id="8_coverage_control_rear"]
+[ext_resource type="Resource" path="res://benchmark/cases/blowout_frozen_baseline_rear.tres" id="9_frozen_baseline_rear"]
+[ext_resource type="Resource" path="res://benchmark/cases/blowout_approximate_kajiya_kay_rear.tres" id="10_approximate_kajiya_kay_rear"]
+
+[resource]
+resource_name = "Benchmark smoke suite"
+script = ExtResource("1_benchmark_suite")
+id = &"smoke_suite"
+display_name = "Benchmark smoke suite"
+cases = Array[ExtResource("5_benchmark_case")]([ExtResource("2_coverage_control"), ExtResource("3_frozen_baseline"), ExtResource("4_approximate_kajiya_kay"), ExtResource("6_builtin_alpha_hash"), ExtResource("7_no_hair"), ExtResource("8_coverage_control_rear"), ExtResource("9_frozen_baseline_rear"), ExtResource("10_approximate_kajiya_kay_rear")])
+output_subdirectory = "smoke_suite"

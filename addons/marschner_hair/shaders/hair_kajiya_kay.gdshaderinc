@@ -20,14 +20,6 @@ vec3 kk_safe_normalize(vec3 value, vec3 fallback) {
 }
 
 
-/** Schlick's bias approximation, guarded against a zero bias parameter. */
-float power(float x, float t) {
-	float safe_t = clamp(t, 1e-4, 1.0);
-	float safe_x = clamp(x, 0.0, 1.0);
-	return safe_x / ((1.0 / safe_t - 2.0) * (1.0 - safe_x) + 1.0);
-}
-
-
 /** Maps perceptual roughness to a bounded Kajiya–Kay longitudinal power. */
 float kk_roughness_to_power(float roughness) {
 	float safe_roughness = clamp(roughness, 1e-3, 1.0);

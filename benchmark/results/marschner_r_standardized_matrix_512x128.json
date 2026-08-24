@@ -1,0 +1,2410 @@
+{
+  "schema": "standardized_r_energy_matrix_v1",
+  "tool": "run_marschner_r_standardized_matrix",
+  "grid": 512,
+  "phi_grid": 128,
+  "raw_m_unit_normalization_gate": false,
+  "case_count": 12,
+  "cases": [
+    {
+      "name": "reference_dark_brown",
+      "parameters": {
+        "eta": 1.55,
+        "beta_m": 0.2,
+        "beta_n": 0.75,
+        "cuticle": 0.087,
+        "albedo": [
+          0.24774602,
+          0.12215338,
+          0.09630052
+        ]
+      },
+      "aggregate": {
+        "direct_total": 8.10878881429025,
+        "linear": {
+          "absolute_error": 0.00165319868149361,
+          "relative_error": 0.000203877387777093,
+          "rms_absolute_error": 0.00514034181282521,
+          "rms_relative_error": 0.0155805897931514,
+          "sample_count": 327680
+        },
+        "linear_total": 8.10713561560875,
+        "log": {
+          "absolute_error": 0.00757605256318072,
+          "relative_error": 0.000934301378009664,
+          "rms_absolute_error": 0.00816038170365461,
+          "rms_relative_error": 0.00164516562424,
+          "sample_count": 327680
+        },
+        "log_total": 8.10121276172707,
+        "totals_finite": true
+      },
+      "per_theta_i": [
+        {
+          "direct": 2.6469540277945,
+          "linear": 2.64527964476421,
+          "linear_error": {
+            "absolute_error": 0.00167438303029854,
+            "relative_error": 0.000632569743454771
+          },
+          "log": 2.6433628879167,
+          "log_error": {
+            "absolute_error": 0.00359113987780812,
+            "relative_error": 0.00135670655406144
+          },
+          "theta_i_deg": -60.0,
+          "totals_finite": true
+        },
+        {
+          "direct": 1.26432800690173,
+          "linear": 1.26441814986054,
+          "linear_error": {
+            "absolute_error": 9.01429588096025e-05,
+            "relative_error": 7.12971304262254e-05
+          },
+          "log": 1.26347886909529,
+          "log_error": {
+            "absolute_error": 0.000849137806447464,
+            "relative_error": 0.000671611956558881
+          },
+          "theta_i_deg": -30.0,
+          "totals_finite": true
+        },
+        {
+          "direct": 1.03045360600697,
+          "linear": 1.03049217994481,
+          "linear_error": {
+            "absolute_error": 3.85739378383487e-05,
+            "relative_error": 3.74339393966735e-05
+          },
+          "log": 1.02973474243816,
+          "log_error": {
+            "absolute_error": 0.000718863568811789,
+            "relative_error": 0.000697618567804715
+          },
+          "theta_i_deg": 0.0,
+          "totals_finite": true
+        },
+        {
+          "direct": 1.15337809870957,
+          "linear": 1.15343853239769,
+          "linear_error": {
+            "absolute_error": 6.04336881169232e-05,
+            "relative_error": 5.23971178094484e-05
+          },
+          "log": 1.15258297892971,
+          "log_error": {
+            "absolute_error": 0.000795119779861464,
+            "relative_error": 0.00068938345608527
+          },
+          "theta_i_deg": 30.0,
+          "totals_finite": true
+        },
+        {
+          "direct": 2.01367507487746,
+          "linear": 2.0135071086415,
+          "linear_error": {
+            "absolute_error": 0.000167966235958161,
+            "relative_error": 8.34127799731457e-05
+          },
+          "log": 2.01205328334721,
+          "log_error": {
+            "absolute_error": 0.00162179153025122,
+            "relative_error": 0.000805388888448107
+          },
+          "theta_i_deg": 60.0,
+          "totals_finite": true
+        }
+      ],
+      "branch_statistics": {
+        "asymptotic_beta_branch": 0,
+        "cone_pole_fallback": 14054,
+        "exact_c_phi_seam": 0,
+        "grazing_fallback": 12652,
+        "invariant": "total == lut_interior + q_beta_fallback + grazing_fallback + cone_pole_fallback + exact_c_phi_seam (disjoint buckets); asymptotic_beta_branch is a diagnostic sub-count of q_beta_fallback and is not part of the partition",
+        "lut_interior": 236344,
+        "q_beta_fallback": 64630,
+        "total": 327680
+      },
+      "diagnostics": {
+        "acceptance_gate": false,
+        "asymptotic_branch_probe": {
+          "beta_numeric_epsilon": 1e-08,
+          "note": "reference Q probed at beta_r in {0, 0.5*eps, eps, 2*eps} around the direct/asymptotic branch boundary, with theta_o == theta_cone (delta = 0, q = 0) so the geometry is identical at every probe point and the probe isolates the branch seam. The asymptotic form is exact here (Q = 1/sqrt(2*pi), independent of beta) while the direct Bessel approximation is off by ~2-4x in this regime (1.515 at the floored beta, 0.758 just above the threshold, vs 0.399) because of its ~1e-16 * variance_inverse cancellation error -- which is exactly why beta_r <= eps routes to the asymptotic branch. The LUT sampler support is irrelevant here: this probes the reference branch seam, not the LUT. Diagnostic only, no acceptance gate.",
+          "probes": [
+            {
+              "asymptotic_q_value": 0.398942280401433,
+              "beta_r": 0.0,
+              "branch": "asymptotic",
+              "direct_q_value": 1.5153893283089,
+              "q": 0.0,
+              "reference_q_value": 0.398942280401433,
+              "theta_o_effective": 0.1
+            },
+            {
+              "asymptotic_q_value": 0.398942280401433,
+              "beta_r": 5e-09,
+              "branch": "asymptotic",
+              "direct_q_value": 1.5153893283089,
+              "q": 0.0,
+              "reference_q_value": 0.398942280401433,
+              "theta_o_effective": 0.1
+            },
+            {
+              "asymptotic_q_value": 0.398942280401433,
+              "beta_r": 1e-08,
+              "branch": "asymptotic",
+              "direct_q_value": 1.5153893283089,
+              "q": 0.0,
+              "reference_q_value": 0.398942280401433,
+              "theta_o_effective": 0.1
+            },
+            {
+              "asymptotic_q_value": 0.398942280401433,
+              "beta_r": 2e-08,
+              "branch": "direct",
+              "direct_q_value": 0.757694664154452,
+              "q": 0.0,
+              "reference_q_value": 0.757694664154452,
+              "theta_o_effective": 0.1
+            }
+          ],
+          "theta_cone": 0.1,
+          "theta_o": 0.1
+        },
+        "direct_fallback": {
+          "branch_counts": {
+            "cone_pole_fallback": 14054,
+            "exact_c_phi_seam": 0,
+            "grazing_fallback": 12652,
+            "q_beta_fallback": 64630
+          },
+          "direct_total": 0.193133171813962,
+          "linear_total": 0.193133171813962,
+          "log_total": 0.193133171813962,
+          "note": "totals over the samples evaluated through the direct/asymptotic reference (exact c_phi seam + q/beta out-of-support + cone-pole bands + grazing footprints). On these samples the decoders equal the direct value by construction, so linear_total == log_total == direct_total modulo float rounding in the log round trip. Diagnostic only, no acceptance gate.",
+          "samples": 91336
+        },
+        "support_renormalized": {
+          "direct_mass": 7.91565564247606,
+          "linear_correction_factor": 1.00020889539689,
+          "linear_mass": 7.91400244379459,
+          "linear_uncorrected_relative_deviation": 0.000208851768714953,
+          "log_correction_factor": 1.00095801420269,
+          "log_mass": 7.90807958991291,
+          "log_uncorrected_relative_deviation": 0.000957097289895106,
+          "note": "correction factor = direct projected mass / decoded projected mass over the actual LUT-interior subset only (samples classified lut_interior; q/beta out-of-support, cone-pole bands, grazing footprints and the exact c_phi seam are excluded). Multiplying the decoder mass by the factor reproduces the direct mass over that subset. Diagnostic only, no acceptance gate; makes no raw-M unit-normalization claim.",
+          "samples": 236344
+        }
+      }
+    },
+    {
+      "name": "beta_m_0_1",
+      "parameters": {
+        "eta": 1.55,
+        "beta_m": 0.1,
+        "beta_n": 0.75,
+        "cuticle": 0.087,
+        "albedo": [
+          0.24774602,
+          0.12215338,
+          0.09630052
+        ]
+      },
+      "aggregate": {
+        "direct_total": 7.58586260435517,
+        "linear": {
+          "absolute_error": 0.000316958202700057,
+          "relative_error": 4.17827502594215e-05,
+          "rms_absolute_error": 0.000793476378475863,
+          "rms_relative_error": 0.0113336266762011,
+          "sample_count": 327680
+        },
+        "linear_total": 7.58617956255787,
+        "log": {
+          "absolute_error": 0.00527004137671572,
+          "relative_error": 0.000694718801483446,
+          "rms_absolute_error": 0.000862983860367995,
+          "rms_relative_error": 0.000590771627176327,
+          "sample_count": 327680
+        },
+        "log_total": 7.58059256297846,
+        "totals_finite": true
+      },
+      "per_theta_i": [
+        {
+          "direct": 2.3975614894011,
+          "linear": 2.39776811620774,
+          "linear_error": {
+            "absolute_error": 0.000206626806638521,
+            "relative_error": 8.61820677183697e-05
+          },
+          "log": 2.39599536228452,
+          "log_error": {
+            "absolute_error": 0.00156612711658033,
+            "relative_error": 0.000653216663473994
+          },
+          "theta_i_deg": -60.0,
+          "totals_finite": true
+        },
+        {
+          "direct": 1.21845334179167,
+          "linear": 1.21847677437337,
+          "linear_error": {
+            "absolute_error": 2.34325817043413e-05,
+            "relative_error": 1.92314148606503e-05
+          },
+          "log": 1.21758401147516,
+          "log_error": {
+            "absolute_error": 0.000869330316505934,
+            "relative_error": 0.000713470337097713
+          },
+          "theta_i_deg": -30.0,
+          "totals_finite": true
+        },
+        {
+          "direct": 1.01052761814423,
+          "linear": 1.01053383035137,
+          "linear_error": {
+            "absolute_error": 6.21220714114301e-06,
+            "relative_error": 6.1474887272763e-06
+          },
+          "log": 1.00980715924353,
+          "log_error": {
+            "absolute_error": 0.000720458900698828,
+            "relative_error": 0.000712953201637286
+          },
+          "theta_i_deg": 0.0,
+          "totals_finite": true
+        },
+        {
+          "direct": 1.1238274032538,
+          "linear": 1.12383976955502,
+          "linear_error": {
+            "absolute_error": 1.23663012179254e-05,
+            "relative_error": 1.10037370348164e-05
+          },
+          "log": 1.12302149893006,
+          "log_error": {
+            "absolute_error": 0.000805904323734508,
+            "relative_error": 0.000717106845233696
+          },
+          "theta_i_deg": 30.0,
+          "totals_finite": true
+        },
+        {
+          "direct": 1.83549275176438,
+          "linear": 1.83556107207038,
+          "linear_error": {
+            "absolute_error": 6.83203059987925e-05,
+            "relative_error": 3.72217792378201e-05
+          },
+          "log": 1.83418453104518,
+          "log_error": {
+            "absolute_error": 0.00130822071919545,
+            "relative_error": 0.000712735431909452
+          },
+          "theta_i_deg": 60.0,
+          "totals_finite": true
+        }
+      ],
+      "branch_statistics": {
+        "asymptotic_beta_branch": 0,
+        "cone_pole_fallback": 1892,
+        "exact_c_phi_seam": 0,
+        "grazing_fallback": 4336,
+        "invariant": "total == lut_interior + q_beta_fallback + grazing_fallback + cone_pole_fallback + exact_c_phi_seam (disjoint buckets); asymptotic_beta_branch is a diagnostic sub-count of q_beta_fallback and is not part of the partition",
+        "lut_interior": 177106,
+        "q_beta_fallback": 144346,
+        "total": 327680
+      },
+      "diagnostics": {
+        "acceptance_gate": false,
+        "asymptotic_branch_probe": {
+          "beta_numeric_epsilon": 1e-08,
+          "note": "reference Q probed at beta_r in {0, 0.5*eps, eps, 2*eps} around the direct/asymptotic branch boundary, with theta_o == theta_cone (delta = 0, q = 0) so the geometry is identical at every probe point and the probe isolates the branch seam. The asymptotic form is exact here (Q = 1/sqrt(2*pi), independent of beta) while the direct Bessel approximation is off by ~2-4x in this regime (1.515 at the floored beta, 0.758 just above the threshold, vs 0.399) because of its ~1e-16 * variance_inverse cancellation error -- which is exactly why beta_r <= eps routes to the asymptotic branch. The LUT sampler support is irrelevant here: this probes the reference branch seam, not the LUT. Diagnostic only, no acceptance gate.",
+          "probes": [
+            {
+              "asymptotic_q_value": 0.398942280401433,
+              "beta_r": 0.0,
+              "branch": "asymptotic",
+              "direct_q_value": 1.5153893283089,
+              "q": 0.0,
+              "reference_q_value": 0.398942280401433,
+              "theta_o_effective": 0.1
+            },
+            {
+              "asymptotic_q_value": 0.398942280401433,
+              "beta_r": 5e-09,
+              "branch": "asymptotic",
+              "direct_q_value": 1.5153893283089,
+              "q": 0.0,
+              "reference_q_value": 0.398942280401433,
+              "theta_o_effective": 0.1
+            },
+            {
+              "asymptotic_q_value": 0.398942280401433,
+              "beta_r": 1e-08,
+              "branch": "asymptotic",
+              "direct_q_value": 1.5153893283089,
+              "q": 0.0,
+              "reference_q_value": 0.398942280401433,
+              "theta_o_effective": 0.1
+            },
+            {
+              "asymptotic_q_value": 0.398942280401433,
+              "beta_r": 2e-08,
+              "branch": "direct",
+              "direct_q_value": 0.757694664154452,
+              "q": 0.0,
+              "reference_q_value": 0.757694664154452,
+              "theta_o_effective": 0.1
+            }
+          ],
+          "theta_cone": 0.1,
+          "theta_o": 0.1
+        },
+        "direct_fallback": {
+          "branch_counts": {
+            "cone_pole_fallback": 1892,
+            "exact_c_phi_seam": 0,
+            "grazing_fallback": 4336,
+            "q_beta_fallback": 144346
+          },
+          "direct_total": 0.0879052827605304,
+          "linear_total": 0.0879052827605304,
+          "log_total": 0.0879052827605305,
+          "note": "totals over the samples evaluated through the direct/asymptotic reference (exact c_phi seam + q/beta out-of-support + cone-pole bands + grazing footprints). On these samples the decoders equal the direct value by construction, so linear_total == log_total == direct_total modulo float rounding in the log round trip. Diagnostic only, no acceptance gate.",
+          "samples": 150574
+        },
+        "support_renormalized": {
+          "direct_mass": 7.49795732159429,
+          "linear_correction_factor": 0.999957729179937,
+          "linear_mass": 7.49827427979715,
+          "linear_uncorrected_relative_deviation": 4.22726069604129e-05,
+          "log_correction_factor": 1.00070335797822,
+          "log_mass": 7.49268728021741,
+          "log_uncorrected_relative_deviation": 0.000702863613493116,
+          "note": "correction factor = direct projected mass / decoded projected mass over the actual LUT-interior subset only (samples classified lut_interior; q/beta out-of-support, cone-pole bands, grazing footprints and the exact c_phi seam are excluded). Multiplying the decoder mass by the factor reproduces the direct mass over that subset. Diagnostic only, no acceptance gate; makes no raw-M unit-normalization claim.",
+          "samples": 177106
+        }
+      }
+    },
+    {
+      "name": "beta_m_0_8",
+      "parameters": {
+        "eta": 1.55,
+        "beta_m": 0.8,
+        "beta_n": 0.75,
+        "cuticle": 0.087,
+        "albedo": [
+          0.24774602,
+          0.12215338,
+          0.09630052
+        ]
+      },
+      "aggregate": {
+        "direct_total": 7.10599524040518,
+        "linear": {
+          "absolute_error": 0.0106050892444616,
+          "relative_error": 0.00149241434671393,
+          "rms_absolute_error": 0.0031836207515447,
+          "rms_relative_error": 0.00988513272921037,
+          "sample_count": 327680
+        },
+        "linear_total": 7.09539015116072,
+        "log": {
+          "absolute_error": 0.0184207243486805,
+          "relative_error": 0.0025922792973374,
+          "rms_absolute_error": 0.00742160406294236,
+          "rms_relative_error": 0.0052136643211287,
+          "sample_count": 327680
+        },
+        "log_total": 7.0875745160565,
+        "totals_finite": true
+      },
+      "per_theta_i": [
+        {
+          "direct": 1.57832129940041,
+          "linear": 1.57536471976118,
+          "linear_error": {
+            "absolute_error": 0.00295657963923057,
+            "relative_error": 0.00187324319855137
+          },
+          "log": 1.5731078770738,
+          "log_error": {
+            "absolute_error": 0.00521342232660715,
+            "relative_error": 0.00330314387101517
+          },
+          "theta_i_deg": -60.0,
+          "totals_finite": true
+        },
+        {
+          "direct": 1.35423927058595,
+          "linear": 1.35240624050031,
+          "linear_error": {
+            "absolute_error": 0.00183303008564351,
+            "relative_error": 0.00135354964625298
+          },
+          "log": 1.35107161150624,
+          "log_error": {
+            "absolute_error": 0.00316765907971828,
+            "relative_error": 0.00233906898767431
+          },
+          "theta_i_deg": -30.0,
+          "totals_finite": true
+        },
+        {
+          "direct": 1.27227253418456,
+          "linear": 1.27082145256427,
+          "linear_error": {
+            "absolute_error": 0.00145108162028618,
+            "relative_error": 0.00114054306864073
+          },
+          "log": 1.26976712348752,
+          "log_error": {
+            "absolute_error": 0.00250541069703636,
+            "relative_error": 0.00196924057520598
+          },
+          "theta_i_deg": 0.0,
+          "totals_finite": true
+        },
+        {
+          "direct": 1.34015797292899,
+          "linear": 1.3384834068695,
+          "linear_error": {
+            "absolute_error": 0.00167456605949501,
+            "relative_error": 0.00124952885653857
+          },
+          "log": 1.33729029510695,
+          "log_error": {
+            "absolute_error": 0.00286767782204556,
+            "relative_error": 0.00213980581392064
+          },
+          "theta_i_deg": 30.0,
+          "totals_finite": true
+        },
+        {
+          "direct": 1.56100416330527,
+          "linear": 1.55831433146546,
+          "linear_error": {
+            "absolute_error": 0.00268983183980698,
+            "relative_error": 0.00172314200246047
+          },
+          "log": 1.556337608882,
+          "log_error": {
+            "absolute_error": 0.00466655442327268,
+            "relative_error": 0.00298945674391523
+          },
+          "theta_i_deg": 60.0,
+          "totals_finite": true
+        }
+      ],
+      "branch_statistics": {
+        "asymptotic_beta_branch": 0,
+        "cone_pole_fallback": 14934,
+        "exact_c_phi_seam": 0,
+        "grazing_fallback": 24690,
+        "invariant": "total == lut_interior + q_beta_fallback + grazing_fallback + cone_pole_fallback + exact_c_phi_seam (disjoint buckets); asymptotic_beta_branch is a diagnostic sub-count of q_beta_fallback and is not part of the partition",
+        "lut_interior": 272758,
+        "q_beta_fallback": 15298,
+        "total": 327680
+      },
+      "diagnostics": {
+        "acceptance_gate": false,
+        "asymptotic_branch_probe": {
+          "beta_numeric_epsilon": 1e-08,
+          "note": "reference Q probed at beta_r in {0, 0.5*eps, eps, 2*eps} around the direct/asymptotic branch boundary, with theta_o == theta_cone (delta = 0, q = 0) so the geometry is identical at every probe point and the probe isolates the branch seam. The asymptotic form is exact here (Q = 1/sqrt(2*pi), independent of beta) while the direct Bessel approximation is off by ~2-4x in this regime (1.515 at the floored beta, 0.758 just above the threshold, vs 0.399) because of its ~1e-16 * variance_inverse cancellation error -- which is exactly why beta_r <= eps routes to the asymptotic branch. The LUT sampler support is irrelevant here: this probes the reference branch seam, not the LUT. Diagnostic only, no acceptance gate.",
+          "probes": [
+            {
+              "asymptotic_q_value": 0.398942280401433,
+              "beta_r": 0.0,
+              "branch": "asymptotic",
+              "direct_q_value": 1.5153893283089,
+              "q": 0.0,
+              "reference_q_value": 0.398942280401433,
+              "theta_o_effective": 0.1
+            },
+            {
+              "asymptotic_q_value": 0.398942280401433,
+              "beta_r": 5e-09,
+              "branch": "asymptotic",
+              "direct_q_value": 1.5153893283089,
+              "q": 0.0,
+              "reference_q_value": 0.398942280401433,
+              "theta_o_effective": 0.1
+            },
+            {
+              "asymptotic_q_value": 0.398942280401433,
+              "beta_r": 1e-08,
+              "branch": "asymptotic",
+              "direct_q_value": 1.5153893283089,
+              "q": 0.0,
+              "reference_q_value": 0.398942280401433,
+              "theta_o_effective": 0.1
+            },
+            {
+              "asymptotic_q_value": 0.398942280401433,
+              "beta_r": 2e-08,
+              "branch": "direct",
+              "direct_q_value": 0.757694664154452,
+              "q": 0.0,
+              "reference_q_value": 0.757694664154452,
+              "theta_o_effective": 0.1
+            }
+          ],
+          "theta_cone": 0.1,
+          "theta_o": 0.1
+        },
+        "direct_fallback": {
+          "branch_counts": {
+            "cone_pole_fallback": 14934,
+            "exact_c_phi_seam": 0,
+            "grazing_fallback": 24690,
+            "q_beta_fallback": 15298
+          },
+          "direct_total": 0.746411936629974,
+          "linear_total": 0.746411936629974,
+          "log_total": 0.746411936629974,
+          "note": "totals over the samples evaluated through the direct/asymptotic reference (exact c_phi seam + q/beta out-of-support + cone-pole bands + grazing footprints). On these samples the decoders equal the direct value by construction, so linear_total == log_total == direct_total modulo float rounding in the log round trip. Diagnostic only, no acceptance gate.",
+          "samples": 54922
+        },
+        "support_renormalized": {
+          "direct_mass": 6.35958330377508,
+          "linear_correction_factor": 1.00167036157413,
+          "linear_mass": 6.34897821453052,
+          "linear_uncorrected_relative_deviation": 0.00166757611906275,
+          "log_correction_factor": 1.00290494434071,
+          "log_mass": 6.34116257942645,
+          "log_uncorrected_relative_deviation": 0.00289653008204192,
+          "note": "correction factor = direct projected mass / decoded projected mass over the actual LUT-interior subset only (samples classified lut_interior; q/beta out-of-support, cone-pole bands, grazing footprints and the exact c_phi seam are excluded). Multiplying the decoder mass by the factor reproduces the direct mass over that subset. Diagnostic only, no acceptance gate; makes no raw-M unit-normalization claim.",
+          "samples": 272758
+        }
+      }
+    },
+    {
+      "name": "beta_n_0_1",
+      "parameters": {
+        "eta": 1.55,
+        "beta_m": 0.2,
+        "beta_n": 0.1,
+        "cuticle": 0.087,
+        "albedo": [
+          0.24774602,
+          0.12215338,
+          0.09630052
+        ]
+      },
+      "aggregate": {
+        "direct_total": 8.10878881429025,
+        "linear": {
+          "absolute_error": 0.00165319868149361,
+          "relative_error": 0.000203877387777093,
+          "rms_absolute_error": 0.00514034181282521,
+          "rms_relative_error": 0.0155805897931514,
+          "sample_count": 327680
+        },
+        "linear_total": 8.10713561560875,
+        "log": {
+          "absolute_error": 0.00757605256318072,
+          "relative_error": 0.000934301378009664,
+          "rms_absolute_error": 0.00816038170365461,
+          "rms_relative_error": 0.00164516562424,
+          "sample_count": 327680
+        },
+        "log_total": 8.10121276172707,
+        "totals_finite": true
+      },
+      "per_theta_i": [
+        {
+          "direct": 2.6469540277945,
+          "linear": 2.64527964476421,
+          "linear_error": {
+            "absolute_error": 0.00167438303029854,
+            "relative_error": 0.000632569743454771
+          },
+          "log": 2.6433628879167,
+          "log_error": {
+            "absolute_error": 0.00359113987780812,
+            "relative_error": 0.00135670655406144
+          },
+          "theta_i_deg": -60.0,
+          "totals_finite": true
+        },
+        {
+          "direct": 1.26432800690173,
+          "linear": 1.26441814986054,
+          "linear_error": {
+            "absolute_error": 9.01429588096025e-05,
+            "relative_error": 7.12971304262254e-05
+          },
+          "log": 1.26347886909529,
+          "log_error": {
+            "absolute_error": 0.000849137806447464,
+            "relative_error": 0.000671611956558881
+          },
+          "theta_i_deg": -30.0,
+          "totals_finite": true
+        },
+        {
+          "direct": 1.03045360600697,
+          "linear": 1.03049217994481,
+          "linear_error": {
+            "absolute_error": 3.85739378383487e-05,
+            "relative_error": 3.74339393966735e-05
+          },
+          "log": 1.02973474243816,
+          "log_error": {
+            "absolute_error": 0.000718863568811789,
+            "relative_error": 0.000697618567804715
+          },
+          "theta_i_deg": 0.0,
+          "totals_finite": true
+        },
+        {
+          "direct": 1.15337809870957,
+          "linear": 1.15343853239769,
+          "linear_error": {
+            "absolute_error": 6.04336881169232e-05,
+            "relative_error": 5.23971178094484e-05
+          },
+          "log": 1.15258297892971,
+          "log_error": {
+            "absolute_error": 0.000795119779861464,
+            "relative_error": 0.00068938345608527
+          },
+          "theta_i_deg": 30.0,
+          "totals_finite": true
+        },
+        {
+          "direct": 2.01367507487746,
+          "linear": 2.0135071086415,
+          "linear_error": {
+            "absolute_error": 0.000167966235958161,
+            "relative_error": 8.34127799731457e-05
+          },
+          "log": 2.01205328334721,
+          "log_error": {
+            "absolute_error": 0.00162179153025122,
+            "relative_error": 0.000805388888448107
+          },
+          "theta_i_deg": 60.0,
+          "totals_finite": true
+        }
+      ],
+      "branch_statistics": {
+        "asymptotic_beta_branch": 0,
+        "cone_pole_fallback": 14054,
+        "exact_c_phi_seam": 0,
+        "grazing_fallback": 12652,
+        "invariant": "total == lut_interior + q_beta_fallback + grazing_fallback + cone_pole_fallback + exact_c_phi_seam (disjoint buckets); asymptotic_beta_branch is a diagnostic sub-count of q_beta_fallback and is not part of the partition",
+        "lut_interior": 236344,
+        "q_beta_fallback": 64630,
+        "total": 327680
+      },
+      "diagnostics": {
+        "acceptance_gate": false,
+        "asymptotic_branch_probe": {
+          "beta_numeric_epsilon": 1e-08,
+          "note": "reference Q probed at beta_r in {0, 0.5*eps, eps, 2*eps} around the direct/asymptotic branch boundary, with theta_o == theta_cone (delta = 0, q = 0) so the geometry is identical at every probe point and the probe isolates the branch seam. The asymptotic form is exact here (Q = 1/sqrt(2*pi), independent of beta) while the direct Bessel approximation is off by ~2-4x in this regime (1.515 at the floored beta, 0.758 just above the threshold, vs 0.399) because of its ~1e-16 * variance_inverse cancellation error -- which is exactly why beta_r <= eps routes to the asymptotic branch. The LUT sampler support is irrelevant here: this probes the reference branch seam, not the LUT. Diagnostic only, no acceptance gate.",
+          "probes": [
+            {
+              "asymptotic_q_value": 0.398942280401433,
+              "beta_r": 0.0,
+              "branch": "asymptotic",
+              "direct_q_value": 1.5153893283089,
+              "q": 0.0,
+              "reference_q_value": 0.398942280401433,
+              "theta_o_effective": 0.1
+            },
+            {
+              "asymptotic_q_value": 0.398942280401433,
+              "beta_r": 5e-09,
+              "branch": "asymptotic",
+              "direct_q_value": 1.5153893283089,
+              "q": 0.0,
+              "reference_q_value": 0.398942280401433,
+              "theta_o_effective": 0.1
+            },
+            {
+              "asymptotic_q_value": 0.398942280401433,
+              "beta_r": 1e-08,
+              "branch": "asymptotic",
+              "direct_q_value": 1.5153893283089,
+              "q": 0.0,
+              "reference_q_value": 0.398942280401433,
+              "theta_o_effective": 0.1
+            },
+            {
+              "asymptotic_q_value": 0.398942280401433,
+              "beta_r": 2e-08,
+              "branch": "direct",
+              "direct_q_value": 0.757694664154452,
+              "q": 0.0,
+              "reference_q_value": 0.757694664154452,
+              "theta_o_effective": 0.1
+            }
+          ],
+          "theta_cone": 0.1,
+          "theta_o": 0.1
+        },
+        "direct_fallback": {
+          "branch_counts": {
+            "cone_pole_fallback": 14054,
+            "exact_c_phi_seam": 0,
+            "grazing_fallback": 12652,
+            "q_beta_fallback": 64630
+          },
+          "direct_total": 0.193133171813962,
+          "linear_total": 0.193133171813962,
+          "log_total": 0.193133171813962,
+          "note": "totals over the samples evaluated through the direct/asymptotic reference (exact c_phi seam + q/beta out-of-support + cone-pole bands + grazing footprints). On these samples the decoders equal the direct value by construction, so linear_total == log_total == direct_total modulo float rounding in the log round trip. Diagnostic only, no acceptance gate.",
+          "samples": 91336
+        },
+        "support_renormalized": {
+          "direct_mass": 7.91565564247606,
+          "linear_correction_factor": 1.00020889539689,
+          "linear_mass": 7.91400244379459,
+          "linear_uncorrected_relative_deviation": 0.000208851768714953,
+          "log_correction_factor": 1.00095801420269,
+          "log_mass": 7.90807958991291,
+          "log_uncorrected_relative_deviation": 0.000957097289895106,
+          "note": "correction factor = direct projected mass / decoded projected mass over the actual LUT-interior subset only (samples classified lut_interior; q/beta out-of-support, cone-pole bands, grazing footprints and the exact c_phi seam are excluded). Multiplying the decoder mass by the factor reproduces the direct mass over that subset. Diagnostic only, no acceptance gate; makes no raw-M unit-normalization claim.",
+          "samples": 236344
+        }
+      }
+    },
+    {
+      "name": "beta_n_0_9",
+      "parameters": {
+        "eta": 1.55,
+        "beta_m": 0.2,
+        "beta_n": 0.9,
+        "cuticle": 0.087,
+        "albedo": [
+          0.24774602,
+          0.12215338,
+          0.09630052
+        ]
+      },
+      "aggregate": {
+        "direct_total": 8.10878881429025,
+        "linear": {
+          "absolute_error": 0.00165319868149361,
+          "relative_error": 0.000203877387777093,
+          "rms_absolute_error": 0.00514034181282521,
+          "rms_relative_error": 0.0155805897931514,
+          "sample_count": 327680
+        },
+        "linear_total": 8.10713561560875,
+        "log": {
+          "absolute_error": 0.00757605256318072,
+          "relative_error": 0.000934301378009664,
+          "rms_absolute_error": 0.00816038170365461,
+          "rms_relative_error": 0.00164516562424,
+          "sample_count": 327680
+        },
+        "log_total": 8.10121276172707,
+        "totals_finite": true
+      },
+      "per_theta_i": [
+        {
+          "direct": 2.6469540277945,
+          "linear": 2.64527964476421,
+          "linear_error": {
+            "absolute_error": 0.00167438303029854,
+            "relative_error": 0.000632569743454771
+          },
+          "log": 2.6433628879167,
+          "log_error": {
+            "absolute_error": 0.00359113987780812,
+            "relative_error": 0.00135670655406144
+          },
+          "theta_i_deg": -60.0,
+          "totals_finite": true
+        },
+        {
+          "direct": 1.26432800690173,
+          "linear": 1.26441814986054,
+          "linear_error": {
+            "absolute_error": 9.01429588096025e-05,
+            "relative_error": 7.12971304262254e-05
+          },
+          "log": 1.26347886909529,
+          "log_error": {
+            "absolute_error": 0.000849137806447464,
+            "relative_error": 0.000671611956558881
+          },
+          "theta_i_deg": -30.0,
+          "totals_finite": true
+        },
+        {
+          "direct": 1.03045360600697,
+          "linear": 1.03049217994481,
+          "linear_error": {
+            "absolute_error": 3.85739378383487e-05,
+            "relative_error": 3.74339393966735e-05
+          },
+          "log": 1.02973474243816,
+          "log_error": {
+            "absolute_error": 0.000718863568811789,
+            "relative_error": 0.000697618567804715
+          },
+          "theta_i_deg": 0.0,
+          "totals_finite": true
+        },
+        {
+          "direct": 1.15337809870957,
+          "linear": 1.15343853239769,
+          "linear_error": {
+            "absolute_error": 6.04336881169232e-05,
+            "relative_error": 5.23971178094484e-05
+          },
+          "log": 1.15258297892971,
+          "log_error": {
+            "absolute_error": 0.000795119779861464,
+            "relative_error": 0.00068938345608527
+          },
+          "theta_i_deg": 30.0,
+          "totals_finite": true
+        },
+        {
+          "direct": 2.01367507487746,
+          "linear": 2.0135071086415,
+          "linear_error": {
+            "absolute_error": 0.000167966235958161,
+            "relative_error": 8.34127799731457e-05
+          },
+          "log": 2.01205328334721,
+          "log_error": {
+            "absolute_error": 0.00162179153025122,
+            "relative_error": 0.000805388888448107
+          },
+          "theta_i_deg": 60.0,
+          "totals_finite": true
+        }
+      ],
+      "branch_statistics": {
+        "asymptotic_beta_branch": 0,
+        "cone_pole_fallback": 14054,
+        "exact_c_phi_seam": 0,
+        "grazing_fallback": 12652,
+        "invariant": "total == lut_interior + q_beta_fallback + grazing_fallback + cone_pole_fallback + exact_c_phi_seam (disjoint buckets); asymptotic_beta_branch is a diagnostic sub-count of q_beta_fallback and is not part of the partition",
+        "lut_interior": 236344,
+        "q_beta_fallback": 64630,
+        "total": 327680
+      },
+      "diagnostics": {
+        "acceptance_gate": false,
+        "asymptotic_branch_probe": {
+          "beta_numeric_epsilon": 1e-08,
+          "note": "reference Q probed at beta_r in {0, 0.5*eps, eps, 2*eps} around the direct/asymptotic branch boundary, with theta_o == theta_cone (delta = 0, q = 0) so the geometry is identical at every probe point and the probe isolates the branch seam. The asymptotic form is exact here (Q = 1/sqrt(2*pi), independent of beta) while the direct Bessel approximation is off by ~2-4x in this regime (1.515 at the floored beta, 0.758 just above the threshold, vs 0.399) because of its ~1e-16 * variance_inverse cancellation error -- which is exactly why beta_r <= eps routes to the asymptotic branch. The LUT sampler support is irrelevant here: this probes the reference branch seam, not the LUT. Diagnostic only, no acceptance gate.",
+          "probes": [
+            {
+              "asymptotic_q_value": 0.398942280401433,
+              "beta_r": 0.0,
+              "branch": "asymptotic",
+              "direct_q_value": 1.5153893283089,
+              "q": 0.0,
+              "reference_q_value": 0.398942280401433,
+              "theta_o_effective": 0.1
+            },
+            {
+              "asymptotic_q_value": 0.398942280401433,
+              "beta_r": 5e-09,
+              "branch": "asymptotic",
+              "direct_q_value": 1.5153893283089,
+              "q": 0.0,
+              "reference_q_value": 0.398942280401433,
+              "theta_o_effective": 0.1
+            },
+            {
+              "asymptotic_q_value": 0.398942280401433,
+              "beta_r": 1e-08,
+              "branch": "asymptotic",
+              "direct_q_value": 1.5153893283089,
+              "q": 0.0,
+              "reference_q_value": 0.398942280401433,
+              "theta_o_effective": 0.1
+            },
+            {
+              "asymptotic_q_value": 0.398942280401433,
+              "beta_r": 2e-08,
+              "branch": "direct",
+              "direct_q_value": 0.757694664154452,
+              "q": 0.0,
+              "reference_q_value": 0.757694664154452,
+              "theta_o_effective": 0.1
+            }
+          ],
+          "theta_cone": 0.1,
+          "theta_o": 0.1
+        },
+        "direct_fallback": {
+          "branch_counts": {
+            "cone_pole_fallback": 14054,
+            "exact_c_phi_seam": 0,
+            "grazing_fallback": 12652,
+            "q_beta_fallback": 64630
+          },
+          "direct_total": 0.193133171813962,
+          "linear_total": 0.193133171813962,
+          "log_total": 0.193133171813962,
+          "note": "totals over the samples evaluated through the direct/asymptotic reference (exact c_phi seam + q/beta out-of-support + cone-pole bands + grazing footprints). On these samples the decoders equal the direct value by construction, so linear_total == log_total == direct_total modulo float rounding in the log round trip. Diagnostic only, no acceptance gate.",
+          "samples": 91336
+        },
+        "support_renormalized": {
+          "direct_mass": 7.91565564247606,
+          "linear_correction_factor": 1.00020889539689,
+          "linear_mass": 7.91400244379459,
+          "linear_uncorrected_relative_deviation": 0.000208851768714953,
+          "log_correction_factor": 1.00095801420269,
+          "log_mass": 7.90807958991291,
+          "log_uncorrected_relative_deviation": 0.000957097289895106,
+          "note": "correction factor = direct projected mass / decoded projected mass over the actual LUT-interior subset only (samples classified lut_interior; q/beta out-of-support, cone-pole bands, grazing footprints and the exact c_phi seam are excluded). Multiplying the decoder mass by the factor reproduces the direct mass over that subset. Diagnostic only, no acceptance gate; makes no raw-M unit-normalization claim.",
+          "samples": 236344
+        }
+      }
+    },
+    {
+      "name": "cuticle_0",
+      "parameters": {
+        "eta": 1.55,
+        "beta_m": 0.2,
+        "beta_n": 0.75,
+        "cuticle": 0.0,
+        "albedo": [
+          0.24774602,
+          0.12215338,
+          0.09630052
+        ]
+      },
+      "aggregate": {
+        "direct_total": 7.97909131123989,
+        "linear": {
+          "absolute_error": 0.0010308158056116,
+          "relative_error": 0.00012918962390611,
+          "rms_absolute_error": 0.00298389816495209,
+          "rms_relative_error": 0.0223448904663229,
+          "sample_count": 327680
+        },
+        "linear_total": 7.97806049543428,
+        "log": {
+          "absolute_error": 0.00669579895791728,
+          "relative_error": 0.000839168107837683,
+          "rms_absolute_error": 0.00469530757119133,
+          "rms_relative_error": 0.0017737641012102,
+          "sample_count": 327680
+        },
+        "log_total": 7.97239551228198,
+        "totals_finite": true
+      },
+      "per_theta_i": [
+        {
+          "direct": 2.27892044143043,
+          "linear": 2.27831316086258,
+          "linear_error": {
+            "absolute_error": 0.000607280567847202,
+            "relative_error": 0.000266477300745973
+          },
+          "log": 2.27674640234813,
+          "log_error": {
+            "absolute_error": 0.00217403908229796,
+            "relative_error": 0.000953977612721472
+          },
+          "theta_i_deg": -60.0,
+          "totals_finite": true
+        },
+        {
+          "direct": 1.19822551518137,
+          "linear": 1.19829900058498,
+          "linear_error": {
+            "absolute_error": 7.34854036039678e-05,
+            "relative_error": 6.13285251172811e-05
+          },
+          "log": 1.19740700369756,
+          "log_error": {
+            "absolute_error": 0.000818511483813955,
+            "relative_error": 0.000683103033146527
+          },
+          "theta_i_deg": -30.0,
+          "totals_finite": true
+        },
+        {
+          "direct": 1.02479939801641,
+          "linear": 1.02483617253923,
+          "linear_error": {
+            "absolute_error": 3.67745228204708e-05,
+            "relative_error": 3.58846061889293e-05
+          },
+          "log": 1.02408870019067,
+          "log_error": {
+            "absolute_error": 0.000710697825745399,
+            "relative_error": 0.000693499456694661
+          },
+          "theta_i_deg": 0.0,
+          "totals_finite": true
+        },
+        {
+          "direct": 1.19822551518135,
+          "linear": 1.19829900058494,
+          "linear_error": {
+            "absolute_error": 7.3485403589979e-05,
+            "relative_error": 6.13285251056078e-05
+          },
+          "log": 1.19740700369757,
+          "log_error": {
+            "absolute_error": 0.000818511483779982,
+            "relative_error": 0.00068310303311819
+          },
+          "theta_i_deg": 30.0,
+          "totals_finite": true
+        },
+        {
+          "direct": 2.27892044143034,
+          "linear": 2.27831316086256,
+          "linear_error": {
+            "absolute_error": 0.000607280567777924,
+            "relative_error": 0.000266477300715584
+          },
+          "log": 2.27674640234806,
+          "log_error": {
+            "absolute_error": 0.00217403908227976,
+            "relative_error": 0.000953977612713521
+          },
+          "theta_i_deg": 60.0,
+          "totals_finite": true
+        }
+      ],
+      "branch_statistics": {
+        "asymptotic_beta_branch": 0,
+        "cone_pole_fallback": 0,
+        "exact_c_phi_seam": 0,
+        "grazing_fallback": 14360,
+        "invariant": "total == lut_interior + q_beta_fallback + grazing_fallback + cone_pole_fallback + exact_c_phi_seam (disjoint buckets); asymptotic_beta_branch is a diagnostic sub-count of q_beta_fallback and is not part of the partition",
+        "lut_interior": 250604,
+        "q_beta_fallback": 62716,
+        "total": 327680
+      },
+      "diagnostics": {
+        "acceptance_gate": false,
+        "asymptotic_branch_probe": {
+          "beta_numeric_epsilon": 1e-08,
+          "note": "reference Q probed at beta_r in {0, 0.5*eps, eps, 2*eps} around the direct/asymptotic branch boundary, with theta_o == theta_cone (delta = 0, q = 0) so the geometry is identical at every probe point and the probe isolates the branch seam. The asymptotic form is exact here (Q = 1/sqrt(2*pi), independent of beta) while the direct Bessel approximation is off by ~2-4x in this regime (1.515 at the floored beta, 0.758 just above the threshold, vs 0.399) because of its ~1e-16 * variance_inverse cancellation error -- which is exactly why beta_r <= eps routes to the asymptotic branch. The LUT sampler support is irrelevant here: this probes the reference branch seam, not the LUT. Diagnostic only, no acceptance gate.",
+          "probes": [
+            {
+              "asymptotic_q_value": 0.398942280401433,
+              "beta_r": 0.0,
+              "branch": "asymptotic",
+              "direct_q_value": 1.5153893283089,
+              "q": 0.0,
+              "reference_q_value": 0.398942280401433,
+              "theta_o_effective": 0.1
+            },
+            {
+              "asymptotic_q_value": 0.398942280401433,
+              "beta_r": 5e-09,
+              "branch": "asymptotic",
+              "direct_q_value": 1.5153893283089,
+              "q": 0.0,
+              "reference_q_value": 0.398942280401433,
+              "theta_o_effective": 0.1
+            },
+            {
+              "asymptotic_q_value": 0.398942280401433,
+              "beta_r": 1e-08,
+              "branch": "asymptotic",
+              "direct_q_value": 1.5153893283089,
+              "q": 0.0,
+              "reference_q_value": 0.398942280401433,
+              "theta_o_effective": 0.1
+            },
+            {
+              "asymptotic_q_value": 0.398942280401433,
+              "beta_r": 2e-08,
+              "branch": "direct",
+              "direct_q_value": 0.757694664154452,
+              "q": 0.0,
+              "reference_q_value": 0.757694664154452,
+              "theta_o_effective": 0.1
+            }
+          ],
+          "theta_cone": 0.1,
+          "theta_o": 0.1
+        },
+        "direct_fallback": {
+          "branch_counts": {
+            "cone_pole_fallback": 0,
+            "exact_c_phi_seam": 0,
+            "grazing_fallback": 14360,
+            "q_beta_fallback": 62716
+          },
+          "direct_total": 0.17175460709251,
+          "linear_total": 0.17175460709251,
+          "log_total": 0.17175460709251,
+          "note": "totals over the samples evaluated through the direct/asymptotic reference (exact c_phi seam + q/beta out-of-support + cone-pole bands + grazing footprints). On these samples the decoders equal the direct value by construction, so linear_total == log_total == direct_total modulo float rounding in the log round trip. Diagnostic only, no acceptance gate.",
+          "samples": 77076
+        },
+        "support_renormalized": {
+          "direct_mass": 7.80733670414724,
+          "linear_correction_factor": 1.00013204911777,
+          "linear_mass": 7.80630588834166,
+          "linear_uncorrected_relative_deviation": 0.000132031683099999,
+          "log_correction_factor": 1.00085836523427,
+          "log_mass": 7.80064090518916,
+          "log_uncorrected_relative_deviation": 0.000857629075292208,
+          "note": "correction factor = direct projected mass / decoded projected mass over the actual LUT-interior subset only (samples classified lut_interior; q/beta out-of-support, cone-pole bands, grazing footprints and the exact c_phi seam are excluded). Multiplying the decoder mass by the factor reproduces the direct mass over that subset. Diagnostic only, no acceptance gate; makes no raw-M unit-normalization claim.",
+          "samples": 250604
+        }
+      }
+    },
+    {
+      "name": "cuticle_0_1",
+      "parameters": {
+        "eta": 1.55,
+        "beta_m": 0.2,
+        "beta_n": 0.75,
+        "cuticle": 0.1,
+        "albedo": [
+          0.24774602,
+          0.12215338,
+          0.09630052
+        ]
+      },
+      "aggregate": {
+        "direct_total": 8.15121518056776,
+        "linear": {
+          "absolute_error": 0.00195669165008816,
+          "relative_error": 0.000240049073266137,
+          "rms_absolute_error": 0.00636789217609446,
+          "rms_relative_error": 0.0151866030644761,
+          "sample_count": 327680
+        },
+        "linear_total": 8.14925848891767,
+        "log": {
+          "absolute_error": 0.00801269287254947,
+          "relative_error": 0.000983005931637221,
+          "rms_absolute_error": 0.0104213866756992,
+          "rms_relative_error": 0.00161757889907908,
+          "sample_count": 327680
+        },
+        "log_total": 8.14320248769521,
+        "totals_finite": true
+      },
+      "per_theta_i": [
+        {
+          "direct": 2.71336066463442,
+          "linear": 2.71132713435767,
+          "linear_error": {
+            "absolute_error": 0.00203353027674824,
+            "relative_error": 0.000749450783765314
+          },
+          "log": 2.709256770021,
+          "log_error": {
+            "absolute_error": 0.00410389461341776,
+            "relative_error": 0.00151247663714867
+          },
+          "theta_i_deg": -60.0,
+          "totals_finite": true
+        },
+        {
+          "direct": 1.27654231584149,
+          "linear": 1.27663336835939,
+          "linear_error": {
+            "absolute_error": 9.10525179018684e-05,
+            "relative_error": 7.13274575953614e-05
+          },
+          "log": 1.27568699392829,
+          "log_error": {
+            "absolute_error": 0.000855321913205254,
+            "relative_error": 0.000670030207844249
+          },
+          "theta_i_deg": -30.0,
+          "totals_finite": true
+        },
+        {
+          "direct": 1.03228979718238,
+          "linear": 1.03232823687156,
+          "linear_error": {
+            "absolute_error": 3.84396891808247e-05,
+            "relative_error": 3.72373041811954e-05
+          },
+          "log": 1.03156998282233,
+          "log_error": {
+            "absolute_error": 0.000719814360046867,
+            "relative_error": 0.000697298725621033
+          },
+          "theta_i_deg": 0.0,
+          "totals_finite": true
+        },
+        {
+          "direct": 1.1481615452737,
+          "linear": 1.14822134093006,
+          "linear_error": {
+            "absolute_error": 5.97956563581636e-05,
+            "relative_error": 5.20794801082712e-05
+          },
+          "log": 1.14737009316788,
+          "log_error": {
+            "absolute_error": 0.000791452105820101,
+            "relative_error": 0.00068932121013636
+          },
+          "theta_i_deg": 30.0,
+          "totals_finite": true
+        },
+        {
+          "direct": 1.98086085763576,
+          "linear": 1.98074840839898,
+          "linear_error": {
+            "absolute_error": 0.00011244923678122,
+            "relative_error": 5.676786249158e-05
+          },
+          "log": 1.9793186477557,
+          "log_error": {
+            "absolute_error": 0.00154220988006082,
+            "relative_error": 0.000778555381169734
+          },
+          "theta_i_deg": 60.0,
+          "totals_finite": true
+        }
+      ],
+      "branch_statistics": {
+        "asymptotic_beta_branch": 0,
+        "cone_pole_fallback": 18638,
+        "exact_c_phi_seam": 0,
+        "grazing_fallback": 12682,
+        "invariant": "total == lut_interior + q_beta_fallback + grazing_fallback + cone_pole_fallback + exact_c_phi_seam (disjoint buckets); asymptotic_beta_branch is a diagnostic sub-count of q_beta_fallback and is not part of the partition",
+        "lut_interior": 231296,
+        "q_beta_fallback": 65064,
+        "total": 327680
+      },
+      "diagnostics": {
+        "acceptance_gate": false,
+        "asymptotic_branch_probe": {
+          "beta_numeric_epsilon": 1e-08,
+          "note": "reference Q probed at beta_r in {0, 0.5*eps, eps, 2*eps} around the direct/asymptotic branch boundary, with theta_o == theta_cone (delta = 0, q = 0) so the geometry is identical at every probe point and the probe isolates the branch seam. The asymptotic form is exact here (Q = 1/sqrt(2*pi), independent of beta) while the direct Bessel approximation is off by ~2-4x in this regime (1.515 at the floored beta, 0.758 just above the threshold, vs 0.399) because of its ~1e-16 * variance_inverse cancellation error -- which is exactly why beta_r <= eps routes to the asymptotic branch. The LUT sampler support is irrelevant here: this probes the reference branch seam, not the LUT. Diagnostic only, no acceptance gate.",
+          "probes": [
+            {
+              "asymptotic_q_value": 0.398942280401433,
+              "beta_r": 0.0,
+              "branch": "asymptotic",
+              "direct_q_value": 1.5153893283089,
+              "q": 0.0,
+              "reference_q_value": 0.398942280401433,
+              "theta_o_effective": 0.1
+            },
+            {
+              "asymptotic_q_value": 0.398942280401433,
+              "beta_r": 5e-09,
+              "branch": "asymptotic",
+              "direct_q_value": 1.5153893283089,
+              "q": 0.0,
+              "reference_q_value": 0.398942280401433,
+              "theta_o_effective": 0.1
+            },
+            {
+              "asymptotic_q_value": 0.398942280401433,
+              "beta_r": 1e-08,
+              "branch": "asymptotic",
+              "direct_q_value": 1.5153893283089,
+              "q": 0.0,
+              "reference_q_value": 0.398942280401433,
+              "theta_o_effective": 0.1
+            },
+            {
+              "asymptotic_q_value": 0.398942280401433,
+              "beta_r": 2e-08,
+              "branch": "direct",
+              "direct_q_value": 0.757694664154452,
+              "q": 0.0,
+              "reference_q_value": 0.757694664154452,
+              "theta_o_effective": 0.1
+            }
+          ],
+          "theta_cone": 0.1,
+          "theta_o": 0.1
+        },
+        "direct_fallback": {
+          "branch_counts": {
+            "cone_pole_fallback": 18638,
+            "exact_c_phi_seam": 0,
+            "grazing_fallback": 12682,
+            "q_beta_fallback": 65064
+          },
+          "direct_total": 0.195411995722772,
+          "linear_total": 0.195411995722772,
+          "log_total": 0.195411995722772,
+          "note": "totals over the samples evaluated through the direct/asymptotic reference (exact c_phi seam + q/beta out-of-support + cone-pole bands + grazing footprints). On these samples the decoders equal the direct value by construction, so linear_total == log_total == direct_total modulo float rounding in the log round trip. Diagnostic only, no acceptance gate.",
+          "samples": 96384
+        },
+        "support_renormalized": {
+          "direct_mass": 7.95580318484508,
+          "linear_correction_factor": 1.00024600570961,
+          "linear_mass": 7.9538464931944,
+          "linear_uncorrected_relative_deviation": 0.000245945205684975,
+          "log_correction_factor": 1.00100816609106,
+          "log_mass": 7.94779049197223,
+          "log_uncorrected_relative_deviation": 0.00100715071585895,
+          "note": "correction factor = direct projected mass / decoded projected mass over the actual LUT-interior subset only (samples classified lut_interior; q/beta out-of-support, cone-pole bands, grazing footprints and the exact c_phi seam are excluded). Multiplying the decoder mass by the factor reproduces the direct mass over that subset. Diagnostic only, no acceptance gate; makes no raw-M unit-normalization claim.",
+          "samples": 231296
+        }
+      }
+    },
+    {
+      "name": "blond",
+      "parameters": {
+        "eta": 1.55,
+        "beta_m": 0.2,
+        "beta_n": 0.75,
+        "cuticle": 0.087,
+        "albedo": [
+          0.843,
+          0.635,
+          0.392
+        ]
+      },
+      "aggregate": {
+        "direct_total": 8.10878881429025,
+        "linear": {
+          "absolute_error": 0.00165319868149361,
+          "relative_error": 0.000203877387777093,
+          "rms_absolute_error": 0.00514034181282521,
+          "rms_relative_error": 0.0155805897931514,
+          "sample_count": 327680
+        },
+        "linear_total": 8.10713561560875,
+        "log": {
+          "absolute_error": 0.00757605256318072,
+          "relative_error": 0.000934301378009664,
+          "rms_absolute_error": 0.00816038170365461,
+          "rms_relative_error": 0.00164516562424,
+          "sample_count": 327680
+        },
+        "log_total": 8.10121276172707,
+        "totals_finite": true
+      },
+      "per_theta_i": [
+        {
+          "direct": 2.6469540277945,
+          "linear": 2.64527964476421,
+          "linear_error": {
+            "absolute_error": 0.00167438303029854,
+            "relative_error": 0.000632569743454771
+          },
+          "log": 2.6433628879167,
+          "log_error": {
+            "absolute_error": 0.00359113987780812,
+            "relative_error": 0.00135670655406144
+          },
+          "theta_i_deg": -60.0,
+          "totals_finite": true
+        },
+        {
+          "direct": 1.26432800690173,
+          "linear": 1.26441814986054,
+          "linear_error": {
+            "absolute_error": 9.01429588096025e-05,
+            "relative_error": 7.12971304262254e-05
+          },
+          "log": 1.26347886909529,
+          "log_error": {
+            "absolute_error": 0.000849137806447464,
+            "relative_error": 0.000671611956558881
+          },
+          "theta_i_deg": -30.0,
+          "totals_finite": true
+        },
+        {
+          "direct": 1.03045360600697,
+          "linear": 1.03049217994481,
+          "linear_error": {
+            "absolute_error": 3.85739378383487e-05,
+            "relative_error": 3.74339393966735e-05
+          },
+          "log": 1.02973474243816,
+          "log_error": {
+            "absolute_error": 0.000718863568811789,
+            "relative_error": 0.000697618567804715
+          },
+          "theta_i_deg": 0.0,
+          "totals_finite": true
+        },
+        {
+          "direct": 1.15337809870957,
+          "linear": 1.15343853239769,
+          "linear_error": {
+            "absolute_error": 6.04336881169232e-05,
+            "relative_error": 5.23971178094484e-05
+          },
+          "log": 1.15258297892971,
+          "log_error": {
+            "absolute_error": 0.000795119779861464,
+            "relative_error": 0.00068938345608527
+          },
+          "theta_i_deg": 30.0,
+          "totals_finite": true
+        },
+        {
+          "direct": 2.01367507487746,
+          "linear": 2.0135071086415,
+          "linear_error": {
+            "absolute_error": 0.000167966235958161,
+            "relative_error": 8.34127799731457e-05
+          },
+          "log": 2.01205328334721,
+          "log_error": {
+            "absolute_error": 0.00162179153025122,
+            "relative_error": 0.000805388888448107
+          },
+          "theta_i_deg": 60.0,
+          "totals_finite": true
+        }
+      ],
+      "branch_statistics": {
+        "asymptotic_beta_branch": 0,
+        "cone_pole_fallback": 14054,
+        "exact_c_phi_seam": 0,
+        "grazing_fallback": 12652,
+        "invariant": "total == lut_interior + q_beta_fallback + grazing_fallback + cone_pole_fallback + exact_c_phi_seam (disjoint buckets); asymptotic_beta_branch is a diagnostic sub-count of q_beta_fallback and is not part of the partition",
+        "lut_interior": 236344,
+        "q_beta_fallback": 64630,
+        "total": 327680
+      },
+      "diagnostics": {
+        "acceptance_gate": false,
+        "asymptotic_branch_probe": {
+          "beta_numeric_epsilon": 1e-08,
+          "note": "reference Q probed at beta_r in {0, 0.5*eps, eps, 2*eps} around the direct/asymptotic branch boundary, with theta_o == theta_cone (delta = 0, q = 0) so the geometry is identical at every probe point and the probe isolates the branch seam. The asymptotic form is exact here (Q = 1/sqrt(2*pi), independent of beta) while the direct Bessel approximation is off by ~2-4x in this regime (1.515 at the floored beta, 0.758 just above the threshold, vs 0.399) because of its ~1e-16 * variance_inverse cancellation error -- which is exactly why beta_r <= eps routes to the asymptotic branch. The LUT sampler support is irrelevant here: this probes the reference branch seam, not the LUT. Diagnostic only, no acceptance gate.",
+          "probes": [
+            {
+              "asymptotic_q_value": 0.398942280401433,
+              "beta_r": 0.0,
+              "branch": "asymptotic",
+              "direct_q_value": 1.5153893283089,
+              "q": 0.0,
+              "reference_q_value": 0.398942280401433,
+              "theta_o_effective": 0.1
+            },
+            {
+              "asymptotic_q_value": 0.398942280401433,
+              "beta_r": 5e-09,
+              "branch": "asymptotic",
+              "direct_q_value": 1.5153893283089,
+              "q": 0.0,
+              "reference_q_value": 0.398942280401433,
+              "theta_o_effective": 0.1
+            },
+            {
+              "asymptotic_q_value": 0.398942280401433,
+              "beta_r": 1e-08,
+              "branch": "asymptotic",
+              "direct_q_value": 1.5153893283089,
+              "q": 0.0,
+              "reference_q_value": 0.398942280401433,
+              "theta_o_effective": 0.1
+            },
+            {
+              "asymptotic_q_value": 0.398942280401433,
+              "beta_r": 2e-08,
+              "branch": "direct",
+              "direct_q_value": 0.757694664154452,
+              "q": 0.0,
+              "reference_q_value": 0.757694664154452,
+              "theta_o_effective": 0.1
+            }
+          ],
+          "theta_cone": 0.1,
+          "theta_o": 0.1
+        },
+        "direct_fallback": {
+          "branch_counts": {
+            "cone_pole_fallback": 14054,
+            "exact_c_phi_seam": 0,
+            "grazing_fallback": 12652,
+            "q_beta_fallback": 64630
+          },
+          "direct_total": 0.193133171813962,
+          "linear_total": 0.193133171813962,
+          "log_total": 0.193133171813962,
+          "note": "totals over the samples evaluated through the direct/asymptotic reference (exact c_phi seam + q/beta out-of-support + cone-pole bands + grazing footprints). On these samples the decoders equal the direct value by construction, so linear_total == log_total == direct_total modulo float rounding in the log round trip. Diagnostic only, no acceptance gate.",
+          "samples": 91336
+        },
+        "support_renormalized": {
+          "direct_mass": 7.91565564247606,
+          "linear_correction_factor": 1.00020889539689,
+          "linear_mass": 7.91400244379459,
+          "linear_uncorrected_relative_deviation": 0.000208851768714953,
+          "log_correction_factor": 1.00095801420269,
+          "log_mass": 7.90807958991291,
+          "log_uncorrected_relative_deviation": 0.000957097289895106,
+          "note": "correction factor = direct projected mass / decoded projected mass over the actual LUT-interior subset only (samples classified lut_interior; q/beta out-of-support, cone-pole bands, grazing footprints and the exact c_phi seam are excluded). Multiplying the decoder mass by the factor reproduces the direct mass over that subset. Diagnostic only, no acceptance gate; makes no raw-M unit-normalization claim.",
+          "samples": 236344
+        }
+      }
+    },
+    {
+      "name": "red",
+      "parameters": {
+        "eta": 1.55,
+        "beta_m": 0.2,
+        "beta_n": 0.75,
+        "cuticle": 0.087,
+        "albedo": [
+          0.557,
+          0.268,
+          0.075
+        ]
+      },
+      "aggregate": {
+        "direct_total": 8.10878881429025,
+        "linear": {
+          "absolute_error": 0.00165319868149361,
+          "relative_error": 0.000203877387777093,
+          "rms_absolute_error": 0.00514034181282521,
+          "rms_relative_error": 0.0155805897931514,
+          "sample_count": 327680
+        },
+        "linear_total": 8.10713561560875,
+        "log": {
+          "absolute_error": 0.00757605256318072,
+          "relative_error": 0.000934301378009664,
+          "rms_absolute_error": 0.00816038170365461,
+          "rms_relative_error": 0.00164516562424,
+          "sample_count": 327680
+        },
+        "log_total": 8.10121276172707,
+        "totals_finite": true
+      },
+      "per_theta_i": [
+        {
+          "direct": 2.6469540277945,
+          "linear": 2.64527964476421,
+          "linear_error": {
+            "absolute_error": 0.00167438303029854,
+            "relative_error": 0.000632569743454771
+          },
+          "log": 2.6433628879167,
+          "log_error": {
+            "absolute_error": 0.00359113987780812,
+            "relative_error": 0.00135670655406144
+          },
+          "theta_i_deg": -60.0,
+          "totals_finite": true
+        },
+        {
+          "direct": 1.26432800690173,
+          "linear": 1.26441814986054,
+          "linear_error": {
+            "absolute_error": 9.01429588096025e-05,
+            "relative_error": 7.12971304262254e-05
+          },
+          "log": 1.26347886909529,
+          "log_error": {
+            "absolute_error": 0.000849137806447464,
+            "relative_error": 0.000671611956558881
+          },
+          "theta_i_deg": -30.0,
+          "totals_finite": true
+        },
+        {
+          "direct": 1.03045360600697,
+          "linear": 1.03049217994481,
+          "linear_error": {
+            "absolute_error": 3.85739378383487e-05,
+            "relative_error": 3.74339393966735e-05
+          },
+          "log": 1.02973474243816,
+          "log_error": {
+            "absolute_error": 0.000718863568811789,
+            "relative_error": 0.000697618567804715
+          },
+          "theta_i_deg": 0.0,
+          "totals_finite": true
+        },
+        {
+          "direct": 1.15337809870957,
+          "linear": 1.15343853239769,
+          "linear_error": {
+            "absolute_error": 6.04336881169232e-05,
+            "relative_error": 5.23971178094484e-05
+          },
+          "log": 1.15258297892971,
+          "log_error": {
+            "absolute_error": 0.000795119779861464,
+            "relative_error": 0.00068938345608527
+          },
+          "theta_i_deg": 30.0,
+          "totals_finite": true
+        },
+        {
+          "direct": 2.01367507487746,
+          "linear": 2.0135071086415,
+          "linear_error": {
+            "absolute_error": 0.000167966235958161,
+            "relative_error": 8.34127799731457e-05
+          },
+          "log": 2.01205328334721,
+          "log_error": {
+            "absolute_error": 0.00162179153025122,
+            "relative_error": 0.000805388888448107
+          },
+          "theta_i_deg": 60.0,
+          "totals_finite": true
+        }
+      ],
+      "branch_statistics": {
+        "asymptotic_beta_branch": 0,
+        "cone_pole_fallback": 14054,
+        "exact_c_phi_seam": 0,
+        "grazing_fallback": 12652,
+        "invariant": "total == lut_interior + q_beta_fallback + grazing_fallback + cone_pole_fallback + exact_c_phi_seam (disjoint buckets); asymptotic_beta_branch is a diagnostic sub-count of q_beta_fallback and is not part of the partition",
+        "lut_interior": 236344,
+        "q_beta_fallback": 64630,
+        "total": 327680
+      },
+      "diagnostics": {
+        "acceptance_gate": false,
+        "asymptotic_branch_probe": {
+          "beta_numeric_epsilon": 1e-08,
+          "note": "reference Q probed at beta_r in {0, 0.5*eps, eps, 2*eps} around the direct/asymptotic branch boundary, with theta_o == theta_cone (delta = 0, q = 0) so the geometry is identical at every probe point and the probe isolates the branch seam. The asymptotic form is exact here (Q = 1/sqrt(2*pi), independent of beta) while the direct Bessel approximation is off by ~2-4x in this regime (1.515 at the floored beta, 0.758 just above the threshold, vs 0.399) because of its ~1e-16 * variance_inverse cancellation error -- which is exactly why beta_r <= eps routes to the asymptotic branch. The LUT sampler support is irrelevant here: this probes the reference branch seam, not the LUT. Diagnostic only, no acceptance gate.",
+          "probes": [
+            {
+              "asymptotic_q_value": 0.398942280401433,
+              "beta_r": 0.0,
+              "branch": "asymptotic",
+              "direct_q_value": 1.5153893283089,
+              "q": 0.0,
+              "reference_q_value": 0.398942280401433,
+              "theta_o_effective": 0.1
+            },
+            {
+              "asymptotic_q_value": 0.398942280401433,
+              "beta_r": 5e-09,
+              "branch": "asymptotic",
+              "direct_q_value": 1.5153893283089,
+              "q": 0.0,
+              "reference_q_value": 0.398942280401433,
+              "theta_o_effective": 0.1
+            },
+            {
+              "asymptotic_q_value": 0.398942280401433,
+              "beta_r": 1e-08,
+              "branch": "asymptotic",
+              "direct_q_value": 1.5153893283089,
+              "q": 0.0,
+              "reference_q_value": 0.398942280401433,
+              "theta_o_effective": 0.1
+            },
+            {
+              "asymptotic_q_value": 0.398942280401433,
+              "beta_r": 2e-08,
+              "branch": "direct",
+              "direct_q_value": 0.757694664154452,
+              "q": 0.0,
+              "reference_q_value": 0.757694664154452,
+              "theta_o_effective": 0.1
+            }
+          ],
+          "theta_cone": 0.1,
+          "theta_o": 0.1
+        },
+        "direct_fallback": {
+          "branch_counts": {
+            "cone_pole_fallback": 14054,
+            "exact_c_phi_seam": 0,
+            "grazing_fallback": 12652,
+            "q_beta_fallback": 64630
+          },
+          "direct_total": 0.193133171813962,
+          "linear_total": 0.193133171813962,
+          "log_total": 0.193133171813962,
+          "note": "totals over the samples evaluated through the direct/asymptotic reference (exact c_phi seam + q/beta out-of-support + cone-pole bands + grazing footprints). On these samples the decoders equal the direct value by construction, so linear_total == log_total == direct_total modulo float rounding in the log round trip. Diagnostic only, no acceptance gate.",
+          "samples": 91336
+        },
+        "support_renormalized": {
+          "direct_mass": 7.91565564247606,
+          "linear_correction_factor": 1.00020889539689,
+          "linear_mass": 7.91400244379459,
+          "linear_uncorrected_relative_deviation": 0.000208851768714953,
+          "log_correction_factor": 1.00095801420269,
+          "log_mass": 7.90807958991291,
+          "log_uncorrected_relative_deviation": 0.000957097289895106,
+          "note": "correction factor = direct projected mass / decoded projected mass over the actual LUT-interior subset only (samples classified lut_interior; q/beta out-of-support, cone-pole bands, grazing footprints and the exact c_phi seam are excluded). Multiplying the decoder mass by the factor reproduces the direct mass over that subset. Diagnostic only, no acceptance gate; makes no raw-M unit-normalization claim.",
+          "samples": 236344
+        }
+      }
+    },
+    {
+      "name": "neutral_gray",
+      "parameters": {
+        "eta": 1.55,
+        "beta_m": 0.2,
+        "beta_n": 0.75,
+        "cuticle": 0.087,
+        "albedo": [
+          0.5,
+          0.5,
+          0.5
+        ]
+      },
+      "aggregate": {
+        "direct_total": 8.10878881429025,
+        "linear": {
+          "absolute_error": 0.00165319868149361,
+          "relative_error": 0.000203877387777093,
+          "rms_absolute_error": 0.00514034181282521,
+          "rms_relative_error": 0.0155805897931514,
+          "sample_count": 327680
+        },
+        "linear_total": 8.10713561560875,
+        "log": {
+          "absolute_error": 0.00757605256318072,
+          "relative_error": 0.000934301378009664,
+          "rms_absolute_error": 0.00816038170365461,
+          "rms_relative_error": 0.00164516562424,
+          "sample_count": 327680
+        },
+        "log_total": 8.10121276172707,
+        "totals_finite": true
+      },
+      "per_theta_i": [
+        {
+          "direct": 2.6469540277945,
+          "linear": 2.64527964476421,
+          "linear_error": {
+            "absolute_error": 0.00167438303029854,
+            "relative_error": 0.000632569743454771
+          },
+          "log": 2.6433628879167,
+          "log_error": {
+            "absolute_error": 0.00359113987780812,
+            "relative_error": 0.00135670655406144
+          },
+          "theta_i_deg": -60.0,
+          "totals_finite": true
+        },
+        {
+          "direct": 1.26432800690173,
+          "linear": 1.26441814986054,
+          "linear_error": {
+            "absolute_error": 9.01429588096025e-05,
+            "relative_error": 7.12971304262254e-05
+          },
+          "log": 1.26347886909529,
+          "log_error": {
+            "absolute_error": 0.000849137806447464,
+            "relative_error": 0.000671611956558881
+          },
+          "theta_i_deg": -30.0,
+          "totals_finite": true
+        },
+        {
+          "direct": 1.03045360600697,
+          "linear": 1.03049217994481,
+          "linear_error": {
+            "absolute_error": 3.85739378383487e-05,
+            "relative_error": 3.74339393966735e-05
+          },
+          "log": 1.02973474243816,
+          "log_error": {
+            "absolute_error": 0.000718863568811789,
+            "relative_error": 0.000697618567804715
+          },
+          "theta_i_deg": 0.0,
+          "totals_finite": true
+        },
+        {
+          "direct": 1.15337809870957,
+          "linear": 1.15343853239769,
+          "linear_error": {
+            "absolute_error": 6.04336881169232e-05,
+            "relative_error": 5.23971178094484e-05
+          },
+          "log": 1.15258297892971,
+          "log_error": {
+            "absolute_error": 0.000795119779861464,
+            "relative_error": 0.00068938345608527
+          },
+          "theta_i_deg": 30.0,
+          "totals_finite": true
+        },
+        {
+          "direct": 2.01367507487746,
+          "linear": 2.0135071086415,
+          "linear_error": {
+            "absolute_error": 0.000167966235958161,
+            "relative_error": 8.34127799731457e-05
+          },
+          "log": 2.01205328334721,
+          "log_error": {
+            "absolute_error": 0.00162179153025122,
+            "relative_error": 0.000805388888448107
+          },
+          "theta_i_deg": 60.0,
+          "totals_finite": true
+        }
+      ],
+      "branch_statistics": {
+        "asymptotic_beta_branch": 0,
+        "cone_pole_fallback": 14054,
+        "exact_c_phi_seam": 0,
+        "grazing_fallback": 12652,
+        "invariant": "total == lut_interior + q_beta_fallback + grazing_fallback + cone_pole_fallback + exact_c_phi_seam (disjoint buckets); asymptotic_beta_branch is a diagnostic sub-count of q_beta_fallback and is not part of the partition",
+        "lut_interior": 236344,
+        "q_beta_fallback": 64630,
+        "total": 327680
+      },
+      "diagnostics": {
+        "acceptance_gate": false,
+        "asymptotic_branch_probe": {
+          "beta_numeric_epsilon": 1e-08,
+          "note": "reference Q probed at beta_r in {0, 0.5*eps, eps, 2*eps} around the direct/asymptotic branch boundary, with theta_o == theta_cone (delta = 0, q = 0) so the geometry is identical at every probe point and the probe isolates the branch seam. The asymptotic form is exact here (Q = 1/sqrt(2*pi), independent of beta) while the direct Bessel approximation is off by ~2-4x in this regime (1.515 at the floored beta, 0.758 just above the threshold, vs 0.399) because of its ~1e-16 * variance_inverse cancellation error -- which is exactly why beta_r <= eps routes to the asymptotic branch. The LUT sampler support is irrelevant here: this probes the reference branch seam, not the LUT. Diagnostic only, no acceptance gate.",
+          "probes": [
+            {
+              "asymptotic_q_value": 0.398942280401433,
+              "beta_r": 0.0,
+              "branch": "asymptotic",
+              "direct_q_value": 1.5153893283089,
+              "q": 0.0,
+              "reference_q_value": 0.398942280401433,
+              "theta_o_effective": 0.1
+            },
+            {
+              "asymptotic_q_value": 0.398942280401433,
+              "beta_r": 5e-09,
+              "branch": "asymptotic",
+              "direct_q_value": 1.5153893283089,
+              "q": 0.0,
+              "reference_q_value": 0.398942280401433,
+              "theta_o_effective": 0.1
+            },
+            {
+              "asymptotic_q_value": 0.398942280401433,
+              "beta_r": 1e-08,
+              "branch": "asymptotic",
+              "direct_q_value": 1.5153893283089,
+              "q": 0.0,
+              "reference_q_value": 0.398942280401433,
+              "theta_o_effective": 0.1
+            },
+            {
+              "asymptotic_q_value": 0.398942280401433,
+              "beta_r": 2e-08,
+              "branch": "direct",
+              "direct_q_value": 0.757694664154452,
+              "q": 0.0,
+              "reference_q_value": 0.757694664154452,
+              "theta_o_effective": 0.1
+            }
+          ],
+          "theta_cone": 0.1,
+          "theta_o": 0.1
+        },
+        "direct_fallback": {
+          "branch_counts": {
+            "cone_pole_fallback": 14054,
+            "exact_c_phi_seam": 0,
+            "grazing_fallback": 12652,
+            "q_beta_fallback": 64630
+          },
+          "direct_total": 0.193133171813962,
+          "linear_total": 0.193133171813962,
+          "log_total": 0.193133171813962,
+          "note": "totals over the samples evaluated through the direct/asymptotic reference (exact c_phi seam + q/beta out-of-support + cone-pole bands + grazing footprints). On these samples the decoders equal the direct value by construction, so linear_total == log_total == direct_total modulo float rounding in the log round trip. Diagnostic only, no acceptance gate.",
+          "samples": 91336
+        },
+        "support_renormalized": {
+          "direct_mass": 7.91565564247606,
+          "linear_correction_factor": 1.00020889539689,
+          "linear_mass": 7.91400244379459,
+          "linear_uncorrected_relative_deviation": 0.000208851768714953,
+          "log_correction_factor": 1.00095801420269,
+          "log_mass": 7.90807958991291,
+          "log_uncorrected_relative_deviation": 0.000957097289895106,
+          "note": "correction factor = direct projected mass / decoded projected mass over the actual LUT-interior subset only (samples classified lut_interior; q/beta out-of-support, cone-pole bands, grazing footprints and the exact c_phi seam are excluded). Multiplying the decoder mass by the factor reproduces the direct mass over that subset. Diagnostic only, no acceptance gate; makes no raw-M unit-normalization claim.",
+          "samples": 236344
+        }
+      }
+    },
+    {
+      "name": "eta_1_45",
+      "parameters": {
+        "eta": 1.45,
+        "beta_m": 0.2,
+        "beta_n": 0.75,
+        "cuticle": 0.087,
+        "albedo": [
+          0.24774602,
+          0.12215338,
+          0.09630052
+        ]
+      },
+      "aggregate": {
+        "direct_total": 8.10878881429025,
+        "linear": {
+          "absolute_error": 0.00165319868149361,
+          "relative_error": 0.000203877387777093,
+          "rms_absolute_error": 0.00514034181282521,
+          "rms_relative_error": 0.0155805897931514,
+          "sample_count": 327680
+        },
+        "linear_total": 8.10713561560875,
+        "log": {
+          "absolute_error": 0.00757605256318072,
+          "relative_error": 0.000934301378009664,
+          "rms_absolute_error": 0.00816038170365461,
+          "rms_relative_error": 0.00164516562424,
+          "sample_count": 327680
+        },
+        "log_total": 8.10121276172707,
+        "totals_finite": true
+      },
+      "per_theta_i": [
+        {
+          "direct": 2.6469540277945,
+          "linear": 2.64527964476421,
+          "linear_error": {
+            "absolute_error": 0.00167438303029854,
+            "relative_error": 0.000632569743454771
+          },
+          "log": 2.6433628879167,
+          "log_error": {
+            "absolute_error": 0.00359113987780812,
+            "relative_error": 0.00135670655406144
+          },
+          "theta_i_deg": -60.0,
+          "totals_finite": true
+        },
+        {
+          "direct": 1.26432800690173,
+          "linear": 1.26441814986054,
+          "linear_error": {
+            "absolute_error": 9.01429588096025e-05,
+            "relative_error": 7.12971304262254e-05
+          },
+          "log": 1.26347886909529,
+          "log_error": {
+            "absolute_error": 0.000849137806447464,
+            "relative_error": 0.000671611956558881
+          },
+          "theta_i_deg": -30.0,
+          "totals_finite": true
+        },
+        {
+          "direct": 1.03045360600697,
+          "linear": 1.03049217994481,
+          "linear_error": {
+            "absolute_error": 3.85739378383487e-05,
+            "relative_error": 3.74339393966735e-05
+          },
+          "log": 1.02973474243816,
+          "log_error": {
+            "absolute_error": 0.000718863568811789,
+            "relative_error": 0.000697618567804715
+          },
+          "theta_i_deg": 0.0,
+          "totals_finite": true
+        },
+        {
+          "direct": 1.15337809870957,
+          "linear": 1.15343853239769,
+          "linear_error": {
+            "absolute_error": 6.04336881169232e-05,
+            "relative_error": 5.23971178094484e-05
+          },
+          "log": 1.15258297892971,
+          "log_error": {
+            "absolute_error": 0.000795119779861464,
+            "relative_error": 0.00068938345608527
+          },
+          "theta_i_deg": 30.0,
+          "totals_finite": true
+        },
+        {
+          "direct": 2.01367507487746,
+          "linear": 2.0135071086415,
+          "linear_error": {
+            "absolute_error": 0.000167966235958161,
+            "relative_error": 8.34127799731457e-05
+          },
+          "log": 2.01205328334721,
+          "log_error": {
+            "absolute_error": 0.00162179153025122,
+            "relative_error": 0.000805388888448107
+          },
+          "theta_i_deg": 60.0,
+          "totals_finite": true
+        }
+      ],
+      "branch_statistics": {
+        "asymptotic_beta_branch": 0,
+        "cone_pole_fallback": 14054,
+        "exact_c_phi_seam": 0,
+        "grazing_fallback": 12652,
+        "invariant": "total == lut_interior + q_beta_fallback + grazing_fallback + cone_pole_fallback + exact_c_phi_seam (disjoint buckets); asymptotic_beta_branch is a diagnostic sub-count of q_beta_fallback and is not part of the partition",
+        "lut_interior": 236344,
+        "q_beta_fallback": 64630,
+        "total": 327680
+      },
+      "diagnostics": {
+        "acceptance_gate": false,
+        "asymptotic_branch_probe": {
+          "beta_numeric_epsilon": 1e-08,
+          "note": "reference Q probed at beta_r in {0, 0.5*eps, eps, 2*eps} around the direct/asymptotic branch boundary, with theta_o == theta_cone (delta = 0, q = 0) so the geometry is identical at every probe point and the probe isolates the branch seam. The asymptotic form is exact here (Q = 1/sqrt(2*pi), independent of beta) while the direct Bessel approximation is off by ~2-4x in this regime (1.515 at the floored beta, 0.758 just above the threshold, vs 0.399) because of its ~1e-16 * variance_inverse cancellation error -- which is exactly why beta_r <= eps routes to the asymptotic branch. The LUT sampler support is irrelevant here: this probes the reference branch seam, not the LUT. Diagnostic only, no acceptance gate.",
+          "probes": [
+            {
+              "asymptotic_q_value": 0.398942280401433,
+              "beta_r": 0.0,
+              "branch": "asymptotic",
+              "direct_q_value": 1.5153893283089,
+              "q": 0.0,
+              "reference_q_value": 0.398942280401433,
+              "theta_o_effective": 0.1
+            },
+            {
+              "asymptotic_q_value": 0.398942280401433,
+              "beta_r": 5e-09,
+              "branch": "asymptotic",
+              "direct_q_value": 1.5153893283089,
+              "q": 0.0,
+              "reference_q_value": 0.398942280401433,
+              "theta_o_effective": 0.1
+            },
+            {
+              "asymptotic_q_value": 0.398942280401433,
+              "beta_r": 1e-08,
+              "branch": "asymptotic",
+              "direct_q_value": 1.5153893283089,
+              "q": 0.0,
+              "reference_q_value": 0.398942280401433,
+              "theta_o_effective": 0.1
+            },
+            {
+              "asymptotic_q_value": 0.398942280401433,
+              "beta_r": 2e-08,
+              "branch": "direct",
+              "direct_q_value": 0.757694664154452,
+              "q": 0.0,
+              "reference_q_value": 0.757694664154452,
+              "theta_o_effective": 0.1
+            }
+          ],
+          "theta_cone": 0.1,
+          "theta_o": 0.1
+        },
+        "direct_fallback": {
+          "branch_counts": {
+            "cone_pole_fallback": 14054,
+            "exact_c_phi_seam": 0,
+            "grazing_fallback": 12652,
+            "q_beta_fallback": 64630
+          },
+          "direct_total": 0.193133171813962,
+          "linear_total": 0.193133171813962,
+          "log_total": 0.193133171813962,
+          "note": "totals over the samples evaluated through the direct/asymptotic reference (exact c_phi seam + q/beta out-of-support + cone-pole bands + grazing footprints). On these samples the decoders equal the direct value by construction, so linear_total == log_total == direct_total modulo float rounding in the log round trip. Diagnostic only, no acceptance gate.",
+          "samples": 91336
+        },
+        "support_renormalized": {
+          "direct_mass": 7.91565564247606,
+          "linear_correction_factor": 1.00020889539689,
+          "linear_mass": 7.91400244379459,
+          "linear_uncorrected_relative_deviation": 0.000208851768714953,
+          "log_correction_factor": 1.00095801420269,
+          "log_mass": 7.90807958991291,
+          "log_uncorrected_relative_deviation": 0.000957097289895106,
+          "note": "correction factor = direct projected mass / decoded projected mass over the actual LUT-interior subset only (samples classified lut_interior; q/beta out-of-support, cone-pole bands, grazing footprints and the exact c_phi seam are excluded). Multiplying the decoder mass by the factor reproduces the direct mass over that subset. Diagnostic only, no acceptance gate; makes no raw-M unit-normalization claim.",
+          "samples": 236344
+        }
+      }
+    },
+    {
+      "name": "eta_1_65",
+      "parameters": {
+        "eta": 1.65,
+        "beta_m": 0.2,
+        "beta_n": 0.75,
+        "cuticle": 0.087,
+        "albedo": [
+          0.24774602,
+          0.12215338,
+          0.09630052
+        ]
+      },
+      "aggregate": {
+        "direct_total": 8.10878881429025,
+        "linear": {
+          "absolute_error": 0.00165319868149361,
+          "relative_error": 0.000203877387777093,
+          "rms_absolute_error": 0.00514034181282521,
+          "rms_relative_error": 0.0155805897931514,
+          "sample_count": 327680
+        },
+        "linear_total": 8.10713561560875,
+        "log": {
+          "absolute_error": 0.00757605256318072,
+          "relative_error": 0.000934301378009664,
+          "rms_absolute_error": 0.00816038170365461,
+          "rms_relative_error": 0.00164516562424,
+          "sample_count": 327680
+        },
+        "log_total": 8.10121276172707,
+        "totals_finite": true
+      },
+      "per_theta_i": [
+        {
+          "direct": 2.6469540277945,
+          "linear": 2.64527964476421,
+          "linear_error": {
+            "absolute_error": 0.00167438303029854,
+            "relative_error": 0.000632569743454771
+          },
+          "log": 2.6433628879167,
+          "log_error": {
+            "absolute_error": 0.00359113987780812,
+            "relative_error": 0.00135670655406144
+          },
+          "theta_i_deg": -60.0,
+          "totals_finite": true
+        },
+        {
+          "direct": 1.26432800690173,
+          "linear": 1.26441814986054,
+          "linear_error": {
+            "absolute_error": 9.01429588096025e-05,
+            "relative_error": 7.12971304262254e-05
+          },
+          "log": 1.26347886909529,
+          "log_error": {
+            "absolute_error": 0.000849137806447464,
+            "relative_error": 0.000671611956558881
+          },
+          "theta_i_deg": -30.0,
+          "totals_finite": true
+        },
+        {
+          "direct": 1.03045360600697,
+          "linear": 1.03049217994481,
+          "linear_error": {
+            "absolute_error": 3.85739378383487e-05,
+            "relative_error": 3.74339393966735e-05
+          },
+          "log": 1.02973474243816,
+          "log_error": {
+            "absolute_error": 0.000718863568811789,
+            "relative_error": 0.000697618567804715
+          },
+          "theta_i_deg": 0.0,
+          "totals_finite": true
+        },
+        {
+          "direct": 1.15337809870957,
+          "linear": 1.15343853239769,
+          "linear_error": {
+            "absolute_error": 6.04336881169232e-05,
+            "relative_error": 5.23971178094484e-05
+          },
+          "log": 1.15258297892971,
+          "log_error": {
+            "absolute_error": 0.000795119779861464,
+            "relative_error": 0.00068938345608527
+          },
+          "theta_i_deg": 30.0,
+          "totals_finite": true
+        },
+        {
+          "direct": 2.01367507487746,
+          "linear": 2.0135071086415,
+          "linear_error": {
+            "absolute_error": 0.000167966235958161,
+            "relative_error": 8.34127799731457e-05
+          },
+          "log": 2.01205328334721,
+          "log_error": {
+            "absolute_error": 0.00162179153025122,
+            "relative_error": 0.000805388888448107
+          },
+          "theta_i_deg": 60.0,
+          "totals_finite": true
+        }
+      ],
+      "branch_statistics": {
+        "asymptotic_beta_branch": 0,
+        "cone_pole_fallback": 14054,
+        "exact_c_phi_seam": 0,
+        "grazing_fallback": 12652,
+        "invariant": "total == lut_interior + q_beta_fallback + grazing_fallback + cone_pole_fallback + exact_c_phi_seam (disjoint buckets); asymptotic_beta_branch is a diagnostic sub-count of q_beta_fallback and is not part of the partition",
+        "lut_interior": 236344,
+        "q_beta_fallback": 64630,
+        "total": 327680
+      },
+      "diagnostics": {
+        "acceptance_gate": false,
+        "asymptotic_branch_probe": {
+          "beta_numeric_epsilon": 1e-08,
+          "note": "reference Q probed at beta_r in {0, 0.5*eps, eps, 2*eps} around the direct/asymptotic branch boundary, with theta_o == theta_cone (delta = 0, q = 0) so the geometry is identical at every probe point and the probe isolates the branch seam. The asymptotic form is exact here (Q = 1/sqrt(2*pi), independent of beta) while the direct Bessel approximation is off by ~2-4x in this regime (1.515 at the floored beta, 0.758 just above the threshold, vs 0.399) because of its ~1e-16 * variance_inverse cancellation error -- which is exactly why beta_r <= eps routes to the asymptotic branch. The LUT sampler support is irrelevant here: this probes the reference branch seam, not the LUT. Diagnostic only, no acceptance gate.",
+          "probes": [
+            {
+              "asymptotic_q_value": 0.398942280401433,
+              "beta_r": 0.0,
+              "branch": "asymptotic",
+              "direct_q_value": 1.5153893283089,
+              "q": 0.0,
+              "reference_q_value": 0.398942280401433,
+              "theta_o_effective": 0.1
+            },
+            {
+              "asymptotic_q_value": 0.398942280401433,
+              "beta_r": 5e-09,
+              "branch": "asymptotic",
+              "direct_q_value": 1.5153893283089,
+              "q": 0.0,
+              "reference_q_value": 0.398942280401433,
+              "theta_o_effective": 0.1
+            },
+            {
+              "asymptotic_q_value": 0.398942280401433,
+              "beta_r": 1e-08,
+              "branch": "asymptotic",
+              "direct_q_value": 1.5153893283089,
+              "q": 0.0,
+              "reference_q_value": 0.398942280401433,
+              "theta_o_effective": 0.1
+            },
+            {
+              "asymptotic_q_value": 0.398942280401433,
+              "beta_r": 2e-08,
+              "branch": "direct",
+              "direct_q_value": 0.757694664154452,
+              "q": 0.0,
+              "reference_q_value": 0.757694664154452,
+              "theta_o_effective": 0.1
+            }
+          ],
+          "theta_cone": 0.1,
+          "theta_o": 0.1
+        },
+        "direct_fallback": {
+          "branch_counts": {
+            "cone_pole_fallback": 14054,
+            "exact_c_phi_seam": 0,
+            "grazing_fallback": 12652,
+            "q_beta_fallback": 64630
+          },
+          "direct_total": 0.193133171813962,
+          "linear_total": 0.193133171813962,
+          "log_total": 0.193133171813962,
+          "note": "totals over the samples evaluated through the direct/asymptotic reference (exact c_phi seam + q/beta out-of-support + cone-pole bands + grazing footprints). On these samples the decoders equal the direct value by construction, so linear_total == log_total == direct_total modulo float rounding in the log round trip. Diagnostic only, no acceptance gate.",
+          "samples": 91336
+        },
+        "support_renormalized": {
+          "direct_mass": 7.91565564247606,
+          "linear_correction_factor": 1.00020889539689,
+          "linear_mass": 7.91400244379459,
+          "linear_uncorrected_relative_deviation": 0.000208851768714953,
+          "log_correction_factor": 1.00095801420269,
+          "log_mass": 7.90807958991291,
+          "log_uncorrected_relative_deviation": 0.000957097289895106,
+          "note": "correction factor = direct projected mass / decoded projected mass over the actual LUT-interior subset only (samples classified lut_interior; q/beta out-of-support, cone-pole bands, grazing footprints and the exact c_phi seam are excluded). Multiplying the decoder mass by the factor reproduces the direct mass over that subset. Diagnostic only, no acceptance gate; makes no raw-M unit-normalization claim.",
+          "samples": 236344
+        }
+      }
+    }
+  ],
+  "aggregate": {
+    "worst_absolute_error": {
+      "value": 0.0184207243486805,
+      "case": "beta_m_0_8",
+      "decoder": "log"
+    },
+    "worst_relative_error": {
+      "value": 0.0025922792973374,
+      "case": "beta_m_0_8",
+      "decoder": "log"
+    },
+    "per_decoder": {
+      "linear": {
+        "worst_absolute_error": {
+          "value": 0.0106050892444616,
+          "case": "beta_m_0_8"
+        },
+        "worst_relative_error": {
+          "value": 0.00149241434671393,
+          "case": "beta_m_0_8"
+        }
+      },
+      "log": {
+        "worst_absolute_error": {
+          "value": 0.0184207243486805,
+          "case": "beta_m_0_8"
+        },
+        "worst_relative_error": {
+          "value": 0.0025922792973374,
+          "case": "beta_m_0_8"
+        }
+      }
+    },
+    "summed_branch_statistics": {
+      "total": 3932160,
+      "lut_interior": 2822516,
+      "q_beta_fallback": 804464,
+      "grazing_fallback": 157284,
+      "cone_pole_fallback": 147896,
+      "asymptotic_beta_branch": 0,
+      "exact_c_phi_seam": 0
+    }
+  },
+  "summary": {
+    "worst_absolute_error": {
+      "value": 0.0184207243486805,
+      "case": "beta_m_0_8",
+      "decoder": "log"
+    },
+    "worst_relative_error": {
+      "value": 0.0025922792973374,
+      "case": "beta_m_0_8",
+      "decoder": "log"
+    },
+    "per_decoder": {
+      "linear": {
+        "worst_absolute_error": {
+          "value": 0.0106050892444616,
+          "case": "beta_m_0_8"
+        },
+        "worst_relative_error": {
+          "value": 0.00149241434671393,
+          "case": "beta_m_0_8"
+        }
+      },
+      "log": {
+        "worst_absolute_error": {
+          "value": 0.0184207243486805,
+          "case": "beta_m_0_8"
+        },
+        "worst_relative_error": {
+          "value": 0.0025922792973374,
+          "case": "beta_m_0_8"
+        }
+      }
+    },
+    "summed_branch_statistics": {
+      "total": 3932160,
+      "lut_interior": 2822516,
+      "q_beta_fallback": 804464,
+      "grazing_fallback": 157284,
+      "cone_pole_fallback": 147896,
+      "asymptotic_beta_branch": 0,
+      "exact_c_phi_seam": 0
+    }
+  },
+  "limitations": [
+    "Designed 12-case representative subset covering the reference dark-brown material (eta 1.55, beta_m 0.2, beta_n 0.75, cuticle 0.087), beta_m 0.1/0.8, beta_n 0.1/0.9, cuticle 0.0/0.1, blond/red/neutral-gray albedos, and eta 1.45/1.65; this is NOT a full Cartesian sweep and NOT a material-domain proof.",
+    "R lobe only: the full R product M_R * N_R is validated; the TT/TRT lobes and absorption are out of scope. R has no absorption path, so eta and albedo never enter the integrand.",
+    "CPU projected-solid-angle integration only: deterministic midpoint quadrature of f * cos(theta_o) dtheta_o dphi over theta_o in [-PI/2, PI/2] x phi in [-PI, PI] (the measure the light loop performs implicitly); no shader or rasterized path is exercised.",
+    "eta, albedo and beta_n are metadata only: eta and albedo are passed to the validator for provenance but do not affect the integrand, and beta_n is recorded in each case's parameters but never passed to the validator (the R kernel has no longitudinal width parameter).",
+    "No raw-M unit-normalization gate: the validator requires the LUT to not claim raw-M unit normalization (raw_m_unit_normalization_gate=false) and reports errors unweakened, but no acceptance band is applied to the reported errors.",
+    "No shader promotion: this run only validates the committed LUT against the direct kernel reference; it does not promote any kernel, LUT or decoder into a shipping shader path.",
+    "Windows Godot only by design (WSL interop godot.exe); the script refuses any non-.exe Godot binary, so the Linux editor can never be selected accidentally.",
+    "Errors are absolute/relative in projected solid-angle energy units on the five-angle aggregate and per theta_i (per_theta_i stays inside each case record); the matrix-level worst errors are the per-case aggregate errors over both decoders."
+  ]
+}

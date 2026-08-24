@@ -1,0 +1,255 @@
+{
+  "gpu": {
+    "api_version": "1.3.302",
+    "device_type": 1,
+    "device_type_name": "integrated_gpu",
+    "name": "AMD Radeon(TM) Graphics",
+    "pipeline_cache_uuid": "bc073883f0825c97af93c4a4e36fa1e2-driver-8388939",
+    "rd_name": "AMD Radeon(TM) Graphics",
+    "rd_vendor": "AMD",
+    "vendor": "AMD"
+  },
+  "groom": "Blowout",
+  "interpretation": {
+    "alu_probe": "Shared card preparation plus a fixed 96-iteration dependent arithmetic chain. This calibrates device ALU sensitivity; it is not a production instruction count.",
+    "card_control": "Shared groom/card preparation with trivial unshaded output.",
+    "lut_probe": "Shared card preparation plus 16 dependent trilinear 3D LUT samples. This calibrates texture/LUT sensitivity; it is not a decomposition of a production tier.",
+    "production": "Full production shader timings. Compare process-level repeats, resolution scaling, and light-count scaling rather than attributing exact milliseconds to individual source operations."
+  },
+  "requested_gpu_index": 1,
+  "results": [
+    {
+      "cpu_median_ms": 0.149000003933907,
+      "cpu_p95_ms": 0.241999998688698,
+      "gpu_mad_ms": 0.0720000267028809,
+      "gpu_max_ms": 3.05299997329712,
+      "gpu_mean_ms": 2.5506466682752,
+      "gpu_median_ms": 2.51699995994568,
+      "gpu_min_ms": 2.35599994659424,
+      "gpu_p90_ms": 2.73000001907349,
+      "gpu_p95_ms": 2.80100011825562,
+      "gpu_p99_ms": 2.96499991416931,
+      "gpu_stddev_ms": 0.129762689083693,
+      "name": "NO_HAIR",
+      "render_info": {
+        "shadow_draw_calls": 1,
+        "shadow_objects": 1,
+        "shadow_primitives": 7694,
+        "visible_draw_calls": 1,
+        "visible_objects": 1,
+        "visible_primitives": 7694
+      },
+      "sample_count": 300
+    },
+    {
+      "cpu_median_ms": 0.238999992609024,
+      "cpu_p95_ms": 0.328999996185303,
+      "gpu_mad_ms": 0.174999237060547,
+      "gpu_max_ms": 20.1539993286133,
+      "gpu_mean_ms": 17.5065733718872,
+      "gpu_median_ms": 17.3139991760254,
+      "gpu_min_ms": 16.9230003356934,
+      "gpu_p90_ms": 18.2800006866455,
+      "gpu_p95_ms": 18.5890007019043,
+      "gpu_p99_ms": 19.2250003814697,
+      "gpu_stddev_ms": 0.53006703795592,
+      "incremental_vs_no_hair_ms": 14.7969992160797,
+      "name": "CARD_CONTROL",
+      "render_info": {
+        "shadow_draw_calls": 2,
+        "shadow_objects": 2,
+        "shadow_primitives": 157656,
+        "visible_draw_calls": 2,
+        "visible_objects": 2,
+        "visible_primitives": 157656
+      },
+      "sample_count": 300
+    },
+    {
+      "cpu_median_ms": 0.231000006198883,
+      "cpu_p95_ms": 0.293000012636185,
+      "gpu_mad_ms": 0.103000640869141,
+      "gpu_max_ms": 21.9479999542236,
+      "gpu_mean_ms": 20.4354366556803,
+      "gpu_median_ms": 20.3990001678467,
+      "gpu_min_ms": 20.07200050354,
+      "gpu_p90_ms": 20.6560001373291,
+      "gpu_p95_ms": 20.7830009460449,
+      "gpu_p99_ms": 21.0459995269775,
+      "gpu_stddev_ms": 0.20038909527727,
+      "incremental_vs_card_control_ms": 3.08500099182129,
+      "incremental_vs_no_hair_ms": 17.882000207901,
+      "name": "ALU_PROBE_96",
+      "render_info": {
+        "shadow_draw_calls": 2,
+        "shadow_objects": 2,
+        "shadow_primitives": 157656,
+        "visible_draw_calls": 2,
+        "visible_objects": 2,
+        "visible_primitives": 157656
+      },
+      "sample_count": 300
+    },
+    {
+      "cpu_median_ms": 0.238000005483627,
+      "cpu_p95_ms": 0.344999998807907,
+      "gpu_mad_ms": 0.6719970703125,
+      "gpu_max_ms": 45.0149993896484,
+      "gpu_mean_ms": 33.4271499824524,
+      "gpu_median_ms": 32.5880012512207,
+      "gpu_min_ms": 31.3719997406006,
+      "gpu_p90_ms": 36.140998840332,
+      "gpu_p95_ms": 37.4809989929199,
+      "gpu_p99_ms": 41.9739990234375,
+      "gpu_stddev_ms": 2.16207709043236,
+      "incremental_vs_card_control_ms": 15.2740020751953,
+      "incremental_vs_no_hair_ms": 30.071001291275,
+      "name": "LUT_PROBE_16",
+      "render_info": {
+        "shadow_draw_calls": 2,
+        "shadow_objects": 2,
+        "shadow_primitives": 157656,
+        "visible_draw_calls": 2,
+        "visible_objects": 2,
+        "visible_primitives": 157656
+      },
+      "sample_count": 300
+    },
+    {
+      "cpu_median_ms": 0.239999994635582,
+      "cpu_p95_ms": 0.33899998664856,
+      "gpu_mad_ms": 0.159000396728516,
+      "gpu_max_ms": 21.7320003509521,
+      "gpu_mean_ms": 19.5235066350301,
+      "gpu_median_ms": 19.4440002441406,
+      "gpu_min_ms": 18.9699993133545,
+      "gpu_p90_ms": 19.8320007324219,
+      "gpu_p95_ms": 20.117000579834,
+      "gpu_p99_ms": 21.3929996490479,
+      "gpu_stddev_ms": 0.393075107867269,
+      "incremental_vs_card_control_ms": 2.13000106811523,
+      "incremental_vs_no_hair_ms": 16.9270002841949,
+      "name": "APPROX_KAJIYA_KAY",
+      "render_info": {
+        "shadow_draw_calls": 2,
+        "shadow_objects": 2,
+        "shadow_primitives": 157656,
+        "visible_draw_calls": 2,
+        "visible_objects": 2,
+        "visible_primitives": 157656
+      },
+      "sample_count": 300,
+      "tier": 0
+    },
+    {
+      "cpu_median_ms": 0.23199999332428,
+      "cpu_p95_ms": 0.294999986886978,
+      "gpu_mad_ms": 0.119001388549805,
+      "gpu_max_ms": 22.8199996948242,
+      "gpu_mean_ms": 21.0311266708374,
+      "gpu_median_ms": 20.9850006103516,
+      "gpu_min_ms": 20.5860004425049,
+      "gpu_p90_ms": 21.3020000457764,
+      "gpu_p95_ms": 21.443000793457,
+      "gpu_p99_ms": 21.6749992370605,
+      "gpu_stddev_ms": 0.233613764282689,
+      "incremental_vs_card_control_ms": 3.67100143432617,
+      "incremental_vs_no_hair_ms": 18.4680006504059,
+      "name": "FAST_MARSCHNER",
+      "render_info": {
+        "shadow_draw_calls": 2,
+        "shadow_objects": 2,
+        "shadow_primitives": 157656,
+        "visible_draw_calls": 2,
+        "visible_objects": 2,
+        "visible_primitives": 157656
+      },
+      "sample_count": 300,
+      "tier": 1
+    },
+    {
+      "cpu_median_ms": 0.239999994635582,
+      "cpu_p95_ms": 0.331000000238419,
+      "gpu_mad_ms": 0.222999572753906,
+      "gpu_max_ms": 26.4290008544922,
+      "gpu_mean_ms": 23.7402400271098,
+      "gpu_median_ms": 23.6560001373291,
+      "gpu_min_ms": 22.8910007476807,
+      "gpu_p90_ms": 24.2479991912842,
+      "gpu_p95_ms": 24.7019996643066,
+      "gpu_p99_ms": 25.2630004882813,
+      "gpu_stddev_ms": 0.46222690903786,
+      "incremental_vs_card_control_ms": 6.34200096130371,
+      "incremental_vs_no_hair_ms": 21.1390001773834,
+      "name": "CINEMATIC_MARSCHNER",
+      "render_info": {
+        "shadow_draw_calls": 2,
+        "shadow_objects": 2,
+        "shadow_primitives": 157656,
+        "visible_draw_calls": 2,
+        "visible_objects": 2,
+        "visible_primitives": 157656
+      },
+      "sample_count": 300,
+      "tier": 2
+    },
+    {
+      "cpu_median_ms": 0.231000006198883,
+      "cpu_p95_ms": 0.303000003099442,
+      "gpu_mad_ms": 0.130001068115234,
+      "gpu_max_ms": 27.6949996948242,
+      "gpu_mean_ms": 26.9922700182597,
+      "gpu_median_ms": 26.9759998321533,
+      "gpu_min_ms": 26.5610008239746,
+      "gpu_p90_ms": 27.2630004882813,
+      "gpu_p95_ms": 27.3549995422363,
+      "gpu_p99_ms": 27.6189994812012,
+      "gpu_stddev_ms": 0.207550796775779,
+      "incremental_vs_card_control_ms": 9.66200065612793,
+      "incremental_vs_no_hair_ms": 24.4589998722076,
+      "name": "REFERENCE_MARSCHNER",
+      "render_info": {
+        "shadow_draw_calls": 2,
+        "shadow_objects": 2,
+        "shadow_primitives": 157656,
+        "visible_draw_calls": 2,
+        "visible_objects": 2,
+        "visible_primitives": 157656
+      },
+      "sample_count": 300,
+      "tier": 3
+    }
+  ],
+  "sampling": {
+    "prewarm_frames": 120,
+    "repeat_index": 4,
+    "sample_frames": 300,
+    "settle_frames": 30,
+    "tier_order": [
+      0,
+      1,
+      2,
+      3
+    ]
+  },
+  "schema": "production_hair_tier_runtime_v2",
+  "workload": {
+    "actual_viewport_size": {
+      "pixels": 2073600,
+      "x": 1920,
+      "y": 1080
+    },
+    "base_directional_lights": 1,
+    "coverage_mode": "coverage",
+    "extra_directional_lights": 0,
+    "extra_light_shadows": false,
+    "requested_resolution": {
+      "pixels": 2073600,
+      "x": 1920,
+      "y": 1080
+    },
+    "show_hair_cards": false,
+    "time_scale": 1e-06,
+    "total_directional_lights": 1
+  }
+}
