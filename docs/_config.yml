@@ -1,0 +1,16 @@
+# GitHub Pages configuration for the Marschner hair shader documentation site.
+# Serves the repository's docs/ directory as a browsable markdown site.
+title: Godot Marschner Hair Shader
+description: Godot 4.7 hair-card shading stack - Approx/Kajiya-Kay, Fast Marschner, Cinematic Marschner with packaged LUTs and optical wetness.
+theme: jekyll-theme-cayman
+
+# Render the repo README as the landing page content source is docs/ only;
+# index.md provides the landing page instead.
+permalink: pretty
+
+markdown: kramdown
+kramdown:
+  input: GFM
+
+exclude:
+  - images/*.import

@@ -96,7 +96,7 @@ If the viewport's AA configuration can change after material creation, register 
 coverage_controller.register_material(profile, material, get_viewport())
 ```
 
-The controller keeps the compiled coverage variant and 16-phase Bayer index in sync with the rendered frame. For the full runtime API reference see [`docs/api.md`](docs/api.md).
+The controller keeps the compiled coverage variant and 16-phase Bayer index in sync with the rendered frame. For the full runtime API reference see the [hosted API docs](https://44madfire.github.io/GodotMarschnerHairShader/api/) or [`docs/api.md`](docs/api.md).
 
 ## Editor workflow
 
@@ -193,7 +193,9 @@ Before publishing a release package, also run the package-level checks in [`docs
 
 ## Further documentation
 
-- [`docs/api.md`](docs/api.md) — runtime API reference for `HairMaterialProfile`, `HairGroomData`, `HairCoveragePolicy`, quality tiers, and coverage modes.
+The full documentation set is hosted at **https://44madfire.github.io/GodotMarschnerHairShader/** (source under `docs/`).
+
+- [Runtime API reference](https://44madfire.github.io/GodotMarschnerHairShader/api/) — `HairMaterialProfile`, `HairGroomData`, `HairCoveragePolicy`, quality tiers, and coverage modes.
 - [`docs/hair_material_authoring.md`](docs/hair_material_authoring.md) — profile/groom ownership, coverage, LUT binding, shader switching, and runtime APIs.
 - [`docs/hair_wetness.md`](docs/hair_wetness.md) — optical wetness model, calibrated controls, tier behavior, and validation.
 - [`docs/direct_lut_storage.md`](docs/direct_lut_storage.md) — direct `ImageTexture3D` storage decision and benchmarks.
