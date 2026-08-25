@@ -22,3 +22,9 @@ benchmark/results/production_tiers_*/
 
 # Generated release/demo movie captures and media manifests
 benchmark/results/release_media/
+
+# Windows NTFS Zone.Identifier ADS artifacts
+*:Zone.Identifier
+
+# Raw benchmark output (generators live in benchmark/tools)
+benchmark/results/
