@@ -4,3 +4,6 @@
 [submodule "References/GodotHair"]
 	path = References/GodotHair
 	url = https://github.com/2Retr0/GodotHair.git
+[submodule "References/UnityReference"]
+	path = References/UnityReference
+	url = https://github.com/Unity-Technologies/Graphics.git
