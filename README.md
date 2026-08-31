@@ -122,32 +122,6 @@ The three screenshots below show the basic resource hand-off:
 
 ## Demo videos
 
-The demo groom and these videos are released under **CC BY-NC 4.0**. The legacy
-full-resolution PR13 MP4 captures are attached to the private [PR13 demo media
-release](https://github.com/44madfire/GodotMarschnerHairShader/releases/tag/pr13-demo-media)
-rather than tracked in Git. The five current 1440x270 composite MP4 previews
-are tracked under `docs/images/` alongside the looping GIF previews. Every GIF
-is a full 6-second seamless orbit. The quality row shows one orbit per tier
-(Approx, Fast Marschner, and Cinematic Marschner; Reference is omitted). The
-wetness matrix shows one individual GIF per cell for every tier at the fixed
-wetness states 0.00, 0.33, 0.67, and 1.00.
-
-### Composite videos
-
-Repository-hosted MP4 links may download instead of playing inline; GitHub attachment URLs (release downloads) are needed for inline playback. Each MP4 is a horizontal strip of the three quality tiers (Approx | Fast Marschner | Cinematic Marschner) at 1440x270, H.264, 15 fps, 6 seconds (90 frames).
-
-- [Quality tiers composite (Approx / Fast / Cinematic)](docs/images/demo-video-quality-composite.mp4)
-- [Wetness 0.00 composite](docs/images/demo-video-wetness-000-composite.mp4)
-- [Wetness 0.33 composite](docs/images/demo-video-wetness-033-composite.mp4)
-- [Wetness 0.67 composite](docs/images/demo-video-wetness-067-composite.mp4)
-- [Wetness 1.00 composite](docs/images/demo-video-wetness-100-composite.mp4)
-
-Regenerate them from the source GIFs with:
-
-```bash
-bash docs/images/make_composite_mp4s.sh
-```
-
 ### Quality tiers (dry, wetness 0.00)
 
 | <strong>Approx / Kajiya-Kay</strong><br>[![Approx preview](docs/images/demo-video-approx.gif)](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/quality-tiers.mp4) | <strong>Fast Marschner</strong><br>[![Fast Marschner preview](docs/images/demo-video-fast.gif)](https://github.com/44madfire/GodotMarschnerHairShader/releases/download/pr13-demo-media/quality-tiers.mp4) |
